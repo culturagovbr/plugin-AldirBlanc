@@ -17,7 +17,10 @@ class Plugin extends \MapasCulturais\Plugin
 
     function register()
     {
-        // Registra controllers, assets, etc aqui se necessário
+        $app = App::i();
+        
+        // Registra o controller
+        $app->registerController('aldirblanc', Controller::class);
     }
 
     /**
