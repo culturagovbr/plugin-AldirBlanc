@@ -3,10 +3,13 @@
 namespace AldirBlanc;
 
 use MapasCulturais\App;
+use MapasCulturais\Traits\RegisterFunctions;
+use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
 
 class Plugin extends \MapasCulturais\Plugin
 {
+    use RegisterFunctions;
     use DoctrineEventListenerTrait;
 
     public function _init()
@@ -21,6 +24,24 @@ class Plugin extends \MapasCulturais\Plugin
         
         // Registra o controller
         $app->registerController('aldirblanc', Controller::class);
+
+        // Registra metadado federativeEntityId para entidades principais
+        // Usa registerMetadata com namespace completo, seguindo o padrão do SpamDetector
+        $entities = [
+            'MapasCulturais\Entities\Opportunity',
+            'MapasCulturais\Entities\Project',
+            'MapasCulturais\Entities\Event',
+            'MapasCulturais\Entities\Space',
+            'MapasCulturais\Entities\Agent'
+        ];
+
+        foreach ($entities as $entityClass) {
+            $this->registerMetadata($entityClass, 'federativeEntityId', [
+                'label' => i::__('ID do Ente Federado'),
+                'type' => 'integer',
+                'private' => false
+            ]);
+        }
     }
 
     /**
