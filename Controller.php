@@ -115,6 +115,17 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ];
         $_SESSION['selectedFederativeEntity'] = json_encode($federativeEntity);
 
+        // Limpa cache de permissões sempre que o Ente Federado é alterado
+        $userAgent = $app->user->profile;
+        if ($userAgent) {
+            if (method_exists($userAgent, 'clearPermissionCache')) {
+                $userAgent->clearPermissionCache();
+            }
+            
+            // Dispara hook para que outros módulos possam limpar cache também
+            $app->applyHook('aldirblanc.selectFederativeEntity:after');
+        }
+
         // Retorna a URI de redirecionamento se houver
         $redirectUri = $_SESSION['federative_entity_redirect_uri'] ?? null;
         if ($redirectUri) {
