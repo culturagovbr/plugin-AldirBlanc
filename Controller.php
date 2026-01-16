@@ -23,13 +23,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
 
         if (!User::isGestorCultBr()) {
-            $this->error('Acesso negado', 403);
             return;
         }
 
         $agent = $app->user->profile;
         if (!$agent) {
-            $this->json([]);
             return;
         }
 
