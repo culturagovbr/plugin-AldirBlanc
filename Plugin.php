@@ -2,6 +2,11 @@
 
 namespace AldirBlanc;
 
+use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Jobs\GestorCultJob;
+use AldirBlanc\Services\SyncGestor;
+use AldirBlanc\Services\UserAccessService;
+use AldirBlanc\Services\UserService;
 use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
@@ -12,10 +17,51 @@ class Plugin extends \MapasCulturais\Plugin
     use RegisterFunctions;
     use DoctrineEventListenerTrait;
 
+    protected static $instance;
+
+    function __construct($config = [])
+    {
+        $config += [
+            'client' => [
+                'mode' => env('ALDIRBLANC_CULTBR_MODE', 'development'),
+                'host' => env('ALDIRBLANC_CULTBR_HOST', null),
+                'token' => env('ALDIRBLANC_CULTBR_TOKEN', null),
+                'gestorEndpoint' => env('ALDIRBLANC_CULTBR_GESTOR_ENDPOINT', null),
+                'enteFederadoEndpoint' => env('ALDIRBLANC_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+            ]
+        ];
+
+        parent::__construct($config);
+        self::$instance = $this;
+    }
+
+    /**
+     * Retorna a instância do plugin
+     * 
+     * @return Plugin|null
+     */
+    public static function getInstance(): ?Plugin
+    {
+        return self::$instance;
+    }
+
+
     public function _init()
     {
         // Inicializa os mapeamentos do Doctrine para a entidade FederativeEntity
         $this->initDoctrineMappings();
+
+        $app = App::i();
+
+        $app->hook('auth.login', function($user) use($app){
+            /** @var UserAccessService $user */
+
+            if (UserAccessService::isGestorCultBr()) {
+                $gestorDocument = new GestorDocument((new UserService())->getCpf());
+                (new GestorCultJob($gestorDocument))->sync();
+            }
+        });
+
     }
 
     function register()
