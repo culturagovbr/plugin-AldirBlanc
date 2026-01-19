@@ -5,7 +5,7 @@ namespace AldirBlanc;
 use MapasCulturais\App;
 use MapasCulturais\Traits;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
-use AldirBlanc\Entities\User;
+use AldirBlanc\Services\UserAccessService;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -22,7 +22,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $app = App::i();
 
-        if (!User::isGestorCultBr()) {
+        if (!UserAccessService::isGestorCultBr()) {
             return;
         }
 

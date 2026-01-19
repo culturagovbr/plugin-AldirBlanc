@@ -1,12 +1,11 @@
-<?php
+<?php 
 
-namespace AldirBlanc\Entities;
+namespace AldirBlanc\Services;
 
 use AldirBlanc\Enum\Role;
-use MapasCulturais\Entities\User as BaseUser;
 use MapasCulturais\App;
 
-class User extends BaseUser
+class UserAccessService
 {
     /**
      * Verifica se o usuário é um gestor Cult
