@@ -1,0 +1,124 @@
+<?php
+
+namespace AldirBlanc\Http\Clients;
+
+use AldirBlanc\Http\Fixtures\GestorEndpoint;
+use AldirBlanc\Plugin;
+use MapasCulturais\App;
+use Curl\Curl;
+use ReflectionClass;
+
+abstract class AbstractClient
+{
+    protected string $endpoint;
+    protected string $document;
+
+    private string $mode;
+
+    private string $host;
+    private string $token;
+
+    private Curl $curl;
+
+    public function __construct()
+    {
+        $config = $this->getClientConfig();
+
+        if (empty($config)) {
+            throw new \Exception('Configuração do cliente não encontrada');
+        }
+
+        $this->mode = $config['mode'];
+        $this->host = $config['host'];
+        $this->token = $config['token'];
+
+        // Carregando configurações do curl
+        $this->setCurl();
+    }
+
+    private function isDevelopmentMode(): bool
+    {
+        return $this->mode === 'development';
+    }
+
+    public final function get()
+    {
+        // Utilizado para testes locais
+        if ($this->isDevelopmentMode()) {
+            return require $this->getFixturePath();
+        }
+
+        $fullUrl = $this->prepareUrl();
+
+        try {
+            $this->curl->get($fullUrl);
+            $this->curl->close();
+            
+            // Verifica se houve erro HTTP
+            if ($this->curl->error) {
+                $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
+                throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
+            }
+            
+            $response = $this->curl->response;
+
+            // Se a resposta é uma string JSON, decodifica para array
+            if (is_string($response)) {
+                $decoded = json_decode($response, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+
+            // Se já é um array ou objeto, retorna como está
+            return $response;
+        } catch (\Exception $e) {
+            // Dispara alerta para Telegram
+            $app = App::i();
+            $endpoint = $this->endpoint ?? 'N/A';
+            $document = $this->document ?? 'N/A';
+            $app->log->critical("[Gestores CultBR] Erro na API ao buscar dados | Endpoint: {$endpoint} | Documento: {$document} | URL: {$fullUrl} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            
+            // Qualquer erro da API é tratado como indisponibilidade
+            throw new \Exception("Não foi possível consolidar seus dados, tente novamente mais tarde", 0);
+        }
+    }
+
+    protected final function getClientConfig(): array
+    {
+        return Plugin::getInstance()->config['client'] ?? [];
+    }
+
+    private function getFixturePath(): string
+    {
+        return __DIR__ . "/../Fixtures/{$this->getFixtureClassName()}.php";
+    }
+
+    private function getFixtureClassName(): string
+    {
+        $reflectionClass = new ReflectionClass(get_class($this));
+        $className = $reflectionClass->getShortName();
+        return "{$className}Fixture";
+    }
+
+    private function setCurl(): void
+    {
+        $this->curl = new Curl();
+        $this->curl->setHeader('Content-Type', 'application/json');
+        $this->curl->setHeader('Authorization', 'Bearer ' . $this->token);
+        
+        // Configura timeout: 30 segundos para conexão e 60 segundos total
+        $this->curl->setOpt(CURLOPT_CONNECTTIMEOUT, 30);
+        $this->curl->setOpt(CURLOPT_TIMEOUT, 60);
+    }
+
+    private function prepareUrl(): string
+    {
+        return "{$this->host}/{$this->prepareEndpoint()}";
+    }
+
+    private function prepareEndpoint(): string
+    {
+        return str_replace('{document}', $this->document, $this->endpoint);
+    }
+}

@@ -5,7 +5,7 @@ namespace AldirBlanc;
 use MapasCulturais\App;
 use MapasCulturais\Traits;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
-use AldirBlanc\Entities\User;
+use AldirBlanc\Services\UserAccessService;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -22,14 +22,12 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $app = App::i();
 
-        if (!User::isGestorCultBr()) {
-            $this->error('Acesso negado', 403);
+        if (!UserAccessService::isGestorCultBr()) {
             return;
         }
 
         $agent = $app->user->profile;
         if (!$agent) {
-            $this->json([]);
             return;
         }
 
@@ -49,6 +47,170 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $this->json($federativeEntities);
+    }
+
+    /**
+     * Dispara a sincronização
+     * 
+     * POST /aldirblanc/start-sync
+     */
+    function POST_startSync()
+    {
+        $app = App::i();
+
+        // Verifica se o sync já foi iniciado
+        if (isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true) {
+            $this->json(['started' => true]);
+            return;
+        }
+
+        // Marca que o sync começou e limpa flags de erro anteriores
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = false;
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+        
+        // Dispara a sincronização em background
+        try {
+            $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
+            (new \AldirBlanc\Jobs\GestorCultJob($gestorDocument))->sync();
+            
+            // Se o sync foi bem-sucedido mas há flags antigas, limpa
+            if (isset($_SESSION['gestor_cult_sync_error'])) {
+                unset($_SESSION['gestor_cult_sync_error']);
+                unset($_SESSION['gestor_cult_sync_error_message']);
+            }
+            
+            // Garante que syncCompleted está definido
+            if (!isset($_SESSION['gestor_cult_sync_completed'])) {
+                $_SESSION['gestor_cult_sync_completed'] = true;
+            }
+        } catch (\Throwable $e) {
+            // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
+            // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
+            if (!isset($_SESSION['gestor_cult_sync_error'])) {
+                $userId = $app->user->id ?? 'N/A';
+                $app->log->critical("[Gestores CultBR] Erro ao iniciar sincronização | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            }
+            
+            // Em caso de erro, marca como concluído para não travar
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            
+            // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
+            if (!isset($_SESSION['gestor_cult_sync_error'])) {
+                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+            }
+            
+            $this->json(['started' => false, 'error' => $e->getMessage()]);
+            return;
+        }
+        
+        $this->json(['started' => true]);
+    }
+
+    /**
+     * Faz logout quando há erro de consolidação
+     * 
+     * POST /aldirblanc/logout-on-error
+     */
+    function POST_logoutOnError()
+    {
+        $app = App::i();
+        
+        // Limpa todas as flags de sync
+        unset($_SESSION['gestor_cult_sync_started']);
+        unset($_SESSION['gestor_cult_sync_completed']);
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['selectedFederativeEntity']);
+        unset($_SESSION['federative_entity_redirect_uri']);
+        
+        // Faz logout
+        $app->auth->logout();
+        
+        // Redireciona para login
+        $this->json([
+            'success' => true,
+            'redirectTo' => $app->createUrl('auth', 'login')
+        ]);
+    }
+
+    /**
+     * Verifica o status da sincronização
+     * Retorna true quando a sincronização terminar
+     * 
+     * GET /aldirblanc/check-sync-status
+     */
+    function GET_checkSyncStatus()
+    {
+        // Verifica se o sync foi iniciado
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        
+        // Verifica se o sync foi concluído
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        
+        // Verifica se houve erro (verifica se a flag existe e não está vazia)
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
+                   $_SESSION['gestor_cult_sync_error'] !== null && 
+                   $_SESSION['gestor_cult_sync_error'] !== '';
+        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+
+        // Se o sync não foi iniciado, ainda não está pronto
+        if (!$syncStarted) {
+            $this->json(['ready' => false]);
+            return;
+        }
+
+        // Se o sync foi concluído, retorna pronto (com ou sem erro)
+        if ($syncCompleted) {
+            // Se não há erro real, garante que as flags estão limpas
+            if (!$hasError) {
+                unset($_SESSION['gestor_cult_sync_error']);
+                unset($_SESSION['gestor_cult_sync_error_message']);
+            }
+            
+            $this->json([
+                'ready' => true,
+                'error' => $hasError,
+                'errorMessage' => $hasError ? $errorMessage : null
+            ]);
+            return;
+        }
+
+        // Sync ainda em andamento
+        $this->json(['ready' => false]);
+    }
+
+    /**
+     * Página de consolidação de dados (tela de loading)
+     * 
+     * GET /aldirblanc/consolidating-data
+     */
+    public function GET_consolidatingData()
+    {
+        $app = App::i();
+
+        // Verifica se o sync já foi concluído
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
+                   $_SESSION['gestor_cult_sync_error'] !== null && 
+                   $_SESSION['gestor_cult_sync_error'] !== '';
+
+        // Se há erro, mostra a tela de erro (usuário não pode avançar)
+        if ($syncCompleted && $hasError) {
+            $this->render('consolidating-data');
+            return;
+        }
+
+        // Se concluído sem erro, redireciona para o painel
+        if ($syncCompleted && !$hasError) {
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        // Mostra a tela de consolidação (que vai disparar o sync)
+        $this->render('consolidating-data');
     }
 
     /**

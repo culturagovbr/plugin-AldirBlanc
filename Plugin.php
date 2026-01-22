@@ -12,10 +12,41 @@ class Plugin extends \MapasCulturais\Plugin
     use RegisterFunctions;
     use DoctrineEventListenerTrait;
 
+    protected static $instance;
+
+    function __construct($config = [])
+    {
+        $config += [
+            'client' => [
+                'mode' => env('ALDIRBLANC_CULTBR_MODE', 'development'),
+                'host' => env('ALDIRBLANC_CULTBR_HOST', null),
+                'token' => env('ALDIRBLANC_CULTBR_TOKEN', null),
+                'gestorEndpoint' => env('ALDIRBLANC_CULTBR_GESTOR_ENDPOINT', null),
+                'enteFederadoEndpoint' => env('ALDIRBLANC_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+            ]
+        ];
+
+        parent::__construct($config);
+        self::$instance = $this;
+    }
+
+    /**
+     * Retorna a instância do plugin
+     * 
+     * @return Plugin|null
+     */
+    public static function getInstance(): ?Plugin
+    {
+        return self::$instance;
+    }
+
+
     public function _init()
     {
         // Inicializa os mapeamentos do Doctrine para a entidade FederativeEntity
         $this->initDoctrineMappings();
+
+        $app = App::i();
     }
 
     function register()
@@ -42,6 +73,13 @@ class Plugin extends \MapasCulturais\Plugin
                 'private' => false
             ]);
         }
+
+        // Registra metadado last_synced_at apenas para Agent
+        $this->registerMetadata('MapasCulturais\Entities\Agent', 'gestorCultBrLastSyncedAt', [
+            'label' => i::__('Data da última sincronização com API Gestor CultBR'),
+            'type' => 'DateTime',
+            'private' => true
+        ]);
     }
 
     /**

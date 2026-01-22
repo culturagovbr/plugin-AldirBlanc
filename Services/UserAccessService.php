@@ -1,12 +1,11 @@
 <?php
 
-namespace AldirBlanc\Entities;
+namespace AldirBlanc\Services;
 
 use AldirBlanc\Enum\Role;
-use MapasCulturais\Entities\User as BaseUser;
 use MapasCulturais\App;
 
-class User extends BaseUser
+class UserAccessService
 {
     /**
      * Verifica se o usuário é um gestor Cult
@@ -16,6 +15,20 @@ class User extends BaseUser
     public static function isGestorCultBr(): bool
     {
         return App::i()->user->is(Role::GESTOR_CULT_BR);
+    }
+
+    /**
+     * Verifica se o usuário é um administrador
+     * 
+     * @return bool
+     */
+    public static function isAdmin(): bool
+    {
+        $user = App::i()->user;
+
+        return (bool) array_filter(Role::ADMIN_ROLES, function ($role) use ($user) {
+            return $user->is($role);
+        });
     }
 
     /**
