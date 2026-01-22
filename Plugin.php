@@ -53,15 +53,12 @@ class Plugin extends \MapasCulturais\Plugin
 
         $app = App::i();
 
-        $app->hook('auth.login', function($user) use($app){
+        $app->hook('auth.login', function ($user) use ($app) {
             /** @var UserAccessService $user */
 
-            if (UserAccessService::isGestorCultBr()) {
-                $gestorDocument = new GestorDocument((new UserService())->getCpf());
-                (new GestorCultJob($gestorDocument))->sync();
-            }
+            $gestorDocument = new GestorDocument((new UserService())->getCpf());
+            (new GestorCultJob($gestorDocument))->sync();
         });
-
     }
 
     function register()
