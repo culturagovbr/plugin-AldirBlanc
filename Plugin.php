@@ -2,11 +2,6 @@
 
 namespace AldirBlanc;
 
-use AldirBlanc\Dtos\GestorDocument;
-use AldirBlanc\Jobs\GestorCultJob;
-use AldirBlanc\Services\SyncGestor;
-use AldirBlanc\Services\UserAccessService;
-use AldirBlanc\Services\UserService;
 use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
@@ -52,13 +47,6 @@ class Plugin extends \MapasCulturais\Plugin
         $this->initDoctrineMappings();
 
         $app = App::i();
-
-        $app->hook('auth.login', function ($user) use ($app) {
-            /** @var UserAccessService $user */
-
-            $gestorDocument = new GestorDocument((new UserService())->getCpf());
-            (new GestorCultJob($gestorDocument))->sync();
-        });
     }
 
     function register()

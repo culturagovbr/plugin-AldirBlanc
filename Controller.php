@@ -50,6 +50,90 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
+     * Dispara a sincronização
+     * 
+     * POST /aldirblanc/start-sync
+     */
+    function POST_startSync()
+    {
+        $app = App::i();
+
+        // Verifica se o sync já foi iniciado
+        if (isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true) {
+            $this->json(['started' => true]);
+            return;
+        }
+
+        // Marca que o sync começou
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = false;
+
+        // Dispara a sincronização em background
+        try {
+            $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
+            (new \AldirBlanc\Jobs\GestorCultJob($gestorDocument))->sync();
+            
+            $this->json(['started' => true]);
+        } catch (\Throwable $e) {
+            // Em caso de erro, marca como concluído para não travar
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            $this->json(['started' => false, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Verifica o status da sincronização
+     * Retorna true quando a sincronização terminar
+     * 
+     * GET /aldirblanc/check-sync-status
+     */
+    function GET_checkSyncStatus()
+    {
+        // Verifica se o sync foi iniciado
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        
+        // Verifica se o sync foi concluído
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+
+        // Se o sync não foi iniciado, ainda não está pronto
+        if (!$syncStarted) {
+            $this->json(['ready' => false]);
+            return;
+        }
+
+        // Se o sync foi concluído, retorna pronto
+        if ($syncCompleted) {
+            $this->json(['ready' => true]);
+            return;
+        }
+
+        // Sync ainda em andamento
+        $this->json(['ready' => false]);
+    }
+
+    /**
+     * Página de consolidação de dados (tela de loading)
+     * 
+     * GET /aldirblanc/consolidating-data
+     */
+    public function GET_consolidatingData()
+    {
+        $app = App::i();
+
+        // Verifica se o sync já foi concluído
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+
+        if ($syncCompleted) {
+            // Após o sync terminar, redireciona para o painel
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        // Mostra a tela de consolidação (que vai disparar o sync)
+        $this->render('consolidating-data');
+    }
+
+    /**
      * Limpa a seleção e redireciona para a página de seleção
      * 
      * GET /aldirblanc/change-federative-entity

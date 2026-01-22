@@ -34,6 +34,8 @@ class GestorCultJob
         $agent = $app->user->profile;
 
         if (!$agent) {
+            // Marca que o sync terminou mesmo sem agente
+            $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
 
@@ -44,17 +46,33 @@ class GestorCultJob
 
         // Verifica se a sincronização já está em andamento
         if ($app->cache->contains($lockKey)) {
+            // Se está em lock, verifica se já há dados no cache
+            // Se houver, marca como concluído (outro processo já sincronizou)
+            $cachedEntities = $app->cache->fetch($cacheKey);
+            if ($cachedEntities !== false && $cachedEntities !== null) {
+                // Normaliza os dados antes de verificar se está vazio
+                $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
+                if (!empty($cachedEntities)) {
+                    // Já há dados no cache, marca como concluído
+                    $_SESSION['gestor_cult_sync_completed'] = true;
+                }
+            }
+            // Se não há dados, retorna e a tela continuará verificando
             return;
         }
 
         // Verifica se o limite (por usuário) de requests por dia foi atingido
         $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
         if ($requestsCount >= self::MAX_REQUESTS_PER_DAY) {
+            // Marca que o sync terminou (limite atingido)
+            $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
 
         // Verifica se a última sincronização foi há menos de 1 hora [banco de dados]
         if ($this->wasSyncedLessThanOneHourAgo($agent)) {
+            // Marca que o sync terminou (já sincronizado recentemente)
+            $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
 
@@ -70,14 +88,22 @@ class GestorCultJob
                 $app->cache->save($requestsKey, $requestsCount + 1, 86400);
                 $federativeEntities = (new GestorClient($this->gestorDocument))->get();
                 $syncedFromApi = true;
+                
+                // Garante que seja um array (pode vir como string JSON)
+                $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+                
                 $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
             } finally {
                 $app->cache->delete($lockKey);
             }
+        } else {
+            // Normaliza os dados do cache (pode estar serializado)
+            $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
         }
 
-        // Se não houver entes federados, para aqui
+        // Se não houver entes federados, marca como concluído e para aqui
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+            $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
 
@@ -88,16 +114,56 @@ class GestorCultJob
             $app->enableAccessControl();
         }
 
-        // Associa os entes federados ao agente
-        $this->associateFederativeEntities($agent, $federativeEntities);
+        try {
+            // Associa os entes federados ao agente
+            $this->associateFederativeEntities($agent, $federativeEntities);
 
-        // Se a sincronização foi feita da API, atualiza a data da última sincronização
-        if ($syncedFromApi) {
-            $app->disableAccessControl();
-            $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
-            $agent->save(true);
-            $app->enableAccessControl();
+            // Se a sincronização foi feita da API, atualiza a data da última sincronização
+            if ($syncedFromApi) {
+                $app->disableAccessControl();
+                $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
+                $agent->save(true);
+                $app->enableAccessControl();
+            }
+        } catch (\Throwable $e) {
+            // Em caso de erro, ainda marca como concluído para não travar a tela
+            error_log('Erro ao associar entes federados: ' . $e->getMessage());
+        } finally {
+            // Sempre marca que o sync terminou
+            $_SESSION['gestor_cult_sync_completed'] = true;
         }
+    }
+
+    /**
+     * Normaliza os dados dos entes federados para garantir que seja um array
+     * 
+     * @param mixed $federativeEntities
+     * @return array
+     */
+    private function normalizeFederativeEntities($federativeEntities): array
+    {
+        // Se já é um array, retorna como está
+        if (is_array($federativeEntities)) {
+            return $federativeEntities;
+        }
+
+        // Se é uma string, tenta decodificar JSON
+        if (is_string($federativeEntities)) {
+            // Tenta decodificar JSON primeiro
+            $decoded = json_decode($federativeEntities, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+            
+            // Se não for JSON válido, tenta unserialize (caso o cache tenha serializado)
+            $unserialized = @unserialize($federativeEntities);
+            if ($unserialized !== false && is_array($unserialized)) {
+                return $unserialized;
+            }
+        }
+
+        // Se não conseguiu normalizar, retorna array vazio
+        return [];
     }
 
     /**

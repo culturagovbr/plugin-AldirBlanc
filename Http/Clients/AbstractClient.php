@@ -53,8 +53,17 @@ abstract class AbstractClient
         try {
             $this->curl->get($fullUrl);
             $this->curl->close();
-            $response =  $this->curl->response;
+            $response = $this->curl->response;
 
+            // Se a resposta é uma string JSON, decodifica para array
+            if (is_string($response)) {
+                $decoded = json_decode($response, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+
+            // Se já é um array ou objeto, retorna como está
             return $response;
         } catch (\Exception $e) {
             throw new \Exception("Erro ao buscar dados: {$e->getMessage()}");
