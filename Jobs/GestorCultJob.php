@@ -107,6 +107,9 @@ class GestorCultJob
                 
                 $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
             } catch (\Throwable $e) {
+                // Dispara alerta para Telegram
+                $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+                
                 // Qualquer erro da API é tratado como indisponibilidade
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
                 $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
@@ -159,10 +162,12 @@ class GestorCultJob
             // Marca como concluído sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
         } catch (\Throwable $e) {
+            // Dispara alerta para Telegram
+            $app->log->critical("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            
             // Em caso de erro ao associar entes federados, trata como indisponibilidade da API
             $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
             $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
-            error_log('Erro ao associar entes federados: ' . $e->getMessage());
             
             // Marca como concluído com erro
             $_SESSION['gestor_cult_sync_completed'] = true;

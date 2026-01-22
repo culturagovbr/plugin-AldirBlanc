@@ -73,6 +73,12 @@ abstract class AbstractClient
             // Se já é um array ou objeto, retorna como está
             return $response;
         } catch (\Exception $e) {
+            // Dispara alerta para Telegram
+            $app = App::i();
+            $endpoint = $this->endpoint ?? 'N/A';
+            $document = $this->document ?? 'N/A';
+            $app->log->critical("[Gestores CultBR] Erro na API ao buscar dados | Endpoint: {$endpoint} | Documento: {$document} | URL: {$fullUrl} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            
             // Qualquer erro da API é tratado como indisponibilidade
             throw new \Exception("Não foi possível consolidar seus dados, tente novamente mais tarde", 0);
         }

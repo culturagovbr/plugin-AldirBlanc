@@ -86,6 +86,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 $_SESSION['gestor_cult_sync_completed'] = true;
             }
         } catch (\Throwable $e) {
+            // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
+            // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
+            if (!isset($_SESSION['gestor_cult_sync_error'])) {
+                $userId = $app->user->id ?? 'N/A';
+                $app->log->critical("[Gestores CultBR] Erro ao iniciar sincronização | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            }
+            
             // Em caso de erro, marca como concluído para não travar
             $_SESSION['gestor_cult_sync_completed'] = true;
             
