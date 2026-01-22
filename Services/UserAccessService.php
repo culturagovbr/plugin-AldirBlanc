@@ -1,4 +1,4 @@
-<?php 
+<?php
 
 namespace AldirBlanc\Services;
 
@@ -15,6 +15,20 @@ class UserAccessService
     public static function isGestorCultBr(): bool
     {
         return App::i()->user->is(Role::GESTOR_CULT_BR);
+    }
+
+    /**
+     * Verifica se o usuário é um administrador
+     * 
+     * @return bool
+     */
+    public static function isAdmin(): bool
+    {
+        $user = App::i()->user;
+
+        return (bool) array_filter(Role::ADMIN_ROLES, function ($role) use ($user) {
+            return $user->is($role);
+        });
     }
 
     /**

@@ -85,6 +85,13 @@ class Plugin extends \MapasCulturais\Plugin
                 'private' => false
             ]);
         }
+
+        // Registra metadado last_synced_at apenas para Agent
+        $this->registerMetadata('MapasCulturais\Entities\Agent', 'gestorCultBrLastSyncedAt', [
+            'label' => i::__('Data da última sincronização com API Gestor CultBR'),
+            'type' => 'DateTime',
+            'private' => true
+        ]);
     }
 
     /**

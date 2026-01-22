@@ -17,4 +17,11 @@ class Role
         self::SUPER_ADMIN,
         self::ADMIN
     ];
+
+    public const ADMIN_ROLES = [
+        self::SAAS_SUPER_ADMIN,
+        self::SAAS_ADMIN,
+        self::SUPER_ADMIN,
+        self::ADMIN
+    ];
 }
