@@ -53,6 +53,13 @@ abstract class AbstractClient
         try {
             $this->curl->get($fullUrl);
             $this->curl->close();
+            
+            // Verifica se houve erro HTTP
+            if ($this->curl->error) {
+                $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
+                throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
+            }
+            
             $response = $this->curl->response;
 
             // Se a resposta é uma string JSON, decodifica para array
@@ -66,7 +73,8 @@ abstract class AbstractClient
             // Se já é um array ou objeto, retorna como está
             return $response;
         } catch (\Exception $e) {
-            throw new \Exception("Erro ao buscar dados: {$e->getMessage()}");
+            // Qualquer erro da API é tratado como indisponibilidade
+            throw new \Exception("Não foi possível consolidar seus dados, tente novamente mais tarde", 0);
         }
     }
 
@@ -92,6 +100,10 @@ abstract class AbstractClient
         $this->curl = new Curl();
         $this->curl->setHeader('Content-Type', 'application/json');
         $this->curl->setHeader('Authorization', 'Bearer ' . $this->token);
+        
+        // Configura timeout: 30 segundos para conexão e 60 segundos total
+        $this->curl->setOpt(CURLOPT_CONNECTTIMEOUT, 30);
+        $this->curl->setOpt(CURLOPT_TIMEOUT, 60);
     }
 
     private function prepareUrl(): string

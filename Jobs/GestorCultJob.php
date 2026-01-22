@@ -33,8 +33,12 @@ class GestorCultJob
         $document = $this->gestorDocument->document;
         $agent = $app->user->profile;
 
+        // Limpa flags de erro no início do sync (caso tenha sobrado de tentativa anterior)
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+
         if (!$agent) {
-            // Marca que o sync terminou mesmo sem agente
+            // Marca que o sync terminou mesmo sem agente (sem erro)
             $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
@@ -53,8 +57,11 @@ class GestorCultJob
                 // Normaliza os dados antes de verificar se está vazio
                 $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
                 if (!empty($cachedEntities)) {
-                    // Já há dados no cache, marca como concluído
+                    // Já há dados no cache, marca como concluído (sem erro)
                     $_SESSION['gestor_cult_sync_completed'] = true;
+                    // Limpa flags de erro se existirem
+                    unset($_SESSION['gestor_cult_sync_error']);
+                    unset($_SESSION['gestor_cult_sync_error_message']);
                 }
             }
             // Se não há dados, retorna e a tela continuará verificando
@@ -64,15 +71,21 @@ class GestorCultJob
         // Verifica se o limite (por usuário) de requests por dia foi atingido
         $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
         if ($requestsCount >= self::MAX_REQUESTS_PER_DAY) {
-            // Marca que o sync terminou (limite atingido)
+            // Marca que o sync terminou (limite atingido) - sem erro, apenas limite
             $_SESSION['gestor_cult_sync_completed'] = true;
+            // Limpa flags de erro se existirem
+            unset($_SESSION['gestor_cult_sync_error']);
+            unset($_SESSION['gestor_cult_sync_error_message']);
             return;
         }
 
         // Verifica se a última sincronização foi há menos de 1 hora [banco de dados]
         if ($this->wasSyncedLessThanOneHourAgo($agent)) {
-            // Marca que o sync terminou (já sincronizado recentemente)
+            // Marca que o sync terminou (já sincronizado recentemente) - sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
+            // Limpa flags de erro se existirem
+            unset($_SESSION['gestor_cult_sync_error']);
+            unset($_SESSION['gestor_cult_sync_error_message']);
             return;
         }
 
@@ -93,6 +106,16 @@ class GestorCultJob
                 $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
                 
                 $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
+            } catch (\Throwable $e) {
+                // Qualquer erro da API é tratado como indisponibilidade
+                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+                
+                // Marca como concluído com erro para não travar a tela
+                $_SESSION['gestor_cult_sync_completed'] = true;
+                
+                // Re-lança a exceção para ser capturada pelo try/catch externo
+                throw $e;
             } finally {
                 $app->cache->delete($lockKey);
             }
@@ -101,9 +124,12 @@ class GestorCultJob
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
         }
 
-        // Se não houver entes federados, marca como concluído e para aqui
+        // Se não houver entes federados, marca como concluído e para aqui (sem erro)
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
             $_SESSION['gestor_cult_sync_completed'] = true;
+            // Limpa flags de erro se existirem
+            unset($_SESSION['gestor_cult_sync_error']);
+            unset($_SESSION['gestor_cult_sync_error_message']);
             return;
         }
 
@@ -125,11 +151,20 @@ class GestorCultJob
                 $agent->save(true);
                 $app->enableAccessControl();
             }
+            
+            // Limpa flags de erro se o sync foi bem-sucedido
+            unset($_SESSION['gestor_cult_sync_error']);
+            unset($_SESSION['gestor_cult_sync_error_message']);
+            
+            // Marca como concluído sem erro
+            $_SESSION['gestor_cult_sync_completed'] = true;
         } catch (\Throwable $e) {
-            // Em caso de erro, ainda marca como concluído para não travar a tela
+            // Em caso de erro ao associar entes federados, trata como indisponibilidade da API
+            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+            $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
             error_log('Erro ao associar entes federados: ' . $e->getMessage());
-        } finally {
-            // Sempre marca que o sync terminou
+            
+            // Marca como concluído com erro
             $_SESSION['gestor_cult_sync_completed'] = true;
         }
     }

@@ -64,21 +64,69 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        // Marca que o sync começou
+        // Marca que o sync começou e limpa flags de erro anteriores
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
-
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+        
         // Dispara a sincronização em background
         try {
             $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
             (new \AldirBlanc\Jobs\GestorCultJob($gestorDocument))->sync();
             
-            $this->json(['started' => true]);
+            // Se o sync foi bem-sucedido mas há flags antigas, limpa
+            if (isset($_SESSION['gestor_cult_sync_error'])) {
+                unset($_SESSION['gestor_cult_sync_error']);
+                unset($_SESSION['gestor_cult_sync_error_message']);
+            }
+            
+            // Garante que syncCompleted está definido
+            if (!isset($_SESSION['gestor_cult_sync_completed'])) {
+                $_SESSION['gestor_cult_sync_completed'] = true;
+            }
         } catch (\Throwable $e) {
             // Em caso de erro, marca como concluído para não travar
             $_SESSION['gestor_cult_sync_completed'] = true;
+            
+            // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
+            if (!isset($_SESSION['gestor_cult_sync_error'])) {
+                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+            }
+            
             $this->json(['started' => false, 'error' => $e->getMessage()]);
+            return;
         }
+        
+        $this->json(['started' => true]);
+    }
+
+    /**
+     * Faz logout quando há erro de consolidação
+     * 
+     * POST /aldirblanc/logout-on-error
+     */
+    function POST_logoutOnError()
+    {
+        $app = App::i();
+        
+        // Limpa todas as flags de sync
+        unset($_SESSION['gestor_cult_sync_started']);
+        unset($_SESSION['gestor_cult_sync_completed']);
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['selectedFederativeEntity']);
+        unset($_SESSION['federative_entity_redirect_uri']);
+        
+        // Faz logout
+        $app->auth->logout();
+        
+        // Redireciona para login
+        $this->json([
+            'success' => true,
+            'redirectTo' => $app->createUrl('auth', 'login')
+        ]);
     }
 
     /**
@@ -94,6 +142,12 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         
         // Verifica se o sync foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        
+        // Verifica se houve erro (verifica se a flag existe e não está vazia)
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
+                   $_SESSION['gestor_cult_sync_error'] !== null && 
+                   $_SESSION['gestor_cult_sync_error'] !== '';
+        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? 'Não foi possível consolidar seus dados, tente novamente mais tarde';
 
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted) {
@@ -101,9 +155,19 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        // Se o sync foi concluído, retorna pronto
+        // Se o sync foi concluído, retorna pronto (com ou sem erro)
         if ($syncCompleted) {
-            $this->json(['ready' => true]);
+            // Se não há erro real, garante que as flags estão limpas
+            if (!$hasError) {
+                unset($_SESSION['gestor_cult_sync_error']);
+                unset($_SESSION['gestor_cult_sync_error_message']);
+            }
+            
+            $this->json([
+                'ready' => true,
+                'error' => $hasError,
+                'errorMessage' => $hasError ? $errorMessage : null
+            ]);
             return;
         }
 
@@ -122,9 +186,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         // Verifica se o sync já foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
+                   $_SESSION['gestor_cult_sync_error'] !== null && 
+                   $_SESSION['gestor_cult_sync_error'] !== '';
 
-        if ($syncCompleted) {
-            // Após o sync terminar, redireciona para o painel
+        // Se há erro, mostra a tela de erro (usuário não pode avançar)
+        if ($syncCompleted && $hasError) {
+            $this->render('consolidating-data');
+            return;
+        }
+
+        // Se concluído sem erro, redireciona para o painel
+        if ($syncCompleted && !$hasError) {
             $app->redirect($app->createUrl('panel', 'index'));
             return;
         }
