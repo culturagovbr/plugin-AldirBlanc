@@ -18,11 +18,11 @@ class Plugin extends \MapasCulturais\Plugin
     {
         $config += [
             'client' => [
-                'mode' => env('ALDIRBLANC_CULTBR_MODE', 'development'),
-                'host' => env('ALDIRBLANC_CULTBR_HOST', null),
-                'token' => env('ALDIRBLANC_CULTBR_TOKEN', null),
-                'gestorEndpoint' => env('ALDIRBLANC_CULTBR_GESTOR_ENDPOINT', null),
-                'enteFederadoEndpoint' => env('ALDIRBLANC_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+                'mode' => env('PNAB_CULTBR_MODE', 'development'),
+                'host' => env('PNAB_CULTBR_HOST', null),
+                'token' => env('PNAB_CULTBR_TOKEN', null),
+                'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
+                'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
             ]
         ];
 
