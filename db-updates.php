@@ -21,5 +21,20 @@ return [
             __try("CREATE INDEX IDX_federative_entity_subsite_id ON federative_entity (subsite_id)");
             __try("ALTER TABLE federative_entity ADD CONSTRAINT FK_federative_entity_subsite FOREIGN KEY (subsite_id) REFERENCES subsite(id) ON DELETE CASCADE");
         }
+    },
+
+    'add FederativeEntity to object_type enum' => function () {
+        __try("
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_enum 
+                    WHERE enumlabel = 'AldirBlanc\Entities\FederativeEntity' 
+                    AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'object_type')
+                ) THEN
+                    ALTER TYPE object_type ADD VALUE 'AldirBlanc\Entities\FederativeEntity';
+                END IF;
+            END $$;
+        ");
     }
 ];
