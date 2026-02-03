@@ -102,7 +102,6 @@ class GestorCultJob
                 $federativeEntities = (new GestorClient($this->gestorDocument))->get();
                 $syncedFromApi = true;
                 
-                // Garante que seja um array (pode vir como string JSON)
                 $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
                 
                 $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
@@ -127,8 +126,15 @@ class GestorCultJob
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
         }
 
-        // Se não houver entes federados, marca como concluído e para aqui (sem erro)
+        // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+            // Se o usuário é gestor CultBR, remove a permissão (mas mantém as associações)
+            if (UserAccessService::isGestorCultBr()) {
+                $app->disableAccessControl();
+                $app->user->removeRole(Role::GESTOR_CULT_BR);
+                $app->enableAccessControl();
+            }
+            
             $_SESSION['gestor_cult_sync_completed'] = true;
             // Limpa flags de erro se existirem
             unset($_SESSION['gestor_cult_sync_error']);
