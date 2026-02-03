@@ -1,8 +1,9 @@
 <?php
 
-namespace Pnab\Entities;
+namespace AldirBlanc\Entities;
 
 use Doctrine\ORM\Mapping as ORM;
+use MapasCulturais\Traits;
 
 /**
  * @property int $id
@@ -10,15 +11,19 @@ use Doctrine\ORM\Mapping as ORM;
  * @property string $document
  * @property \DateTime $createTimestamp
  * @property \DateTime $updateTimestamp
- * @property int $subsiteId
+ * @property-read int $subsiteId
+ * @property-read string $originSiteUrl
  * @property \MapasCulturais\Entities\Subsite $subsite
+ * @property \AldirBlanc\Entities\FederativeEntityAgentRelation[] $__agentRelations
  *
  * @ORM\Table(name="federative_entity")
- * @ORM\Entity
- * @ORM\entity(repositoryClass="MapasCulturais\Repository")
+ * @ORM\Entity(repositoryClass="MapasCulturais\Repository")
  */
 class FederativeEntity extends \MapasCulturais\Entity
 {
+    use Traits\EntityAgentRelation,
+        Traits\EntityOriginSubsite;
+
     /**
      * @var integer
      *
@@ -73,4 +78,11 @@ class FederativeEntity extends \MapasCulturais\Entity
      * })
      */
     protected $subsite;
+
+    /**
+     * @var \AldirBlanc\Entities\FederativeEntityAgentRelation[] Agent Relations
+     *
+     * @ORM\OneToMany(targetEntity="AldirBlanc\Entities\FederativeEntityAgentRelation", mappedBy="owner", cascade={"remove"}, orphanRemoval=true)
+     */
+    protected $__agentRelations;
 }
