@@ -52,35 +52,103 @@ abstract class AbstractClient
 
         try {
             $this->curl->get($fullUrl);
-            $this->curl->close();
-            
-            // Verifica se houve erro HTTP
-            if ($this->curl->error) {
-                $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
-                throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
-            }
-            
+
             $response = $this->curl->response;
+
+            // Obtém o código HTTP da resposta usando múltiplas formas
+            $httpCode = 0;
+            if (method_exists($this->curl, 'getInfo')) {
+                $httpCode = $this->curl->getInfo(CURLINFO_HTTP_CODE) ?: 0;
+            }
+
+            if ($httpCode === 0) {
+                $httpCode = $this->curl->httpStatusCode ?? $this->curl->httpErrorCode ?? 0;
+            }
+
+            if ($httpCode === 404) {
+                return [];
+            }
 
             // Se a resposta é uma string JSON, decodifica para array
             if (is_string($response)) {
+                // Se a string está vazia, retorna array vazio (caso válido quando não encontra dados)
+                if (trim($response) === '') {
+                    return [];
+                }
+
                 $decoded = json_decode($response, true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+
+                // Verifica se houve erro no JSON
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new \Exception('Resposta da API não é um JSON válido', 0);
+                }
+
+                // Verifica se a resposta contém o JSON de erro 404 da API
+                if (
+                    is_array($decoded) && isset($decoded['detail']) &&
+                    strpos(strtolower($decoded['detail']), 'não encontrada') !== false
+                ) {
+                    return [];
+                }
+
+                if (is_array($decoded)) {
+                    if (!empty($decoded) && (isset($decoded['error']) || isset($decoded['message']) || isset($decoded['erro']))) {
+                        $errorMsg = $decoded['message'] ?? $decoded['error'] ?? $decoded['erro'] ?? 'Erro na resposta da API';
+                        throw new \Exception($errorMsg, $httpCode ?: 0);
+                    }
+
                     return $decoded;
+                }
+
+                // Se decodificou para null, retorna array vazio (caso válido)
+                if ($decoded === null) {
+                    return [];
                 }
             }
 
-            // Se já é um array ou objeto, retorna como está
-            return $response;
+            // Verifica outros códigos HTTP de erro (500, etc) ANTES de verificar curl->error
+            if ($httpCode >= 400 && $httpCode !== 404) {
+                $errorMessage = $this->curl->errorMessage ?? "Erro HTTP {$httpCode}";
+                throw new \Exception($errorMessage, $httpCode);
+            }
+
+            // Verifica se houve erro HTTP (exceto 404 que já foi tratado)
+            if ($this->curl->error && $httpCode !== 404) {
+                $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
+                throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
+            }
+
+            // Se já é um array, retorna como está (incluindo arrays vazios)
+            if (is_array($response)) {
+                return $response;
+            }
+
+            // Se é null, retorna array vazio (caso válido quando não encontra dados)
+            if ($response === null) {
+                return [];
+            }
+
+            // Se é um objeto, retorna como está
+            if (is_object($response)) {
+                return $response;
+            }
+
+            // Se chegou aqui, a resposta não está em um formato esperado
+            throw new \Exception('Formato de resposta da API não reconhecido', 0);
         } catch (\Exception $e) {
             // Dispara alerta para Telegram
             $app = App::i();
             $endpoint = $this->endpoint ?? 'N/A';
             $document = $this->document ?? 'N/A';
             $app->log->critical("[Gestores CultBR] Erro na API ao buscar dados | Endpoint: {$endpoint} | Documento: {$document} | URL: {$fullUrl} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            
+
             // Qualquer erro da API é tratado como indisponibilidade
             throw new \Exception("Não foi possível consolidar seus dados, tente novamente mais tarde", 0);
+        } finally {
+            // Garante que o curl seja sempre fechado
+            if (isset($this->curl)) {
+                $this->curl->close();
+            }
         }
     }
 
@@ -106,10 +174,12 @@ abstract class AbstractClient
         $this->curl = new Curl();
         $this->curl->setHeader('Content-Type', 'application/json');
         $this->curl->setHeader('Authorization', 'Bearer ' . $this->token);
-        
+
         // Configura timeout: 30 segundos para conexão e 60 segundos total
         $this->curl->setOpt(CURLOPT_CONNECTTIMEOUT, 30);
         $this->curl->setOpt(CURLOPT_TIMEOUT, 60);
+
+        $this->curl->setOpt(CURLOPT_FAILONERROR, false);
     }
 
     private function prepareUrl(): string
