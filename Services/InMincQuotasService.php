@@ -6,20 +6,13 @@ use AldirBlanc\Enum\InMincQuotaPercent;
 use MapasCulturais\i;
 
 /**
- * Serviço responsável pelas regras de cotas da IN-MinC-10/2023.
- *
- * Centraliza:
- * - regra de arredondamento;
- * - cálculo de mínimos por total de vagas;
- * - validação do metadado reservaVagasCotas da oportunidade.
+ * Regras de cotas da IN-MinC-10/2023: arredondamento, mínimos por total de vagas e validação de reservaVagasCotas.
  */
 class InMincQuotasService
 {
     private const ROUND_THRESHOLD = 0.5;
 
-    /**
-     * Arredondamento: fração >= 0.5 sobe para o inteiro seguinte; senão, desce.
-     */
+    /** Art. 6º § 2º: fração >= 0,5 arredonda pra cima, senão pra baixo. */
     public static function roundQuota(float $value): int
     {
         $floor = (int) floor($value);
@@ -28,12 +21,7 @@ class InMincQuotasService
         return $fraction >= self::ROUND_THRESHOLD ? $floor + 1 : $floor;
     }
 
-    /**
-     * Mínimos obrigatórios de vagas por cota da lei (regra geral 25/10/5).
-     *
-     * @param int $totalVacancies Total de vagas (campo "Total de vagas")
-     * @return int[] [min_negras, min_indigenas, min_pcd]
-     */
+    /** Mínimos regra geral (25% negras, 10% indígenas, 5% PCD). Retorna [min_negras, min_indigenas, min_pcd]. */
     public static function getNormalMinimums(int $totalVacancies): array
     {
         if ($totalVacancies <= 0) {
@@ -52,14 +40,7 @@ class InMincQuotasService
         return [$minBlack, $minIndigenous, $minPcd];
     }
 
-    /**
-     * Mínimos obrigatórios de vagas por cota da lei NO CENÁRIO EXCEPCIONAL DO § 4º:
-     * todas as categorias (faixas) com apenas 1 vaga cada, e os percentuais mínimos
-     * são aplicados sobre o total de vagas do edital: 25% negras, 10% indígenas, 10% PCD.
-     *
-     * @param int $totalVacancies Total de vagas (campo "Total de vagas")
-     * @return int[] [min_negras, min_indigenas, min_pcd]
-     */
+    /** Art. 6º § 4º: uma vaga por categoria — mínimos sobre o total do edital (25%, 10%, 10% PCD). Retorna [min_negras, min_indigenas, min_pcd]. */
     public static function getExceptionCategoryMinimums(int $totalVacancies): array
     {
         if ($totalVacancies <= 0) {
@@ -79,13 +60,7 @@ class InMincQuotasService
         return [$minBlack, $minIndigenous, $minPcd];
     }
 
-    /**
-     * Valida o metadado reservaVagasCotas da primeira fase.
-     *
-     * @param \MapasCulturais\Entities\Opportunity $entity
-     * @param array $postData
-     * @return array|false Array de erros no formato [ 'reservaVagasCotas' => [msg] ] ou false
-     */
+    /** Valida reservaVagasCotas na primeira fase. Retorna array de erro ou false. */
     public static function validateQuotasReservation(\MapasCulturais\Entities\Opportunity $entity, array $postData)
     {
         if (empty($entity->id) || !$entity->isFirstPhase) {
@@ -219,12 +194,7 @@ class InMincQuotasService
         return false;
     }
 
-    /**
-     * Garante valor como array (objeto JSON vindo do banco vira array associativo).
-     *
-     * @param mixed $value
-     * @return array
-     */
+    /** Normaliza para array (objeto/JSON do banco vira array associativo). */
     private static function ensureArray($value): array
     {
         if (is_array($value)) {
