@@ -2,22 +2,72 @@
 
 namespace AldirBlanc\Services;
 
+use AldirBlanc\Entities\FederativeEntity;
+use AldirBlanc\Enum\MultiselectField;
+use AldirBlanc\Enum\OpportunityStatus;
+use AldirBlanc\Enum\SpecialOption;
+use AldirBlanc\Enum\TipoProponenteEnum;
 use MapasCulturais\App;
+use MapasCulturais\Entity;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\i;
 
 class OpportunityService
 {
-    private const NOT_APPLICABLE_KEY = '__edital_nao_se_direciona__';
-    private const ALL_OPTIONS_KEY = '__todas_opcoes__';
 
-    /** Labels "Edital não se direciona a..." por campo (para envio à API em formato label). */
-    private const NOT_APPLICABLE_LABELS = [
-        'segmento' => 'Edital não se direciona a segmentos específicos',
-        'etapa' => 'Edital não se direciona a etapa específica',
-        'pauta' => 'Edital não se direciona a pautas específicas',
-        'territorio' => 'Edital não se direciona a territórios específicos',
-    ];
+    /**
+     * Carrega uma oportunidade por ID com metadados, arquivos, subsite e parent (primeira fase)
+     * já hidratados em uma única query, para uso na integração (job/API).
+     */
+    public function findOpportunityWithIntegrationData(int $id): ?Opportunity
+    {
+        $app = App::i();
+        $dql = "
+            SELECT o, om, s, p, pm, opf
+            FROM MapasCulturais\Entities\Opportunity o
+            LEFT JOIN o.__metadata om
+            LEFT JOIN o.subsite s
+            LEFT JOIN o.parent p
+            LEFT JOIN p.__metadata pm
+            LEFT JOIN o.__files opf
+            WHERE o.id = :id
+        ";
+        $query = $app->em->createQuery($dql)->setParameter('id', $id);
+        $opportunity = $query->getOneOrNullResult();
+        return $opportunity instanceof Opportunity ? $opportunity : null;
+    }
+
+    /**
+     * Lê o valor bruto de um metadado da coleção __metadata da entidade (sem depender de definição registrada).
+     * Usado quando getMetadata() retorna null por falta de tema/registro no worker.
+     */
+    public function getRawMetadataValue(Entity $entity, string $key): mixed
+    {
+        try {
+            $ref = new \ReflectionProperty($entity, '__metadata');
+            $ref->setAccessible(true);
+            $collection = $ref->getValue($entity);
+        } catch (\ReflectionException) {
+            return null;
+        }
+        if (!is_iterable($collection)) {
+            return null;
+        }
+        foreach ($collection as $meta) {
+            if (!is_object($meta) || !property_exists($meta, 'key')) {
+                continue;
+            }
+            if ($meta->key === $key) {
+                $value = method_exists($meta, 'getValue') ? $meta->getValue() : ($meta->value ?? null);
+                if (is_string($value) && (str_starts_with(trim($value), '{') || str_starts_with(trim($value), '['))) {
+                    $decoded = json_decode($value, true);
+                    return json_last_error() === JSON_ERROR_NONE ? $decoded : $value;
+                }
+                return $value;
+            }
+        }
+        return null;
+    }
 
 	public function mapOpportunityToIntegrationPayload($opportunity): array
     {
@@ -34,38 +84,94 @@ class OpportunityService
 		$pdf = $opportunity->getFiles('rules') ?? null;
 		$urlPdf = $pdf ? $pdf->url ?? null : null;
 
-		$recursosOutrasFontes = $this->mapRecursosOutrasFontes($opportunity->recursosOutrasFontes ?? null);
-		$tiposFormasInscricao = $this->mapTiposFormasInscricao($opportunity->formasInscricaoEdital ?? null);
+		// Metadados com fallback na coleção __metadata (quando getter retorna null por falta de definição registrada)
+		$recursosOutrasFontesVal = $opportunity->recursosOutrasFontes ?? $this->getRawMetadataValue($opportunity, 'recursosOutrasFontes');
+		$formasInscricaoVal = $opportunity->formasInscricaoEdital ?? $this->getRawMetadataValue($opportunity, 'formasInscricaoEdital');
+		$segmentoVal = $opportunity->segmento ?? $this->getRawMetadataValue($opportunity, 'segmento');
+		$segmentoOutrosVal = $opportunity->segmentoOutros ?? $this->getRawMetadataValue($opportunity, 'segmentoOutros');
+		$etapaVal = $opportunity->etapa ?? $this->getRawMetadataValue($opportunity, 'etapa');
+		$etapaOutrosVal = $opportunity->etapaOutros ?? $this->getRawMetadataValue($opportunity, 'etapaOutros');
+		$pautaVal = $opportunity->pauta ?? $this->getRawMetadataValue($opportunity, 'pauta');
+		$pautaOutrosVal = $opportunity->pautaOutros ?? $this->getRawMetadataValue($opportunity, 'pautaOutros');
+		$territorioVal = $opportunity->territorio ?? $this->getRawMetadataValue($opportunity, 'territorio');
+		$outrasModalidadesVal = $opportunity->outrasModalidadesAcoesAfirmativas ?? $this->getRawMetadataValue($opportunity, 'outrasModalidadesAcoesAfirmativas');
+
 		$firstPhase = $opportunity->firstPhase ?? $opportunity;
-		$reservaVagasCotas = $this->mapReservaVagasCotas($firstPhase->reservaVagasCotas ?? null);
-		$outrasModalidadesAcoesAfirmativas = $this->mapOutrasModalidadesAcoesAfirmativas($opportunity->outrasModalidadesAcoesAfirmativas ?? null);
+		$reservaVagasCotasVal = $firstPhase->reservaVagasCotas ?? $this->getRawMetadataValue($firstPhase, 'reservaVagasCotas');
+
+		$recursosOutrasFontes = $this->mapRecursosOutrasFontes($recursosOutrasFontesVal);
+		$tiposFormasInscricao = $this->mapTiposFormasInscricao($formasInscricaoVal);
+		$reservaVagasCotas = $this->mapReservaVagasCotas($reservaVagasCotasVal);
+		$outrasModalidadesAcoesAfirmativas = $this->mapOutrasModalidadesAcoesAfirmativas($outrasModalidadesVal);
+
+		$tipoDeEditalVal = $opportunity->tipoDeEdital ?? $this->getRawMetadataValue($opportunity, 'tipoDeEdital');
+		$vacanciesVal = $opportunity->vacancies ?? $this->getRawMetadataValue($opportunity, 'vacancies');
+		$totalResourceVal = $opportunity->totalResource ?? $this->getRawMetadataValue($opportunity, 'totalResource');
+
+		$tiposProponentesVal = $opportunity->registrationProponentTypes ?? $this->getRawMetadataValue($opportunity, 'registrationProponentTypes');
+		$tiposProponentes = $this->mapTiposProponentes($tiposProponentesVal);
+
+		$enteFederado = $this->getEnteFederadoByOpportunity($opportunity);
 
         return [
             'id' => $opportunity->id,
             'numero_e_titulo_edital' => $opportunity->name ?? null,
-            'forma_de_execucao' => $opportunity->tipoDeEdital ?? null,
+            'forma_de_execucao' => $tipoDeEditalVal,
             'status' => $this->getOpportunityStatus($opportunity),
             'data_publicacao_edital' => $this->normalizeDateValue($opportunity->publishTimestamp ?? null),
             'detalhamento_objeto' => $opportunity->longDescription ?: ($opportunity->shortDescription ?? null),
-            'numero_previsto_vagas' => $opportunity->vacancies ?? null,
-            'valor_total_edital' => $this->normalizeDecimalValue($opportunity->totalResource ?? null),
+            'numero_previsto_vagas' => $vacanciesVal,
+            'valor_total_edital' => $this->normalizeDecimalValue($totalResourceVal),
             'data_inicial_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationFrom ?? null),
             'data_final_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationTo ?? null),
-            'tipos_proponentes' => $opportunity->registrationProponentTypes ?? null,
-            'segmentos_artistico_culturais' => $this->mapMultiselectKeysToLabels('segmento', $opportunity->segmento ?? null),
-            'segmento_artistico_cultural_especificar' => $this->normalizeString($opportunity->segmentoOutros ?? null),
-            'etapas_fazer_cultural' => $this->mapMultiselectKeysToLabels('etapa', $opportunity->etapa ?? null),
-            'etapa_fazer_cultural_especificar' => $this->normalizeString($opportunity->etapaOutros ?? null),
-            'pautas_especificas' => $this->mapMultiselectKeysToLabels('pauta', $opportunity->pauta ?? null),
-            'pauta_especifica_especificar' => $this->normalizeString($opportunity->pautaOutros ?? null),
+            'tipos_proponentes' => $tiposProponentes,
+            'segmentos_artistico_culturais' => $this->mapMultiselectKeysToLabels(MultiselectField::SEGMENTO, $segmentoVal),
+            'segmento_artistico_cultural_especificar' => $this->normalizeString($segmentoOutrosVal),
+            'etapas_fazer_cultural' => $this->mapMultiselectKeysToLabels(MultiselectField::ETAPA, $etapaVal),
+            'etapa_fazer_cultural_especificar' => $this->normalizeString($etapaOutrosVal),
+            'pautas_especificas' => $this->mapMultiselectKeysToLabels(MultiselectField::PAUTA, $pautaVal),
+            'pauta_especifica_especificar' => $this->normalizeString($pautaOutrosVal),
             'categorias_edital' => $opportunity->registrationRanges ?? null,
-            'recursos_territorios_prioritarios' => $this->mapMultiselectKeysToLabels('territorio', $opportunity->territorio ?? null),
+            'recursos_territorios_prioritarios' => $this->mapMultiselectKeysToLabels(MultiselectField::TERRITORIO, $territorioVal),
             'links_da_pagina_pnab' => $links,
             'pdf_edital' => $urlPdf,
             'recursos_outras_fontes' => $recursosOutrasFontes,
             'tipos_formas_inscricao' => $tiposFormasInscricao,
             'reserva_vagas_cotas' => $reservaVagasCotas,
             'outras_modalidades_acoes_afirmativas' => $outrasModalidadesAcoesAfirmativas,
+            'ente_federado' => $enteFederado,
+        ];
+    }
+
+    /**
+     * Obtém o ente federado (quem criou a oportunidade) a partir do metadado federativeEntityId.
+     * Retorna array com name e document (CNPJ) ou null se não houver federativeEntityId, se o ente não existir ou se document estiver vazio.
+     *
+     * @return array{name: string, document: string}|null
+     */
+    protected function getEnteFederadoByOpportunity($opportunity): ?array
+    {
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId') ?? $this->getRawMetadataValue($opportunity, 'federativeEntityId');
+        if ($federativeEntityId === null || $federativeEntityId === '') {
+            return null;
+        }
+        $id = (int) $federativeEntityId;
+        if ($id <= 0) {
+            return null;
+        }
+        $app = App::i();
+        $ente = $app->em->getRepository(FederativeEntity::class)->find($id);
+        if (!$ente instanceof FederativeEntity || ($ente->document ?? '') === '') {
+            return null;
+        }
+        $name = $this->normalizeString($ente->name ?? '') ?? '';
+        $document = $this->normalizeString($ente->document) ?? '';
+        if ($document === '') {
+            return null;
+        }
+        return [
+            'name' => $name,
+            'document' => $document,
         ];
     }
 
@@ -110,11 +216,11 @@ class OpportunityService
      * Converte array de chaves (segmento, etapa, pauta, territorio) para array de labels para o payload da API.
      * "Não se direciona" → label correspondente; "Todas as opções" (só segmento) → expande para todas as labels.
      *
-     * @param string $field 'segmento'|'etapa'|'pauta'|'territorio'
+     * @param MultiselectField $field
      * @param mixed $value array de chaves ou null
      * @return array<int, string>|null
      */
-    protected function mapMultiselectKeysToLabels(string $field, $value): ?array
+    protected function mapMultiselectKeysToLabels(MultiselectField $field, $value): ?array
     {
         if ($value === null) {
             return null;
@@ -124,19 +230,19 @@ class OpportunityService
             return null;
         }
 
-        $options = $this->getOpportunityMetadataOptions($field);
-        $notApplicableLabel = i::__(self::NOT_APPLICABLE_LABELS[$field] ?? self::NOT_APPLICABLE_LABELS['segmento']);
+        $options = $this->getOpportunityMetadataOptions($field->value);
+        $notApplicableLabel = i::__($field->notApplicableLabel());
 
         // Único valor é "não se direciona" → enviar só a label
-        if (count($keys) === 1 && $keys[0] === self::NOT_APPLICABLE_KEY) {
+        if (count($keys) === 1 && $keys[0] === SpecialOption::NOT_APPLICABLE->value) {
             return [$notApplicableLabel];
         }
 
         // Segmento: "Todas as opções" → expandir para todas as labels (exceto chaves especiais)
-        if ($field === 'segmento' && in_array(self::ALL_OPTIONS_KEY, $keys, true)) {
+        if ($field === MultiselectField::SEGMENTO && in_array(SpecialOption::ALL_OPTIONS->value, $keys, true)) {
             $labels = [];
             foreach ($options as $k => $label) {
-                if ($k !== self::NOT_APPLICABLE_KEY && $k !== self::ALL_OPTIONS_KEY) {
+                if ($k !== SpecialOption::NOT_APPLICABLE->value && $k !== SpecialOption::ALL_OPTIONS->value) {
                     $labels[] = $label;
                 }
             }
@@ -146,9 +252,9 @@ class OpportunityService
         // Mapear cada chave para label
         $labels = [];
         foreach ($keys as $key) {
-            if ($key === self::NOT_APPLICABLE_KEY) {
+            if ($key === SpecialOption::NOT_APPLICABLE->value) {
                 $labels[] = $notApplicableLabel;
-            } elseif ($key === self::ALL_OPTIONS_KEY) {
+            } elseif ($key === SpecialOption::ALL_OPTIONS->value) {
                 continue;
             } elseif (isset($options[$key])) {
                 $labels[] = $options[$key];
@@ -256,6 +362,28 @@ class OpportunityService
     }
 
     /**
+     * Mapeia registrationProponentTypes (labels do Mapas) para os valores do enum da API Oportunidade Cult.
+     * Ex.: "Pessoa Física" → "pessoa_fisica", "Pessoa Jurídica" → "pessoa_juridica".
+     *
+     * @param mixed $raw array de labels (ex.: ["Pessoa Física", "Coletivo"]) ou null
+     * @return array<int, string>|null
+     */
+    protected function mapTiposProponentes($raw): ?array
+    {
+        if ($raw === null || !is_array($raw)) {
+            return null;
+        }
+        $result = [];
+        foreach ($raw as $label) {
+            $value = TipoProponenteEnum::fromLabel(is_string($label) ? $label : (string) $label);
+            if ($value !== null) {
+                $result[] = $value;
+            }
+        }
+        return count($result) > 0 ? array_values($result) : null;
+    }
+
+    /**
      * Normaliza reservaVagasCotas (primeira fase) para o payload. Quantidade variável de itens.
      * Cada item: label, vagas, valor_destinado, nao_aplicavel (snake_case).
      *
@@ -293,20 +421,15 @@ class OpportunityService
         }
 
         $status = (int) $statusValue;
-        $label = Opportunity::getStatusNameById($status);
-
-        if (!$label) {
-            if ($status === Opportunity::STATUS_PHASE) {
-                $label = i::__('Fase');
-            } elseif ($status === Opportunity::STATUS_APPEAL_PHASE) {
-                $label = i::__('Fase de recurso');
-            }
+        $enum = OpportunityStatus::tryFrom($status);
+        if ($enum === null) {
+            return [
+                'id' => $status,
+                'label' => null,
+            ];
         }
 
-        return [
-            'id' => $status,
-            'label' => $label ?? null
-        ];
+        return $enum->toPayload(i::__($enum->label()));
     }
 
     protected function normalizeDecimalValue($value): ?string

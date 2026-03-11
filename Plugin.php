@@ -6,6 +6,7 @@ use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
+use AldirBlanc\Jobs\OportunidadeCultJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -23,12 +24,16 @@ class Plugin extends \MapasCulturais\Plugin
                 'token' => env('PNAB_CULTBR_TOKEN', null),
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+                'createOportunidadeEndpoint' => env('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT', null),
+                'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
             ], 
             // Token de integração para consumo do CultBR
             'integration' => [
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
-                'cacheTTL' => (int) env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 3600),
+                'cacheTTL' => (int) env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
+                'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
+                'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
             ]
         ];
 
@@ -92,6 +97,8 @@ class Plugin extends \MapasCulturais\Plugin
             'type' => 'DateTime',
             'private' => true
         ]);
+
+        $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
     }
 
     /**
