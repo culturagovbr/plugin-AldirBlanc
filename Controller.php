@@ -416,18 +416,19 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $app = App::i();
 
+        // validação via JWT de "Meus Aplicativos"
         IntegrationTokenHelper::validateOrFail();
 
         $method = strtoupper($app->request->getMethod());
 
         if ($method === 'GET') {
-            return $this->GET_integrationOpportunities();
+            return $this->_getIntegrationOpportunities();
         }
 
         $this->json(['error' => true, 'message' => 'Método ' . $method . ' não permitido'], 405);
     }
 
-    public function GET_integrationOpportunities()
+    private function _getIntegrationOpportunities()
     {
         $app = App::i();
 
