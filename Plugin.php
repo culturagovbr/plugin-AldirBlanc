@@ -22,6 +22,9 @@ class Plugin extends \MapasCulturais\Plugin
                 'mode' => env('PNAB_CULTBR_MODE', 'development'),
                 'host' => env('PNAB_CULTBR_HOST', null),
                 'token' => env('PNAB_CULTBR_TOKEN', null),
+
+                // PRIMEIRA FASE DA INTEGRAÇÃO (BUSCAR DADOS DO GESTOR E ENTES FEDERADOS)
+                'seficEndpoint' => env('PNAB_CULTBR_SEFIC_ENDPOINT', null),
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
                 'createOportunidadeEndpoint' => env('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT', null),

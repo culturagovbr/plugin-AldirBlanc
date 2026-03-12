@@ -11,7 +11,7 @@ class GestorClient extends AbstractClient
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->document = $gestorDocument->document;
-        $this->endpoint = $this->getClientConfig()['gestorEndpoint'];
+        $this->endpoint = $this->getClientConfig()['seficEndpoint'] . '/' . $this->getClientConfig()['gestorEndpoint'];
 
         parent::__construct();
     }
