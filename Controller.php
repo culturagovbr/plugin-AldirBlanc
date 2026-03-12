@@ -5,6 +5,8 @@ namespace AldirBlanc;
 use MapasCulturais\App;
 use MapasCulturais\Traits;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
@@ -403,5 +405,83 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'success' => true,
             'redirectUri' => $redirectUri,
         ]);
+    }
+
+    /*
+    * Endpoint de integração de oportunidades
+     * 
+     * GET /aldirblanc/opportunities/{id}
+     */
+    public function API_integrationOpportunities()
+    {
+        $app = App::i();
+
+        // validação via JWT de "Meus Aplicativos"
+        IntegrationTokenHelper::validateOrFail();
+
+        $method = strtoupper($app->request->getMethod());
+
+        if ($method === 'GET') {
+            return $this->_getIntegrationOpportunities();
+        }
+
+        $this->json(['error' => true, 'message' => 'Método ' . $method . ' não permitido'], 405);
+    }
+
+    private function _getIntegrationOpportunities()
+    {
+        $app = App::i();
+
+        $cacheTTL = (int) ($app->plugins['AldirBlanc']->config['integration']['cacheTTL']);
+
+        // Obtém o ID da oportunidade
+        $idOportunity = $this->data['id'] ?? null;
+
+        // Verifica se o ID da oportunidade foi informado
+        if (!$idOportunity) {
+            $this->json(['error' => true, 'message' => 'ID da oportunidade não informado'], 400);
+            return;
+        }
+
+        // verifica se a oportunidade já está em cache
+        $cacheKey = "aldirblanc:integration_opportunity:{$idOportunity}";
+        if ($app->cache->contains($cacheKey)) {
+            $this->json($app->cache->fetch($cacheKey));
+            return;
+        }
+
+        // Obtém a oportunidade
+        $opportunity = $app->repo('Opportunity')->find($idOportunity);
+
+        // Verifica se a oportunidade existe
+        if (!$opportunity) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não encontrada'], 404);
+            return;
+        }
+
+        // Verifica se a oportunidade está no subsite configurado para integração
+        $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? null);
+        if (!$opportunity->subsite || (isset($opportunity->subsite->id) && $opportunity->subsite->id !== $subsiteId)) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não encontrada no subsite configurado'], 404);
+            return;
+        }
+
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId');
+        // verifica se a oportunidade tem o federativeEntityId
+        if (!$federativeEntityId) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não tem o federativeEntityId'], 404);
+            return;
+        }
+
+        $service = new OpportunityService();
+        $payload = $service->mapOpportunityToIntegrationPayload($opportunity);
+
+        $response = [
+            'success' => true,
+            'data' => $payload
+        ];
+        $app->cache->save($cacheKey, $response, $cacheTTL);
+
+        $this->json($response);
     }
 }

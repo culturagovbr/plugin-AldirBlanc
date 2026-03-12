@@ -23,6 +23,12 @@ class Plugin extends \MapasCulturais\Plugin
                 'token' => env('PNAB_CULTBR_TOKEN', null),
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+            ], 
+            // Token de integração para consumo do CultBR
+            'integration' => [
+                'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
+                'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
+                'cacheTTL' => (int) env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 3600),
             ]
         ];
 
@@ -47,6 +53,12 @@ class Plugin extends \MapasCulturais\Plugin
         $this->initDoctrineMappings();
 
         $app = App::i();
+
+        // Registra shortcut customizado para API de integração
+        $app->config['routes']['shortcuts']['aldirblanc/opportunities'] = [
+            'aldirblanc',
+            'integrationOpportunities'
+        ];
     }
 
     function register()
