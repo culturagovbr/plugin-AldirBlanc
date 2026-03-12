@@ -80,6 +80,14 @@ class Plugin extends \MapasCulturais\Plugin
             'type' => 'DateTime',
             'private' => true
         ]);
+
+        // Registra metadado isNotGestorCultBr: quando a API do Cult não retorna entes, grava true
+        // para que no 2º ou N-ésimo login o usuário pule a tela de consolidação
+        $this->registerMetadata('MapasCulturais\Entities\Agent', 'isNotGestorCultBr', [
+            'label' => i::__('Indica que a API CultBR não retornou entes para este agente'),
+            'type' => 'boolean',
+            'private' => true
+        ]);
     }
 
     /**

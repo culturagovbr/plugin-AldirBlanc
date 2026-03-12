@@ -300,4 +300,108 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'redirectUri' => $redirectUri
         ]);
     }
+
+    /**
+     * Página para complementar cadastro (apenas campos obrigatórios faltantes).
+     * Exibida antes da escolha do ente (gestor) ou antes do painel (usuário comum).
+     * GET /aldirblanc/complete-profile
+     */
+    public function GET_completeProfile()
+    {
+        $app = App::i();
+
+        if ($app->user->is('guest')) {
+            $app->redirect($app->createUrl('auth', 'login'));
+            return;
+        }
+
+        $profile = $app->user->profile;
+        if (!$profile) {
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        $theme = $app->view;
+        if (!method_exists($theme, 'getRequeredsAgentIndividualMetadata') || !method_exists($theme, 'hasRequiredAgentFieldsFilled')) {
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        $profile->refresh();
+        if ($theme->hasRequiredAgentFieldsFilled($profile)) {
+            if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+                $app->redirect($app->createUrl('aldirblanc', 'selectFederativeEntity'));
+            } else {
+                $app->redirect($app->createUrl('panel', 'index'));
+            }
+            return;
+        }
+
+        $redirectUri = $app->createUrl('panel', 'index');
+        if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+            $redirectUri = $app->createUrl('aldirblanc', 'selectFederativeEntity');
+        }
+        $app->view->jsObject['completeProfile'] = [
+            'redirectUri' => $redirectUri,
+        ];
+
+        // Define a entidade solicitada para o layout/Theme (evita "lockedFields on null" no Theme.php)
+        $this->_requestedEntity = $profile;
+
+        $this->render('complete-profile', [
+            'entity' => $profile,
+        ]);
+    }
+
+    /**
+     * Salva os dados do formulário de complementação e redireciona.
+     * POST /aldirblanc/complete-profile
+     */
+    public function POST_completeProfile()
+    {
+        $app = App::i();
+
+        if ($app->user->is('guest')) {
+            $this->errorJson('Não autorizado', 403);
+            return;
+        }
+
+        $profile = $app->user->profile;
+        if (!$profile) {
+            $this->errorJson('Perfil não encontrado', 400);
+            return;
+        }
+
+        $theme = $app->view;
+        if (!method_exists($theme, 'getRequeredsAgentIndividualMetadata')) {
+            $this->errorJson('Configuração indisponível', 500);
+            return;
+        }
+
+        $data = $this->data;
+        $requiredKeys = $theme->getRequeredsAgentIndividualMetadata();
+
+        foreach ($requiredKeys as $key) {
+            if (!array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = $data[$key];
+            if (is_array($value) && empty($value)) {
+                $value = null;
+            }
+            $profile->$key = $value;
+        }
+
+        $profile->save(true);
+
+        $redirectUri = $app->createUrl('panel', 'index');
+        if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+            $redirectUri = $app->createUrl('aldirblanc', 'selectFederativeEntity');
+        }
+
+        $this->json([
+            'success' => true,
+            'redirectUri' => $redirectUri,
+        ]);
+    }
 }
