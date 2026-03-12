@@ -54,18 +54,4 @@ class UserAccessService
             return $user->is($role);
         });
     }
-
-    /**
-     * Verifica se o usuário é um super administrador do SAAS
-     * 
-     * @return bool
-     */
-    public static function isSuperSaasAdmin(): bool
-    {
-        $user = App::i()->user;
-
-        return (bool) array_filter(Role::SUPER_SAAS_ADMIN_ROLES, function ($role) use ($user) {
-            return $user->is($role);
-        });
-    }
 }
