@@ -72,10 +72,13 @@ abstract class AbstractClient
         }
 
         $fullUrl = $this->prepareUrl();
+        $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         try {
-            $this->curl->post($fullUrl, $data);
-            return $this->parseResponse($this->curl->response);
+            $this->curl->post($fullUrl, $jsonPayload);
+            $rawResponse = $this->curl->response;
+            $parsed = $this->parseResponse($rawResponse);
+            return $parsed;
         } catch (\Exception $e) {
             $this->handleError('[CultBR] Erro na API ao enviar dados (POST)', $e);
         } finally {
@@ -90,10 +93,14 @@ abstract class AbstractClient
         }
 
         $fullUrl = $this->prepareUrl();
+        $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         try {
-            $this->curl->put($fullUrl, $data);
-            return $this->parseResponse($this->curl->response);
+            $this->curl->setOpt(CURLOPT_CUSTOMREQUEST, 'PUT');
+            $this->curl->post($fullUrl, $jsonPayload);
+            $rawResponse = $this->curl->response;
+            $parsed = $this->parseResponse($rawResponse);
+            return $parsed;
         } catch (\Exception $e) {
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
         } finally {
@@ -186,11 +193,11 @@ abstract class AbstractClient
             }
 
             // Verifica se a resposta contém o JSON de erro 404 da API
-            if (
-                is_array($decoded) && isset($decoded['detail']) &&
-                strpos(strtolower($decoded['detail']), 'não encontrada') !== false
-            ) {
-                return [];
+            if (is_array($decoded) && isset($decoded['detail'])) {
+                $detail = $decoded['detail'];
+                if (is_string($detail) && strpos(strtolower($detail), 'não encontrada') !== false) {
+                    return [];
+                }
             }
 
             if (is_array($decoded)) {
