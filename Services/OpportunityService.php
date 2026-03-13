@@ -129,7 +129,7 @@ class OpportunityService
             'forma_de_execucao' => $tipoDeEditalVal,
             'status' => $this->getOpportunityStatus($opportunity),
             'data_publicacao_edital' => $this->normalizeDateValue($opportunity->publishTimestamp ?? null),
-            'detalhamento_objeto' => $opportunity->longDescription ?: ($opportunity->shortDescription ?? null),
+            'detalhamento_objeto' => $opportunity->longDescription ?? $opportunity->shortDescription ?? null,
             'numero_previsto_vagas' => $vacanciesVal,
             'valor_total_edital' => $this->normalizeDecimalValue($totalResourceVal),
             'data_inicial_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationFrom ?? null),
