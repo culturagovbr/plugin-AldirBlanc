@@ -128,7 +128,7 @@ class OpportunityService
             'numero_e_titulo_edital' => $opportunity->name ?? null,
             'forma_de_execucao' => $tipoDeEditalVal,
             'status' => $this->getOpportunityStatus($opportunity),
-            'data_publicacao_edital' => $this->normalizeDateValue($opportunity->publishTimestamp ?? null),
+            'data_publicacao_edital' => $this->normalizeDateValue($opportunity->getMetadata('publishedTimestamp') ?? null),
             'detalhamento_objeto' => $opportunity->longDescription ?? $opportunity->shortDescription ?? null,
             'numero_previsto_vagas' => $vacanciesVal,
             'valor_total_edital' => $this->normalizeDecimalValue($totalResourceVal),
