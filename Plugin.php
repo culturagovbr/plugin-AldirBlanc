@@ -345,6 +345,149 @@ class Plugin extends \MapasCulturais\Plugin
             ]);
             $app->registerMetadata($totalValueForecast, Delivery::class);
 
+            // Metadados de monitoramento de projeto (ProjectMonitoring) sobrescritos no plugin
+
+            // Goal (meta) – detalhamento da execução
+            $executionDetail = new Metadata('executionDetail', [
+                'label' => i::__('Detalhamento da execução da meta'),
+            ]);
+            $app->registerMetadata($executionDetail, Goal::class);
+
+            // Delivery (entrega) – forma de disponibilização
+            $availabilityType = new Metadata('availabilityType', [
+                'label' => i::__('Forma de disponibilização'),
+                'type' => 'select',
+                'options' => [
+                    i::__('Virtual/Digital'),
+                    i::__('Presencial/Físico'),
+                    i::__('Híbrido'),
+                ],
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('availabilityType')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($availabilityType, Delivery::class);
+
+            $accessibilityMeasures = new Metadata('accessibilityMeasures', [
+                'label' => i::__('Medidas de acessibilidade'),
+                'type' => 'multiselect',
+                'options' => [
+                    i::__('Rotas acessíveis, com espaço de manobra para cadeira de rodas'),
+                    i::__('Palco acessível'),
+                    i::__('Camarim acessível'),
+                    i::__('Piso tátil'),
+                    i::__('Rampas'),
+                    i::__("Elevadores adequados para PCD's"),
+                    i::__('Corrimãos e guarda-corpos'),
+                    i::__("Banheiros adaptados para PCD's"),
+                    i::__('Área de alimentação preferencial identificada'),
+                    i::__("Vagas de estacionamento para PCD's reservadas"),
+                    i::__("Assentos para pessoas obesas, pessoas com mobilidade reduzida, PCD's e pessoas idosas reservadas"),
+                    i::__('Filas preferenciais identificadas'),
+                    i::__('Iluminação adequada'),
+                    i::__('Livro e/ou similares em braile'),
+                    i::__('Audiolivro'),
+                    i::__('Uso Língua Brasileira de Sinais - Libras'),
+                    i::__('Sistema Braille em materiais impressos'),
+                    i::__('Sistema de sinalização ou comunicação tátil'),
+                    i::__('Audiodescrição'),
+                    i::__('Legendas para surdos e ensurdecidos'),
+                    i::__('Linguagem simples'),
+                    i::__('Textos adaptados para software de leitor de tela'),
+                    i::__('Capacitação em acessibilidade para equipes atuantes nos projetos culturais'),
+                    i::__('Contratação de profissionais especializados em acessibilidade cultural'),
+                    i::__('Contratação de profissionais com deficiência'),
+                    i::__('Formação e sensibilização de agentes culturais sobre acessibilidade'),
+                    i::__('Formação e sensibilização de públicos da cadeia produtiva cultural sobre acessibilidade'),
+                    i::__("Envolvimento de PCD's na concepção do projeto"),
+                    i::__('Outras'),
+                ],
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('accessibilityMeasures')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($accessibilityMeasures, Delivery::class);
+
+            $participantProfile = new Metadata('participantProfile', [
+                'label' => i::__('Perfil dos participantes'),
+                'type' => 'text',
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('participantProfile')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($participantProfile, Delivery::class);
+
+            $priorityAudience = new Metadata('priorityAudience', [
+                'label' => i::__('Territórios prioritários'),
+                'type' => 'multiselect',
+                'options' => [
+                    i::__('Território indígena'),
+                    i::__('Território de povos e comunidades tradicionais'),
+                    i::__('Território rural'),
+                    i::__('Território de fronteira'),
+                    i::__('Regiões com menor índice de Desenvolvimento Humano - IDH'),
+                    i::__('Regiões com menor histórico de acesso aos recursos da política pública de cultura'),
+                    i::__('Área atingida por desastre natural'),
+                    i::__('Assentamento ou acampamento'),
+                    i::__('Conjunto ou empreendimento habitacional de interesse social'),
+                    i::__('Periferia'),
+                    i::__('Favelas e comunidades urbanas'),
+                    i::__('Zona especial de interesse social'),
+                    i::__('Sítios de arqueológicos e de patrimônio cultural'),
+                    i::__('Não se aplica'),
+                    i::__('Outros'),
+                ],
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('priorityAudience')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($priorityAudience, Delivery::class);
+
+            $numberOfParticipants = new Metadata('numberOfParticipants', [
+                'label' => i::__('Número de participantes'),
+                'type' => 'integer',
+                'validations' => [
+                    'v::intVal()->positive()' => i::__('O valor deve ser um número inteiro positivo'),
+                ],
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('numberOfParticipants')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($numberOfParticipants, Delivery::class);
+
+            $executedRevenue = new Metadata('executedRevenue', [
+                'label' => i::__('Receita executada'),
+                'type' => 'object',
+                'should_validate' => function ($entity) {
+                    if ($entity->isMetadataRequired('executedRevenue')) {
+                        return i::__('Campo obrigatório');
+                    }
+                    return false;
+                },
+            ]);
+            $app->registerMetadata($executedRevenue, Delivery::class);
+
+            $evidenceLinks = new Metadata('evidenceLinks', [
+                'label' => i::__('Links das evidências'),
+                'type' => 'array',
+            ]);
+            $app->registerMetadata($evidenceLinks, Delivery::class);
+
             // Expõe no JS as descrições das entidades do plano de metas (estrutura do PR-121)
             $app->hook('mapas.printJsObject:before', function () {
                 $this->jsObject['EntitiesDescription']['workplan'] = Workplan::getPropertiesMetadata();
