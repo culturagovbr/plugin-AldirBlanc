@@ -116,6 +116,28 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        // PAR: instrumento (exercício -> meta -> ação -> atividade) para vincular oportunidade ao cadastro do ente
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'parExercicioId', [
+            'label' => i::__('PAR - Exercício (ano)'),
+            'type' => 'string',
+            'private' => false,
+        ]);
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'parMetaId', [
+            'label' => i::__('PAR - Meta'),
+            'type' => 'string',
+            'private' => false,
+        ]);
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'parAcaoId', [
+            'label' => i::__('PAR - Ação'),
+            'type' => 'string',
+            'private' => false,
+        ]);
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'parAtividadeId', [
+            'label' => i::__('PAR - Atividade'),
+            'type' => 'string',
+            'private' => false,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
     }
 

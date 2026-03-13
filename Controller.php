@@ -4,6 +4,7 @@ namespace AldirBlanc;
 
 use MapasCulturais\App;
 use MapasCulturais\Traits;
+use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Services\OpportunityService;
@@ -49,6 +50,51 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $this->json($federativeEntities);
+    }
+
+    /**
+     * Retorna o ente federado selecionado na sessão com seus exercícios (PAR: metas, ações, atividades).
+     * Usado no modal Criar Oportunidade para os campos em cascata Exercício → Meta → Ação → Atividade.
+     *
+     * GET /aldirblanc/selected-ente-exercicios
+     */
+    function GET_selectedEnteExercicios()
+    {
+        $app = App::i();
+
+        if (!UserAccessService::isGestorCultBr()) {
+            $this->json(null);
+            return;
+        }
+
+        if (!isset($_SESSION['selectedFederativeEntity'])) {
+            $this->json(null);
+            return;
+        }
+
+        $selected = json_decode($_SESSION['selectedFederativeEntity'], true);
+        if (!is_array($selected) || empty($selected['id'])) {
+            $this->json(null);
+            return;
+        }
+
+        $ente = $app->em->getRepository(FederativeEntity::class)->find((int) $selected['id']);
+        if (!$ente instanceof FederativeEntity) {
+            $this->json(null);
+            return;
+        }
+
+        $exercicios = $ente->exercices;
+        if (!is_array($exercicios)) {
+            $exercicios = [];
+        }
+
+        $this->json([
+            'id' => $ente->id,
+            'name' => $ente->name,
+            'document' => $ente->document,
+            'exercicios' => $exercicios,
+        ]);
     }
 
     /**
