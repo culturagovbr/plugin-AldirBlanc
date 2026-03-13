@@ -381,14 +381,27 @@ class GestorCultJob
                 $entity = $entitiesByDoc[$doc] ?? null;
 
                 if ($entity) {
-                    if ($entity->name !== $data['name']) {
+                    $changed = false;
+                    if ($entity->name !== ($data['name'] ?? null)) {
                         $entity->name = $data['name'];
+                        $changed = true;
+                    }
+
+                    $exercicios = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
+                    $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
+                    $newJson = $exercicios === null ? null : json_encode($exercicios);
+                    if ($currentJson !== $newJson) {
+                        $entity->exercices = $exercicios;
+                        $changed = true;
+                    }
+                    if ($changed) {
                         $em->persist($entity);
                     }
                 } else {
                     $entity = new FederativeEntity();
                     $entity->name = $data['name'];
                     $entity->document = $doc;
+                    $entity->exercices = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);

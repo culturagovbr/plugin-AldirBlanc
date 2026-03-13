@@ -36,5 +36,11 @@ return [
                 END IF;
             END $$;
         ");
+    },
+
+    'add exercices column to federative_entity' => function () {
+        if (__table_exists('federative_entity')) {
+            __try("ALTER TABLE federative_entity ADD COLUMN exercices JSONB DEFAULT '{}'::jsonb NOT NULL");
+        }
     }
 ];
