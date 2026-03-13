@@ -135,14 +135,14 @@ class OpportunityService
             'data_inicial_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationFrom ?? null),
             'data_final_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationTo ?? null),
             'tipos_proponentes' => $tiposProponentes,
-            'segmentos_artistico_culturais' => $this->mapMultiselectKeysToLabels(MultiselectField::SEGMENTO, $segmentoVal),
+            'segmentos_artistico_culturais' => $this->mapMultiselectToString(MultiselectField::SEGMENTO, $segmentoVal),
             'segmento_artistico_cultural_especificar' => $this->normalizeString($segmentoOutrosVal),
-            'etapas_fazer_cultural' => $this->mapMultiselectKeysToLabels(MultiselectField::ETAPA, $etapaVal),
+            'etapas_fazer_cultural' => $this->mapMultiselectToString(MultiselectField::ETAPA, $etapaVal),
             'etapa_fazer_cultural_especificar' => $this->normalizeString($etapaOutrosVal),
-            'pautas_especificas' => $this->mapMultiselectKeysToLabels(MultiselectField::PAUTA, $pautaVal),
+            'pautas_especificas' => $this->mapMultiselectToString(MultiselectField::PAUTA, $pautaVal),
             'pauta_especifica_especificar' => $this->normalizeString($pautaOutrosVal),
             'categorias_edital' => $opportunity->registrationRanges ?? null,
-            'recursos_territorios_prioritarios' => $this->mapMultiselectKeysToLabels(MultiselectField::TERRITORIO, $territorioVal),
+            'recursos_territorios_prioritarios' => $this->mapMultiselectToString(MultiselectField::TERRITORIO, $territorioVal),
             'links_da_pagina_pnab' => $links,
             'pdf_edital' => $urlPdf,
             'recursos_outras_fontes' => $recursosOutrasFontes,
@@ -273,6 +273,19 @@ class OpportunityService
             }
         }
         return array_values($labels);
+    }
+
+    /**
+     * Converte o resultado de mapMultiselectKeysToLabels em string (ou null) para envio à API externa.
+     * Ex.: ["Artes Visuais", "Artesanato"] → "Artes Visuais, Artesanato".
+     */
+    protected function mapMultiselectToString(MultiselectField $field, $value): ?string
+    {
+        $labels = $this->mapMultiselectKeysToLabels($field, $value);
+        if ($labels === null || $labels === []) {
+            return null;
+        }
+        return implode(', ', $labels);
     }
 
     /**
