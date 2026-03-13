@@ -35,6 +35,10 @@ class Opportunity
         public ?array $outras_modalidades_acoes_afirmativas = null,
         /** @var array{name: string, document: string}|null */
         public ?array $ente_federado = null,
+        public ?int $id_exercicio = null,
+        public ?int $id_meta = null,
+        public ?int $id_acao = null,
+        public ?int $id_atividade = null,
     ) {
     }
 
@@ -75,6 +79,10 @@ class Opportunity
                 'name' => (string) ($data['ente_federado']['name'] ?? ''),
                 'document' => (string) ($data['ente_federado']['document'] ?? ''),
             ] : null,
+            id_exercicio: isset($data['id_exercicio']) ? (int) $data['id_exercicio'] : null,
+            id_meta: isset($data['id_meta']) ? (int) $data['id_meta'] : null,
+            id_acao: isset($data['id_acao']) ? (int) $data['id_acao'] : null,
+            id_atividade: isset($data['id_atividade']) ? (int) $data['id_atividade'] : null,
         );
     }
 
@@ -112,6 +120,10 @@ class Opportunity
             'reserva_vagas_cotas' => $this->reserva_vagas_cotas,
             'outras_modalidades_acoes_afirmativas' => $this->outras_modalidades_acoes_afirmativas,
             'ente_federado' => $this->ente_federado,
+            'id_exercicio' => $this->id_exercicio,
+            'id_meta' => $this->id_meta,
+            'id_acao' => $this->id_acao,
+            'id_atividade' => $this->id_atividade,
         ];
     }
 }

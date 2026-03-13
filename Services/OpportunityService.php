@@ -123,6 +123,11 @@ class OpportunityService
 
 		$enteFederado = $this->getEnteFederadoByOpportunity($opportunity);
 
+		$parExercicioId = $opportunity->getMetadata('parExercicioId') ?? $this->getRawMetadataValue($opportunity, 'parExercicioId');
+		$parMetaId = $opportunity->getMetadata('parMetaId') ?? $this->getRawMetadataValue($opportunity, 'parMetaId');
+		$parAcaoId = $opportunity->getMetadata('parAcaoId') ?? $this->getRawMetadataValue($opportunity, 'parAcaoId');
+		$parAtividadeId = $opportunity->getMetadata('parAtividadeId') ?? $this->getRawMetadataValue($opportunity, 'parAtividadeId');
+
         return [
             'id' => $opportunity->id,
             'numero_e_titulo_edital' => $opportunity->name ?? null,
@@ -150,6 +155,10 @@ class OpportunityService
             'reserva_vagas_cotas' => $reservaVagasCotas,
             'outras_modalidades_acoes_afirmativas' => $outrasModalidadesAcoesAfirmativas,
             'ente_federado' => $enteFederado,
+            'id_exercicio' => $parExercicioId !== null && $parExercicioId !== '' ? (int) $parExercicioId : null,
+            'id_meta' => $parMetaId !== null && $parMetaId !== '' ? (int) $parMetaId : null,
+            'id_acao' => $parAcaoId !== null && $parAcaoId !== '' ? (int) $parAcaoId : null,
+            'id_atividade' => $parAtividadeId !== null && $parAtividadeId !== '' ? (int) $parAtividadeId : null,
         ];
     }
 
