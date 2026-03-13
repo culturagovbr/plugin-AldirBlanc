@@ -450,8 +450,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        // Obtém a oportunidade
-        $opportunity = $app->repo('Opportunity')->find($idOportunity);
+        $service = new OpportunityService();
+        // Obtém a oportunidade com metadados, arquivos, subsite e primeira fase
+        $opportunity = $service->findOpportunityWithIntegrationData((int) $idOportunity);
 
         // Verifica se a oportunidade existe
         if (!$opportunity) {
@@ -466,14 +467,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $federativeEntityId = $opportunity->getMetadata('federativeEntityId');
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId') ?? $service->getRawMetadataValue($opportunity, 'federativeEntityId');
         // verifica se a oportunidade tem o federativeEntityId
         if (!$federativeEntityId) {
             $this->json(['error' => true, 'message' => 'Oportunidade não tem o federativeEntityId'], 404);
             return;
         }
 
-        $service = new OpportunityService();
         $payload = $service->mapOpportunityToIntegrationPayload($opportunity);
 
         $response = [
