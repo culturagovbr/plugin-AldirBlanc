@@ -494,7 +494,133 @@ class Plugin extends \MapasCulturais\Plugin
                 $this->jsObject['EntitiesDescription']['workplan']['goal'] = Goal::getPropertiesMetadata();
                 $this->jsObject['EntitiesDescription']['workplan']['goal']['delivery'] = Delivery::getPropertiesMetadata();
             });
+
+            // Aplica metadados "Outros (especificar)" ao salvar Goal/Delivery pelo controller workplan do core
+            self::getInstance()->registerWorkplanMetadataHooks($app);
         });
+    }
+
+    /**
+     * Registra hooks em entity(Goal).save:before e entity(Delivery).save:before para
+     * preencher culturalMakingStageOther e typeDeliveryOther a partir do corpo da requisição
+     * quando o save for disparado pelo POST workplan/save do core.
+     */
+    private function registerWorkplanMetadataHooks(App $app): void
+    {
+        $goalIndex = 0;
+        $goalDataByObjectId = [];
+
+        $app->hook('entity(OpportunityWorkplan.Entities.Goal).save:before', function () use ($app, &$goalIndex, &$goalDataByObjectId) {
+            /** @var Goal $this */
+            $data = self::getInstance()->getWorkplanSaveDataFromRequest($app);
+            if ($data === null) {
+                return;
+            }
+            $goalsData = $data['workplan']['goals'] ?? [];
+            $g = null;
+            if ($this->id) {
+                foreach ($goalsData as $item) {
+                    if (isset($item['id']) && (int) $item['id'] === (int) $this->id) {
+                        $g = $item;
+                        break;
+                    }
+                }
+            } else {
+                if (isset($goalsData[$goalIndex])) {
+                    $g = $goalsData[$goalIndex];
+                    $goalIndex++;
+                }
+            }
+            if ($g !== null) {
+                $this->culturalMakingStageOther = $g['culturalMakingStageOther'] ?? null;
+                $goalDataByObjectId[spl_object_id($this)] = $g;
+            }
+        });
+
+        $app->hook('entity(OpportunityWorkplan.Entities.Delivery).save:before', function () use ($app, &$goalDataByObjectId) {
+            /** @var Delivery $this */
+            $data = self::getInstance()->getWorkplanSaveDataFromRequest($app);
+            if ($data === null) {
+                return;
+            }
+            $goal = $this->goal;
+            if (!$goal) {
+                return;
+            }
+            $g = $goalDataByObjectId[spl_object_id($goal)] ?? null;
+            if ($g === null && $goal->id) {
+                $goalsData = $data['workplan']['goals'] ?? [];
+                foreach ($goalsData as $item) {
+                    if (isset($item['id']) && (int) $item['id'] === (int) $goal->id) {
+                        $g = $item;
+                        break;
+                    }
+                }
+            }
+            if ($g === null) {
+                return;
+            }
+            $deliveriesData = $g['deliveries'] ?? [];
+            $d = null;
+            if ($this->id) {
+                foreach ($deliveriesData as $item) {
+                    if (isset($item['id']) && (int) $item['id'] === (int) $this->id) {
+                        $d = $item;
+                        break;
+                    }
+                }
+            } else {
+                static $deliveryIndexByGoalId = [];
+                $oid = spl_object_id($goal);
+                $idx = $deliveryIndexByGoalId[$oid] ?? 0;
+                if (isset($deliveriesData[$idx])) {
+                    $d = $deliveriesData[$idx];
+                    $deliveryIndexByGoalId[$oid] = $idx + 1;
+                }
+            }
+            if ($d !== null) {
+                $this->typeDeliveryOther = $d['typeDeliveryOther'] ?? null;
+            }
+        });
+    }
+
+    /**
+     * Retorna o payload do POST workplan/save se a requisição atual for essa; caso contrário null.
+     * Usa os dados já parseados do controller workplan (evita php://input, que pode estar vazio).
+     * @return array|null
+     */
+    public function getWorkplanSaveDataFromRequest(App $app): ?array
+    {
+        static $cached = null;
+        static $checked = false;
+        if ($checked) {
+            return $cached;
+        }
+        $checked = true;
+        $workplanController = $app->controller('workplan');
+        if ($workplanController && !empty($workplanController->data['workplan'])) {
+            return $cached = $workplanController->data;
+        }
+        if (php_sapi_name() === 'cli') {
+            return $cached = null;
+        }
+        $method = $_SERVER['REQUEST_METHOD'] ?? '';
+        if ($method !== 'POST') {
+            return $cached = null;
+        }
+        $path = $_SERVER['REQUEST_URI'] ?? '';
+        if (strpos($path, 'workplan') === false) {
+            return $cached = null;
+        }
+        $body = file_get_contents('php://input');
+        if ($body === false || $body === '') {
+            return $cached = null;
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded) || empty($decoded['workplan'])) {
+            return $cached = null;
+        }
+        return $cached = $decoded;
     }
 
     function register()
