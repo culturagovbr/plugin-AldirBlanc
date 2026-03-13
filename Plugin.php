@@ -109,6 +109,13 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true
         ]);
 
+        // Registra metadado de data de publicação do edital para Opportunity (usado na integração com Oportunidade Cult)
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'publishedTimestamp', [
+            'label' => i::__('Data de publicação do edital'),
+            'type' => 'DateTime',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
     }
 
