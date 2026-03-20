@@ -9,6 +9,7 @@ use MapasCulturais\Traits;
  * @property int $id
  * @property string $name
  * @property string $document
+ * @property array|null $exercices Dados de exercícios (payload da API: exercicios por ente)
  * @property \DateTime $createTimestamp
  * @property \DateTime $updateTimestamp
  * @property-read int $subsiteId
@@ -47,6 +48,13 @@ class FederativeEntity extends \MapasCulturais\Entity
      * @ORM\Column(name="document", type="string", nullable=false)
      */
     protected $document;
+
+    /**
+     * @var array|null JSON: lista de exercícios retornada pela API do gestor (chave "exercicios" no payload).
+     *
+     * @ORM\Column(name="exercices", type="json", nullable=true)
+     */
+    protected $exercices;
 
     /**
      * @var \DateTime

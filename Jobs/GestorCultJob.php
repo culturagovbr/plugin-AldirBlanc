@@ -54,7 +54,7 @@ class GestorCultJob
             // Se houver, marca como concluído (outro processo já sincronizou)
             $cachedEntities = $app->cache->fetch($cacheKey);
             if ($cachedEntities !== false && $cachedEntities !== null) {
-                // Normaliza os dados antes de verificar se está vazio
+                $cachedEntities = $this->extractFederativeEntitiesFromResponse($cachedEntities);
                 $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
                 if (!empty($cachedEntities)) {
                     // Já há dados no cache, marca como concluído (sem erro)
@@ -92,6 +92,7 @@ class GestorCultJob
         // Obtém os entes federados do cache
         $federativeEntities = $app->cache->fetch($cacheKey);
         $syncedFromApi = false;
+        $apiResponse = null;
 
         // Se os entes federados não estão no cache, busca na API
         if ($federativeEntities === false || $federativeEntities === null) {
@@ -99,11 +100,12 @@ class GestorCultJob
 
             try {
                 $app->cache->save($requestsKey, $requestsCount + 1, 86400);
-                $federativeEntities = (new GestorClient($this->gestorDocument))->get();
+                $apiResponse = (new GestorClient($this->gestorDocument))->get();
                 $syncedFromApi = true;
-                
+
+                $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
                 $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-                
+
                 $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
             } catch (\Throwable $e) {
                 // Dispara alerta para Telegram
@@ -122,11 +124,13 @@ class GestorCultJob
                 $app->cache->delete($lockKey);
             }
         } else {
-            // Normaliza os dados do cache (pode estar serializado)
+            // Extrai lista de entes (cache pode ter formato novo ou antigo) e normaliza
+            $federativeEntities = $this->extractFederativeEntitiesFromResponse($federativeEntities);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
         }
 
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
+        // e grava metadado isNotGestorCultBr para pular consolidação nos próximos logins
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
             // Se o usuário é gestor CultBR, remove a permissão (mas mantém as associações)
             if (UserAccessService::isGestorCultBr()) {
@@ -134,12 +138,26 @@ class GestorCultJob
                 $app->user->removeRole(Role::GESTOR_CULT_BR);
                 $app->enableAccessControl();
             }
+
+            // Marca no agente que a API não retornou entes (2º+ login não passará pela consolidação)
+            $app->disableAccessControl();
+            $agent->setMetadata('isNotGestorCultBr', true);
+            $agent->save(true);
+            $app->enableAccessControl();
             
             $_SESSION['gestor_cult_sync_completed'] = true;
             // Limpa flags de erro se existirem
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
             return;
+        }
+
+        // API retornou entes: remove o metadado isNotGestorCultBr se existir (estado consistente)
+        if ($agent->getMetadata('isNotGestorCultBr')) {
+            $app->disableAccessControl();
+            $agent->setMetadata('isNotGestorCultBr', false);
+            $agent->save(true);
+            $app->enableAccessControl();
         }
 
         // Se o usuário não é gestor CultBR, adiciona a permissão
@@ -153,9 +171,10 @@ class GestorCultJob
             // Associa os entes federados ao agente
             $this->associateFederativeEntities($agent, $federativeEntities);
 
-            // Se a sincronização foi feita da API, atualiza a data da última sincronização
-            if ($syncedFromApi) {
+            // Se a sincronização foi feita da API, atualiza o agente com dados do gestor (apenas campos alterados)
+            if ($syncedFromApi && is_array($apiResponse)) {
                 $app->disableAccessControl();
+                $this->updateAgentFromGestorResponse($agent, $apiResponse);
                 $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
                 $agent->save(true);
                 $app->enableAccessControl();
@@ -181,8 +200,75 @@ class GestorCultJob
     }
 
     /**
+     * Extrai a lista de entes federados do retorno da API.
+     * Suporta formato novo (objeto com chave 'entes_federados') e antigo (array de entes).
+     *
+     * @param mixed $response Retorno bruto da API ou do cache
+     * @return array Lista de entes (cada item com 'name' e 'document')
+     */
+    private function extractFederativeEntitiesFromResponse($response): array
+    {
+        if (!is_array($response)) {
+            return [];
+        }
+        if (isset($response['entes_federados']) && is_array($response['entes_federados'])) {
+            return $response['entes_federados'];
+        }
+        // Formato antigo: o próprio retorno é a lista de entes
+        return $response;
+    }
+
+    /**
+     * Mapeamento: chave no retorno da API do gestor => chave de metadado do Agent.
+     * Apenas campos que devem ser atualizados no sync.
+     */
+    private const GESTOR_API_TO_AGENT_METADATA = [
+        'rg' => 'rgNumero',
+        'cep' => 'En_CEP',
+        'nome' => 'nomeCompleto',
+        'celular' => 'telefone1',        // telefone privado 1 (campo no tema Pnab)
+        'numero' => 'En_Num',
+        'complemento' => 'En_Complemento',
+    ];
+
+    /**
+     * Atualiza o agente com os dados do retorno da API do gestor.
+     * Altera apenas metadados cujo valor seja diferente do atual; se nada mudou, não persiste.
+     *
+     * @param Agent $agent
+     * @param array $apiResponse Retorno bruto da API (objeto com rg, cep, nome, etc.)
+     */
+    private function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    {
+        foreach (self::GESTOR_API_TO_AGENT_METADATA as $apiKey => $agentKey) {
+            $apiValue = $apiResponse[$apiKey] ?? null;
+            $normalizedApi = $this->normalizeStringForComparison($apiValue);
+
+            $currentValue = $agent->getMetadata($agentKey);
+            $normalizedCurrent = $this->normalizeStringForComparison($currentValue);
+
+            if ($normalizedApi === $normalizedCurrent) {
+                continue;
+            }
+
+            $agent->setMetadata($agentKey, $apiValue === null ? null : (string) $apiValue);
+        }
+    }
+
+    /**
+     * Normaliza valor para comparação (evita diferença entre null, '' e espaços).
+     */
+    private function normalizeStringForComparison($value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        return trim((string) $value);
+    }
+
+    /**
      * Normaliza os dados dos entes federados para garantir que seja um array
-     * 
+     *
      * @param mixed $federativeEntities
      * @return array
      */
@@ -295,14 +381,27 @@ class GestorCultJob
                 $entity = $entitiesByDoc[$doc] ?? null;
 
                 if ($entity) {
-                    if ($entity->name !== $data['name']) {
+                    $changed = false;
+                    if ($entity->name !== ($data['name'] ?? null)) {
                         $entity->name = $data['name'];
+                        $changed = true;
+                    }
+
+                    $exercicios = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
+                    $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
+                    $newJson = $exercicios === null ? null : json_encode($exercicios);
+                    if ($currentJson !== $newJson) {
+                        $entity->exercices = $exercicios;
+                        $changed = true;
+                    }
+                    if ($changed) {
                         $em->persist($entity);
                     }
                 } else {
                     $entity = new FederativeEntity();
                     $entity->name = $data['name'];
                     $entity->document = $doc;
+                    $entity->exercices = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);

@@ -3,13 +3,27 @@
 namespace AldirBlanc;
 
 use MapasCulturais\App;
+use MapasCulturais\i;
 use MapasCulturais\Traits;
+use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
     use Traits\ControllerAPI;
+
+    /**
+     * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
+     * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
+     */
+    public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
+
+    /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
+    public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
 
     function __construct() {}
 
@@ -47,6 +61,26 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $this->json($federativeEntities);
+    }
+
+    /**
+     * Lista exercícios PAR (`exercices`) do ente selecionado na sessão (apenas gestor CultBR).
+     * Não usa parâmetros de URL: o ente vem só da sessão.
+     *
+     * GET /aldirblanc/parExercicios
+     */
+    function GET_parExercicios()
+    {
+        if (!UserAccessService::isGestorCultBr()) {
+            $this->json(['exercicios' => []]);
+            return;
+        }
+
+        $sessionEntityId = FederativeEntityService::getSelectedFederativeEntityIdFromSession();
+        $this->json([
+            'federativeEntityId' => $sessionEntityId,
+            'exercicios' => FederativeEntityService::getParExerciciosForSessionSelectedEntity(),
+        ]);
     }
 
     /**
@@ -299,5 +333,283 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'entityId' => $entityId,
             'redirectUri' => $redirectUri
         ]);
+    }
+
+    /**
+     * Página para complementar cadastro (apenas campos obrigatórios faltantes).
+     * Exibida antes da escolha do ente (gestor) ou antes do painel (usuário comum).
+     * GET /aldirblanc/complete-profile
+     */
+    public function GET_completeProfile()
+    {
+        $app = App::i();
+
+        if ($app->user->is('guest')) {
+            $app->redirect($app->createUrl('auth', 'login'));
+            return;
+        }
+
+        $profile = $app->user->profile;
+        if (!$profile) {
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        $theme = $app->view;
+        if (!method_exists($theme, 'getRequeredsAgentIndividualMetadata') || !method_exists($theme, 'hasRequiredAgentFieldsFilled')) {
+            $app->redirect($app->createUrl('panel', 'index'));
+            return;
+        }
+
+        $profile->refresh();
+        if ($theme->hasRequiredAgentFieldsFilled($profile)) {
+            if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+                $app->redirect($app->createUrl('aldirblanc', 'selectFederativeEntity'));
+            } else {
+                $app->redirect($app->createUrl('panel', 'index'));
+            }
+            return;
+        }
+
+        $redirectUri = $app->createUrl('panel', 'index');
+        if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+            $redirectUri = $app->createUrl('aldirblanc', 'selectFederativeEntity');
+        }
+        $app->view->jsObject['completeProfile'] = [
+            'redirectUri' => $redirectUri,
+        ];
+
+        // Define a entidade solicitada para o layout/Theme (evita "lockedFields on null" no Theme.php)
+        $this->_requestedEntity = $profile;
+
+        $this->render('complete-profile', [
+            'entity' => $profile,
+        ]);
+    }
+
+    /**
+     * Salva os dados do formulário de complementação e redireciona.
+     * POST /aldirblanc/complete-profile
+     */
+    public function POST_completeProfile()
+    {
+        $app = App::i();
+
+        if ($app->user->is('guest')) {
+            $this->errorJson('Não autorizado', 403);
+            return;
+        }
+
+        $profile = $app->user->profile;
+        if (!$profile) {
+            $this->errorJson('Perfil não encontrado', 400);
+            return;
+        }
+
+        $theme = $app->view;
+        if (!method_exists($theme, 'getRequeredsAgentIndividualMetadata')) {
+            $this->errorJson('Configuração indisponível', 500);
+            return;
+        }
+
+        $data = $this->data;
+        $requiredKeys = $theme->getRequeredsAgentIndividualMetadata();
+
+        foreach ($requiredKeys as $key) {
+            if (!array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = $data[$key];
+            if (is_array($value) && empty($value)) {
+                $value = null;
+            }
+            $profile->$key = $value;
+        }
+
+        $profile->save(true);
+
+        $redirectUri = $app->createUrl('panel', 'index');
+        if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
+            $redirectUri = $app->createUrl('aldirblanc', 'selectFederativeEntity');
+        }
+
+        $this->json([
+            'success' => true,
+            'redirectUri' => $redirectUri,
+        ]);
+    }
+
+    /**
+     * Persiste descrição curta e metadados PAR após "usar modelo", sem passar pelo PATCH da oportunidade
+     * (evita validações e merges do tema nesse fluxo parcial).
+     *
+     * POST /aldirblanc/save-opportunity-post-generate
+     *
+     * Body JSON: opportunityId (obrigatório), shortDescription (obrigatório),
+     * parExercicioId, parMetaId, parAcaoId, parAtividadeId (opcionais).
+     */
+    public function POST_saveOpportunityPostGenerate(): void
+    {
+        $application = App::i();
+
+        $this->requireAuthentication();
+
+        if ($application->user->is('guest')) {
+            $this->errorJson(i::__('Não autorizado'), 403);
+            return;
+        }
+
+        $requestBody = $this->data;
+        $opportunityId = isset($requestBody['opportunityId'])
+            ? (int) $requestBody['opportunityId']
+            : 0;
+        if ($opportunityId < 1) {
+            $this->errorJson(['opportunityId' => [i::__('ID da oportunidade inválido.')]], 400);
+            return;
+        }
+
+        $shortDescriptionFromRequest = isset($requestBody['shortDescription'])
+            ? trim((string) $requestBody['shortDescription'])
+            : '';
+        if ($shortDescriptionFromRequest === '') {
+            $this->errorJson(['shortDescription' => [i::__('O campo "Descrição curta" é obrigatório.')]], 400);
+            return;
+        }
+
+        /** @var Opportunity|null $opportunity */
+        $opportunity = $application->repo('Opportunity')->find($opportunityId);
+        if (!$opportunity) {
+            $this->errorJson(['opportunityId' => [i::__('Oportunidade não encontrada.')]], 404);
+            return;
+        }
+
+        try {
+            $opportunity->checkPermission('@control');
+        } catch (\MapasCulturais\Exceptions\PermissionDenied) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $parInstrumentMetadataKeys = [
+            'parExercicioId',
+            'parMetaId',
+            'parAcaoId',
+            'parAtividadeId',
+        ];
+        $requestIncludesAnyParField = false;
+        foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+            if (array_key_exists($parFieldKey, $requestBody)) {
+                $requestIncludesAnyParField = true;
+                break;
+            }
+        }
+
+        try {
+            $opportunity->shortDescription = $shortDescriptionFromRequest;
+            $opportunity->setMetadata(self::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+
+            if ($requestIncludesAnyParField) {
+                foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+                    if (!array_key_exists($parFieldKey, $requestBody)) {
+                        continue;
+                    }
+                    $incomingParFieldValue = $requestBody[$parFieldKey];
+                    $normalizedParMetadataValue =
+                        ($incomingParFieldValue === null || $incomingParFieldValue === '')
+                            ? null
+                            : (string) $incomingParFieldValue;
+                    $opportunity->setMetadata($parFieldKey, $normalizedParMetadataValue);
+                }
+            }
+
+            $opportunity->save(true);
+        } catch (\Throwable $persistenceOrMetadataFailure) {
+            $application->log->error(
+                '[AldirBlanc] saveOpportunityPostGenerate: '
+                . $persistenceOrMetadataFailure->getMessage()
+            );
+            $this->errorJson(i::__('Não foi possível salvar os dados. Tente novamente.'), 500);
+            return;
+        }
+
+        $this->json(['success' => true, 'id' => $opportunity->id]);
+    }
+
+    /*
+    * Endpoint de integração de oportunidades
+     * 
+     * GET /aldirblanc/opportunities/{id}
+     */
+    public function API_integrationOpportunities()
+    {
+        $app = App::i();
+
+        // validação via JWT de "Meus Aplicativos"
+        IntegrationTokenHelper::validateOrFail();
+
+        $method = strtoupper($app->request->getMethod());
+
+        if ($method === 'GET') {
+            return $this->_getIntegrationOpportunities();
+        }
+
+        $this->json(['error' => true, 'message' => 'Método ' . $method . ' não permitido'], 405);
+    }
+
+    private function _getIntegrationOpportunities()
+    {
+        $app = App::i();
+
+        $cacheTTL = (int) ($app->plugins['AldirBlanc']->config['integration']['cacheTTL']);
+
+        // Obtém o ID da oportunidade
+        $idOportunity = $this->data['id'] ?? null;
+
+        // Verifica se o ID da oportunidade foi informado
+        if (!$idOportunity) {
+            $this->json(['error' => true, 'message' => 'ID da oportunidade não informado'], 400);
+            return;
+        }
+
+        // verifica se a oportunidade já está em cache
+        $cacheKey = "aldirblanc:integration_opportunity:{$idOportunity}";
+        if ($app->cache->contains($cacheKey)) {
+            $this->json($app->cache->fetch($cacheKey));
+            return;
+        }
+
+        $service = new OpportunityService();
+        // Obtém a oportunidade com metadados, arquivos, subsite e primeira fase
+        $opportunity = $service->findOpportunityWithIntegrationData((int) $idOportunity);
+
+        // Verifica se a oportunidade existe
+        if (!$opportunity) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não encontrada'], 404);
+            return;
+        }
+
+        // Verifica se a oportunidade está no subsite configurado para integração
+        $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? null);
+        if (!$opportunity->subsite || (isset($opportunity->subsite->id) && $opportunity->subsite->id !== $subsiteId)) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não encontrada no subsite configurado'], 404);
+            return;
+        }
+
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId') ?? $service->getRawMetadataValue($opportunity, 'federativeEntityId');
+        // verifica se a oportunidade tem o federativeEntityId
+        if (!$federativeEntityId) {
+            $this->json(['error' => true, 'message' => 'Oportunidade não tem o federativeEntityId'], 404);
+            return;
+        }
+
+        $payload = $service->mapOpportunityToIntegrationPayload($opportunity);
+
+        $response = [
+            'success' => true,
+            'data' => $payload
+        ];
+        $app->cache->save($cacheKey, $response, $cacheTTL);
+
+        $this->json($response);
     }
 }

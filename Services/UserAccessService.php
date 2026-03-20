@@ -18,6 +18,16 @@ class UserAccessService
     }
 
     /**
+     * Verifica se o usuário é saasSuperAdmin (pode ver "Meus Aplicativos")
+     *
+     * @return bool
+     */
+    public static function isSaasSuperAdmin(): bool
+    {
+        return App::i()->user->is(Role::SAAS_SUPER_ADMIN);
+    }
+
+    /**
      * Verifica se o usuário é um administrador
      * 
      * @return bool
