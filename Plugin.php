@@ -138,6 +138,19 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => false,
         ]);
 
+        // Gravado em POST_saveOpportunityPostGenerate; validateIntegrationJob no tema Pnab consulta para subsite.
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, [
+            'label' => i::__('Oportunidade gerada a partir de modelo'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, [
+            'label' => i::__('Create CultBR já enviado com sucesso'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
     }
 

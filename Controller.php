@@ -3,16 +3,27 @@
 namespace AldirBlanc;
 
 use MapasCulturais\App;
+use MapasCulturais\i;
 use MapasCulturais\Traits;
-use AldirBlanc\Entities\FederativeEntity;
+use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
     use Traits\ControllerAPI;
+
+    /**
+     * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
+     * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
+     */
+    public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
+
+    /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
+    public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
 
     function __construct() {}
 
@@ -53,47 +64,22 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
-     * Retorna o ente federado selecionado na sessão com seus exercícios (PAR: metas, ações, atividades).
-     * Usado no modal Criar Oportunidade para os campos em cascata Exercício → Meta → Ação → Atividade.
+     * Lista exercícios PAR (`exercices`) do ente selecionado na sessão (apenas gestor CultBR).
+     * Não usa parâmetros de URL: o ente vem só da sessão.
      *
-     * GET /aldirblanc/selected-ente-exercicios
+     * GET /aldirblanc/parExercicios
      */
-    function GET_selectedEnteExercicios()
+    function GET_parExercicios()
     {
-        $app = App::i();
-
         if (!UserAccessService::isGestorCultBr()) {
-            $this->json(null);
+            $this->json(['exercicios' => []]);
             return;
         }
 
-        if (!isset($_SESSION['selectedFederativeEntity'])) {
-            $this->json(null);
-            return;
-        }
-
-        $selected = json_decode($_SESSION['selectedFederativeEntity'], true);
-        if (!is_array($selected) || empty($selected['id'])) {
-            $this->json(null);
-            return;
-        }
-
-        $ente = $app->em->getRepository(FederativeEntity::class)->find((int) $selected['id']);
-        if (!$ente instanceof FederativeEntity) {
-            $this->json(null);
-            return;
-        }
-
-        $exercicios = $ente->exercices;
-        if (!is_array($exercicios)) {
-            $exercicios = [];
-        }
-
+        $sessionEntityId = FederativeEntityService::getSelectedFederativeEntityIdFromSession();
         $this->json([
-            'id' => $ente->id,
-            'name' => $ente->name,
-            'document' => $ente->document,
-            'exercicios' => $exercicios,
+            'federativeEntityId' => $sessionEntityId,
+            'exercicios' => FederativeEntityService::getParExerciciosForSessionSelectedEntity(),
         ]);
     }
 
@@ -451,6 +437,102 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'success' => true,
             'redirectUri' => $redirectUri,
         ]);
+    }
+
+    /**
+     * Persiste descrição curta e metadados PAR após "usar modelo", sem passar pelo PATCH da oportunidade
+     * (evita validações e merges do tema nesse fluxo parcial).
+     *
+     * POST /aldirblanc/save-opportunity-post-generate
+     *
+     * Body JSON: opportunityId (obrigatório), shortDescription (obrigatório),
+     * parExercicioId, parMetaId, parAcaoId, parAtividadeId (opcionais).
+     */
+    public function POST_saveOpportunityPostGenerate(): void
+    {
+        $application = App::i();
+
+        $this->requireAuthentication();
+
+        if ($application->user->is('guest')) {
+            $this->errorJson(i::__('Não autorizado'), 403);
+            return;
+        }
+
+        $requestBody = $this->data;
+        $opportunityId = isset($requestBody['opportunityId'])
+            ? (int) $requestBody['opportunityId']
+            : 0;
+        if ($opportunityId < 1) {
+            $this->errorJson(['opportunityId' => [i::__('ID da oportunidade inválido.')]], 400);
+            return;
+        }
+
+        $shortDescriptionFromRequest = isset($requestBody['shortDescription'])
+            ? trim((string) $requestBody['shortDescription'])
+            : '';
+        if ($shortDescriptionFromRequest === '') {
+            $this->errorJson(['shortDescription' => [i::__('O campo "Descrição curta" é obrigatório.')]], 400);
+            return;
+        }
+
+        /** @var Opportunity|null $opportunity */
+        $opportunity = $application->repo('Opportunity')->find($opportunityId);
+        if (!$opportunity) {
+            $this->errorJson(['opportunityId' => [i::__('Oportunidade não encontrada.')]], 404);
+            return;
+        }
+
+        try {
+            $opportunity->checkPermission('@control');
+        } catch (\MapasCulturais\Exceptions\PermissionDenied) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $parInstrumentMetadataKeys = [
+            'parExercicioId',
+            'parMetaId',
+            'parAcaoId',
+            'parAtividadeId',
+        ];
+        $requestIncludesAnyParField = false;
+        foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+            if (array_key_exists($parFieldKey, $requestBody)) {
+                $requestIncludesAnyParField = true;
+                break;
+            }
+        }
+
+        try {
+            $opportunity->shortDescription = $shortDescriptionFromRequest;
+            $opportunity->setMetadata(self::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+
+            if ($requestIncludesAnyParField) {
+                foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+                    if (!array_key_exists($parFieldKey, $requestBody)) {
+                        continue;
+                    }
+                    $incomingParFieldValue = $requestBody[$parFieldKey];
+                    $normalizedParMetadataValue =
+                        ($incomingParFieldValue === null || $incomingParFieldValue === '')
+                            ? null
+                            : (string) $incomingParFieldValue;
+                    $opportunity->setMetadata($parFieldKey, $normalizedParMetadataValue);
+                }
+            }
+
+            $opportunity->save(true);
+        } catch (\Throwable $persistenceOrMetadataFailure) {
+            $application->log->error(
+                '[AldirBlanc] saveOpportunityPostGenerate: '
+                . $persistenceOrMetadataFailure->getMessage()
+            );
+            $this->errorJson(i::__('Não foi possível salvar os dados. Tente novamente.'), 500);
+            return;
+        }
+
+        $this->json(['success' => true, 'id' => $opportunity->id]);
     }
 
     /*
