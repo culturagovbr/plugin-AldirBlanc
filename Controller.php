@@ -3,7 +3,9 @@
 namespace AldirBlanc;
 
 use MapasCulturais\App;
+use MapasCulturais\i;
 use MapasCulturais\Traits;
+use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Services\FederativeEntityService;
@@ -426,6 +428,101 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'success' => true,
             'redirectUri' => $redirectUri,
         ]);
+    }
+
+    /**
+     * Persiste descrição curta e metadados PAR após "usar modelo", sem passar pelo PATCH da oportunidade
+     * (evita validações e merges do tema nesse fluxo parcial).
+     *
+     * POST /aldirblanc/save-opportunity-post-generate
+     *
+     * Body JSON: opportunityId (obrigatório), shortDescription (obrigatório),
+     * parExercicioId, parMetaId, parAcaoId, parAtividadeId (opcionais).
+     */
+    public function POST_saveOpportunityPostGenerate(): void
+    {
+        $application = App::i();
+
+        $this->requireAuthentication();
+
+        if ($application->user->is('guest')) {
+            $this->errorJson(i::__('Não autorizado'), 403);
+            return;
+        }
+
+        $requestBody = $this->data;
+        $opportunityId = isset($requestBody['opportunityId'])
+            ? (int) $requestBody['opportunityId']
+            : 0;
+        if ($opportunityId < 1) {
+            $this->errorJson(['opportunityId' => [i::__('ID da oportunidade inválido.')]], 400);
+            return;
+        }
+
+        $shortDescriptionFromRequest = isset($requestBody['shortDescription'])
+            ? trim((string) $requestBody['shortDescription'])
+            : '';
+        if ($shortDescriptionFromRequest === '') {
+            $this->errorJson(['shortDescription' => [i::__('O campo "Descrição curta" é obrigatório.')]], 400);
+            return;
+        }
+
+        /** @var Opportunity|null $opportunity */
+        $opportunity = $application->repo('Opportunity')->find($opportunityId);
+        if (!$opportunity) {
+            $this->errorJson(['opportunityId' => [i::__('Oportunidade não encontrada.')]], 404);
+            return;
+        }
+
+        try {
+            $opportunity->checkPermission('@control');
+        } catch (\MapasCulturais\Exceptions\PermissionDenied) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $parInstrumentMetadataKeys = [
+            'parExercicioId',
+            'parMetaId',
+            'parAcaoId',
+            'parAtividadeId',
+        ];
+        $requestIncludesAnyParField = false;
+        foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+            if (array_key_exists($parFieldKey, $requestBody)) {
+                $requestIncludesAnyParField = true;
+                break;
+            }
+        }
+
+        try {
+            $opportunity->shortDescription = $shortDescriptionFromRequest;
+
+            if ($requestIncludesAnyParField) {
+                foreach ($parInstrumentMetadataKeys as $parFieldKey) {
+                    if (!array_key_exists($parFieldKey, $requestBody)) {
+                        continue;
+                    }
+                    $incomingParFieldValue = $requestBody[$parFieldKey];
+                    $normalizedParMetadataValue =
+                        ($incomingParFieldValue === null || $incomingParFieldValue === '')
+                            ? null
+                            : (string) $incomingParFieldValue;
+                    $opportunity->setMetadata($parFieldKey, $normalizedParMetadataValue);
+                }
+            }
+
+            $opportunity->save(true);
+        } catch (\Throwable $persistenceOrMetadataFailure) {
+            $application->log->error(
+                '[AldirBlanc] saveOpportunityPostGenerate: '
+                . $persistenceOrMetadataFailure->getMessage()
+            );
+            $this->errorJson(i::__('Não foi possível salvar os dados. Tente novamente.'), 500);
+            return;
+        }
+
+        $this->json(['success' => true, 'id' => $opportunity->id]);
     }
 
     /*
