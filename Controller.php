@@ -4,9 +4,9 @@ namespace AldirBlanc;
 
 use MapasCulturais\App;
 use MapasCulturais\Traits;
-use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
 
@@ -53,47 +53,22 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
-     * Retorna o ente federado selecionado na sessão com seus exercícios (PAR: metas, ações, atividades).
-     * Usado no modal Criar Oportunidade para os campos em cascata Exercício → Meta → Ação → Atividade.
+     * Lista exercícios PAR (`exercices`) do ente selecionado na sessão (apenas gestor CultBR).
+     * Não usa parâmetros de URL: o ente vem só da sessão.
      *
-     * GET /aldirblanc/selected-ente-exercicios
+     * GET /aldirblanc/parExercicios
      */
-    function GET_selectedEnteExercicios()
+    function GET_parExercicios()
     {
-        $app = App::i();
-
         if (!UserAccessService::isGestorCultBr()) {
-            $this->json(null);
+            $this->json(['exercicios' => []]);
             return;
         }
 
-        if (!isset($_SESSION['selectedFederativeEntity'])) {
-            $this->json(null);
-            return;
-        }
-
-        $selected = json_decode($_SESSION['selectedFederativeEntity'], true);
-        if (!is_array($selected) || empty($selected['id'])) {
-            $this->json(null);
-            return;
-        }
-
-        $ente = $app->em->getRepository(FederativeEntity::class)->find((int) $selected['id']);
-        if (!$ente instanceof FederativeEntity) {
-            $this->json(null);
-            return;
-        }
-
-        $exercicios = $ente->exercices;
-        if (!is_array($exercicios)) {
-            $exercicios = [];
-        }
-
+        $sessionEntityId = FederativeEntityService::getSelectedFederativeEntityIdFromSession();
         $this->json([
-            'id' => $ente->id,
-            'name' => $ente->name,
-            'document' => $ente->document,
-            'exercicios' => $exercicios,
+            'federativeEntityId' => $sessionEntityId,
+            'exercicios' => FederativeEntityService::getParExerciciosForSessionSelectedEntity(),
         ]);
     }
 
