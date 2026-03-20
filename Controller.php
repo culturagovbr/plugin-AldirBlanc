@@ -16,6 +16,12 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 {
     use Traits\ControllerAPI;
 
+    /**
+     * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
+     * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
+     */
+    public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
+
     function __construct() {}
 
     /**
@@ -497,6 +503,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         try {
             $opportunity->shortDescription = $shortDescriptionFromRequest;
+            $opportunity->setMetadata(self::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
 
             if ($requestIncludesAnyParField) {
                 foreach ($parInstrumentMetadataKeys as $parFieldKey) {
