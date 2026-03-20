@@ -22,6 +22,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      */
     public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
 
+    /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
+    public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
+
     function __construct() {}
 
     /**

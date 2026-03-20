@@ -11,6 +11,7 @@ use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
+use AldirBlanc\Controller;
 
 class OportunidadeCultJob extends JobType
 {
@@ -97,6 +98,10 @@ class OportunidadeCultJob extends JobType
 		try {
 			$this->{$method}($opportunity);
 
+			if ($action === 'create') {
+				$this->persistCultCreateSyncedFlag($app, (int) $job->opportunity->id);
+			}
+
 			// Limpa a tentativa do cache
 			$app->cache->delete($cacheKey);
 			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$job->action} para oportunidade: {$job->opportunity->id}");
@@ -122,6 +127,21 @@ class OportunidadeCultJob extends JobType
 				$app->cache->delete($cacheKey);
 			}
 			return true;
+		}
+	}
+
+	private function persistCultCreateSyncedFlag(App $app, int $opportunityId): void
+	{
+		$app->disableAccessControl();
+		try {
+			$entity = $app->repo('Opportunity')->find($opportunityId);
+			if ($entity === null) {
+				return;
+			}
+			$entity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+			$entity->save(true);
+		} finally {
+			$app->enableAccessControl();
 		}
 	}
 
