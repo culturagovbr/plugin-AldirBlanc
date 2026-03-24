@@ -169,6 +169,11 @@ class Plugin extends \MapasCulturais\Plugin
         // Inicializa o listener do Doctrine para estender o DiscriminatorMap do AgentRelation
         $this->initAgentRelationListener($app);
 
+        // Merge explícito: cobre metadados vindos de cache / ordem de carregamento sem o evento
+        if ($app->em) {
+            $this->ensureAgentRelationDiscriminatorMap($app->em);
+        }
+
         // Registra o valor no ENUM PHP ObjectType
         $app->hook('doctrine.emum(object_type).values', function (&$values) {
             $values['FederativeEntity'] = \AldirBlanc\Entities\FederativeEntity::class;
@@ -188,7 +193,7 @@ class Plugin extends \MapasCulturais\Plugin
     protected function getAgentRelationMappings()
     {
         return [
-            "AldirBlanc\Entities\FederativeEntity" => "AldirBlanc\Entities\FederativeEntityAgentRelation",
+            'AldirBlanc\Entities\FederativeEntity' => 'AldirBlanc\Entities\FederativeEntityAgentRelation',
         ];
     }
 }
