@@ -27,7 +27,7 @@ if ($targetUserId <= 0) {
 
 /** @var User|null $targetUser */
 $targetUser = $app->repo('User')->find($targetUserId);
-if ($targetUser === null || !GestorCultBrSyncLimitResetService::isEligibleTarget($app, $targetUser)) {
+if ($targetUser === null || !GestorCultBrSyncLimitResetService::isEligibleTarget($targetUser)) {
     return;
 }
 
@@ -35,6 +35,7 @@ $postUrl = $app->createUrl('aldirblanc', 'clearGestorCultBrSyncLimits');
 $messageDomId = 'aldirblanc-gestor-cult-sync-feedback-' . $targetUserId;
 
 $this->import('
+    mc-modal
     mc-teleport-multiple
     gestor-cult-sync-reset-button
 ');

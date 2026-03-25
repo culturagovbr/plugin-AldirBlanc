@@ -174,7 +174,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
-     * Super admin / SaaS super admin: zera cache e metadado de última sync CultBR do gestor informado.
+     * Super admin / SaaS super admin: zera cache e metadados de consolidação CultBR do usuário informado (com perfil).
      *
      * POST /aldirblanc/clearGestorCultBrSyncLimits
      * Body: userId (JSON ou application/x-www-form-urlencoded)
@@ -208,10 +208,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        if (!GestorCultBrSyncLimitResetService::isEligibleTarget($app, $targetUser)) {
+        if (!GestorCultBrSyncLimitResetService::isEligibleTarget($targetUser)) {
             $this->json([
                 'ok' => false,
-                'message' => i::__('Apenas gestor CultBR neste subsite ou usuário bloqueado após API sem entes (recuperação).'),
+                'message' => i::__('Não é possível ajustar sincronização: usuário sem perfil/agente.'),
             ], 400);
             return;
         }

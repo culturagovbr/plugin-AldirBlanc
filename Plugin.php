@@ -69,7 +69,7 @@ class Plugin extends \MapasCulturais\Plugin
         ];
 
         /**
-         * Painel user-detail (tema Pnab): botão super/saas super para limpar limite de sync CultBR.
+         * Painel user-detail (tema Pnab): botão super/saas super para limpar cache/metadados de sync CultBR (qualquer usuário com perfil).
          * O callback é executado com applyHookBoundTo(Theme): $this é o tema ativo.
          */
         $app->hook('template(panel.user-detail.user-mail):begin', function () use ($app) {

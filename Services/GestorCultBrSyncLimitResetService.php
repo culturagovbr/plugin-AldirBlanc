@@ -4,32 +4,21 @@ declare(strict_types=1);
 
 namespace AldirBlanc\Services;
 
-use AldirBlanc\Enum\Role;
 use MapasCulturais\App;
 use MapasCulturais\Entities\User;
 
 /**
- * Zera cache/contadores de sync CultBR, última sync no perfil, e (recuperação admin)
- * remove o bloqueio de consolidação quando a API retornou vazio em dev: isNotGestorCultBr + papel GestorCultBr.
+ * Zera cache/contadores de sync CultBR e metadados de consolidação no perfil.
+ * O papel GestorCultBr é tratado na consolidação de dados, não aqui.
  */
 final class GestorCultBrSyncLimitResetService
 {
     /**
-     * Alvo elegível: gestor no subsite atual OU marcado como "API sem entes" após sync vazio (fixture/real).
+     * Alvo elegível: qualquer usuário com perfil/agente (permite limpar antes de virar gestor no CultBR).
      */
-    public static function isEligibleTarget(App $app, User $targetUser): bool
+    public static function isEligibleTarget(User $targetUser): bool
     {
-        $profile = $targetUser->profile;
-        if ($profile === null) {
-            return false;
-        }
-
-        $subsiteId = $app->getCurrentSubsiteId();
-        if ($targetUser->is(Role::GESTOR_CULT_BR, $subsiteId)) {
-            return true;
-        }
-
-        return (bool) $profile->getMetadata('isNotGestorCultBr');
+        return $targetUser->profile !== null;
     }
 
     public static function clearForUser(App $app, User $targetUser): void
@@ -39,8 +28,8 @@ final class GestorCultBrSyncLimitResetService
             return;
         }
 
-        $subsiteId = $app->getCurrentSubsiteId();
         $userId = $targetUser->id;
+
         $cpfField = $app->auth->getMetadataFieldCpfFromConfig();
         $document = preg_replace('/[^0-9]/', '', (string) $profile->getMetadata($cpfField));
 
@@ -57,9 +46,7 @@ final class GestorCultBrSyncLimitResetService
         $profile->setMetadata('gestorCultBrLastSyncedAt', null);
         $profile->setMetadata('isNotGestorCultBr', false);
         $profile->save(true);
-        if (!$targetUser->is(Role::GESTOR_CULT_BR, $subsiteId)) {
-            $targetUser->addRole(Role::GESTOR_CULT_BR, $subsiteId);
-        }
+
         $app->enableAccessControl();
     }
 }

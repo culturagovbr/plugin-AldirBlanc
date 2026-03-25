@@ -54,6 +54,23 @@ app.component('gestor-cult-sync-reset-button', {
     },
 
     methods: {
+        openConfirmModal() {
+            if (this.loading) {
+                return;
+            }
+            const modal = this.$refs.confirmModal;
+            if (modal && typeof modal.open === 'function') {
+                modal.open();
+            }
+        },
+
+        confirmAndClearLimits(modal) {
+            if (typeof modal.close === 'function') {
+                modal.close();
+            }
+            this.clearLimits();
+        },
+
         clearFeedbackHideTimer() {
             if (this.feedbackHideTimerId != null) {
                 clearTimeout(this.feedbackHideTimerId);
