@@ -67,6 +67,29 @@ class Plugin extends \MapasCulturais\Plugin
             'aldirblanc',
             'integrationOpportunities'
         ];
+
+        /**
+         * Painel user-detail (tema Pnab): botão super/saas super para limpar cache/metadados de sync CultBR (qualquer usuário com perfil).
+         * O callback é executado com applyHookBoundTo(Theme): $this é o tema ativo.
+         */
+        $app->hook('template(panel.user-detail.user-mail):begin', function () use ($app) {
+            if (!class_exists('Pnab\\Theme') || !$app->view instanceof \Pnab\Theme) {
+                return;
+            }
+            /** @var \MapasCulturais\Themes\BaseV2\Theme $this */
+            $this->part('panel/gestor-cult-sync-reset');
+        }, 55);
+
+        $app->hook('GET(panel.user-detail):before', function () use ($app) {
+            if (!class_exists('Pnab\\Theme') || !$app->view instanceof \Pnab\Theme) {
+                return;
+            }
+            $app->view->enqueueStyle(
+                'app-v2',
+                'aldirblanc-panel-gestor-cult-sync-reset',
+                'css/panel-gestor-cult-sync-reset.css',
+            );
+        });
     }
 
     function register()
@@ -169,6 +192,11 @@ class Plugin extends \MapasCulturais\Plugin
         // Inicializa o listener do Doctrine para estender o DiscriminatorMap do AgentRelation
         $this->initAgentRelationListener($app);
 
+        // Merge explícito: cobre metadados vindos de cache / ordem de carregamento sem o evento
+        if ($app->em) {
+            $this->ensureAgentRelationDiscriminatorMap($app->em);
+        }
+
         // Registra o valor no ENUM PHP ObjectType
         $app->hook('doctrine.emum(object_type).values', function (&$values) {
             $values['FederativeEntity'] = \AldirBlanc\Entities\FederativeEntity::class;
@@ -188,7 +216,7 @@ class Plugin extends \MapasCulturais\Plugin
     protected function getAgentRelationMappings()
     {
         return [
-            "AldirBlanc\Entities\FederativeEntity" => "AldirBlanc\Entities\FederativeEntityAgentRelation",
+            'AldirBlanc\Entities\FederativeEntity' => 'AldirBlanc\Entities\FederativeEntityAgentRelation',
         ];
     }
 }
