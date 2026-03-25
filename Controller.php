@@ -8,9 +8,12 @@ use MapasCulturais\Traits;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Services\GestorCultBrSyncLimitResetService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Entities\User;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -168,6 +171,54 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'success' => true,
             'redirectTo' => $app->createUrl('auth', 'login')
         ]);
+    }
+
+    /**
+     * Super admin / SaaS super admin: zera cache e metadado de última sync CultBR do gestor informado.
+     *
+     * POST /aldirblanc/clearGestorCultBrSyncLimits
+     * Body: userId (JSON ou application/x-www-form-urlencoded)
+     */
+    public function POST_clearGestorCultBrSyncLimits(): void
+    {
+        $app = App::i();
+        $this->requireAuthentication();
+
+        if ($app->user->is('guest')) {
+            $this->json(['ok' => false, 'message' => i::__('É necessário estar logado.')], 401);
+            return;
+        }
+
+        if (!$app->user->is('superAdmin') && !$app->user->is('saasSuperAdmin')) {
+            $this->json(['ok' => false, 'message' => i::__('Permissão negada.')], 403);
+            return;
+        }
+
+        $payload = is_array($this->data) ? $this->data : [];
+        $userId = (int) ($payload['userId'] ?? 0);
+        if ($userId <= 0) {
+            $this->json(['ok' => false, 'message' => i::__('Identificador de usuário inválido.')], 400);
+            return;
+        }
+
+        /** @var User|null $targetUser */
+        $targetUser = $app->repo('User')->find($userId);
+        if ($targetUser === null) {
+            $this->json(['ok' => false, 'message' => i::__('Usuário não encontrado.')], 404);
+            return;
+        }
+
+        if (!GestorCultBrSyncLimitResetService::isEligibleTarget($app, $targetUser)) {
+            $this->json([
+                'ok' => false,
+                'message' => i::__('Apenas gestor CultBR neste subsite ou usuário bloqueado após API sem entes (recuperação).'),
+            ], 400);
+            return;
+        }
+
+        GestorCultBrSyncLimitResetService::clearForUser($app, $targetUser);
+
+        $this->json(['ok' => true, 'message' => i::__('Limite limpo; consolidação CultBR reabilitada para este usuário, se aplicável.')]);
     }
 
     /**

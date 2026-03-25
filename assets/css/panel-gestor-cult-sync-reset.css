@@ -1,0 +1,71 @@
+/**
+ * Coluna direita junto a .resent-email-validation (float: right no MultipleLocalAuth).
+ */
+.user-mail .aldirblanc-user-detail__gestor-cult-reset {
+    align-items: flex-end;
+    clear: right;
+    display: flex;
+    flex-direction: column;
+    float: right;
+    gap: 0.5rem;
+    margin: 0.5rem 0 1rem;
+    max-width: min(100%, 22.5rem);
+    width: max-content;
+}
+
+.user-mail .aldirblanc-gestor-cult-sync-reset__btn {
+    align-self: flex-end;
+    background-color: var(--mc-warning-main, #ffd361);
+    border: 2px solid var(--mc-warning-dark, #f3ad43);
+    color: var(--mc-warning-500, #b04706);
+    font-weight: 600;
+    line-height: 1.25;
+    max-width: 20rem;
+    padding: 0.625rem 1.125rem;
+    text-align: center;
+    white-space: normal;
+    width: auto;
+}
+
+.user-mail .aldirblanc-gestor-cult-sync-reset__btn:hover:not(:disabled) {
+    background-color: var(--mc-warning-dark, #f3ad43);
+    border-color: var(--mc-warning-500, #b04706);
+    color: var(--mc-warning-500, #b04706);
+    filter: none;
+}
+
+.user-mail .aldirblanc-gestor-cult-sync-reset__btn:disabled {
+    opacity: 0.55;
+}
+
+.user-mail .aldirblanc-gestor-cult-sync-reset__feedback {
+    font-size: 0.875rem;
+    line-height: 1.35;
+    margin: 0;
+    max-width: 25rem;
+    text-align: right;
+}
+
+.user-mail:has(.aldirblanc-user-detail__gestor-cult-reset) .user-mail__title {
+    clear: both;
+}
+
+@media (max-width: 500px) {
+    .user-mail .aldirblanc-user-detail__gestor-cult-reset {
+        align-items: flex-start;
+        clear: both;
+        float: none;
+        margin-top: 0.75rem;
+        max-width: 100%;
+        width: 100%;
+    }
+
+    .user-mail .aldirblanc-gestor-cult-sync-reset__btn {
+        align-self: flex-start;
+        max-width: 100%;
+    }
+
+    .user-mail .aldirblanc-gestor-cult-sync-reset__feedback {
+        text-align: left;
+    }
+}
