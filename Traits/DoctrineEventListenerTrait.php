@@ -1,136 +1,142 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AldirBlanc\Traits;
 
-use MapasCulturais\App;
-use Doctrine\ORM\Events;
+use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
+use Doctrine\ORM\Events;
+use Doctrine\ORM\Mapping\ClassMetadata;
+use MapasCulturais\App;
 
 /**
- * Trait para estender o DiscriminatorMap do AgentRelation via eventos do Doctrine
+ * Estende o DiscriminatorMap de AgentRelation em runtime (listener + merge explícito após init).
+ *
+ * O cache de metadados do Doctrine (PhpFilesAdapter) pode devolver ClassMetadata sem passar
+ * novamente pelo fluxo que depende só do evento; o merge explícito na inicialização do plugin
+ * garante o mapa antes de qualquer find/hidratação.
  */
 trait DoctrineEventListenerTrait
 {
+    private static bool $agentRelationDoctrineListenerRegistered = false;
+
+    private const AGENT_RELATION_CLASS = 'MapasCulturais\Entities\AgentRelation';
+
     /**
      * Inicializa o listener do Doctrine para estender o DiscriminatorMap do AgentRelation
-     * 
-     * @param App $app
-     * @return void
      */
-    protected function initAgentRelationListener(App $app)
+    protected function initAgentRelationListener(App $app): void
     {
-        // Tenta registrar o listener imediatamente se o EntityManager estiver disponível
         $this->registerDoctrineListener($app);
 
-        // Também registra usando hook para garantir que seja executado quando o EntityManager estiver pronto
         $self = $this;
-        $app->hook('app.init:after', function () use ($self, $app) {
+        $app->hook('app.init:after', function () use ($self, $app): void {
             $self->registerDoctrineListener($app);
+            if ($app->em) {
+                $self->ensureAgentRelationDiscriminatorMap($app->em);
+            }
         });
     }
 
     /**
-     * Registra o listener do Doctrine para modificar os metadados do AgentRelation
-     * 
-     * @param App $app
-     * @return void
+     * Registra o listener uma única vez no EventManager do EM atual.
      */
-    protected function registerDoctrineListener(App $app)
+    protected function registerDoctrineListener(App $app): void
     {
-        // Verifica se o EntityManager está disponível
-        if (!$app->em) {
+        if (!$app->em || self::$agentRelationDoctrineListenerRegistered) {
             return;
         }
 
-        $eventManager = $app->em->getEventManager();
-
-        // Verifica se o listener já foi registrado para evitar duplicação
-        $listeners = $eventManager->getListeners(Events::loadClassMetadata);
-        if (in_array($this, $listeners, true)) {
-            return;
-        }
-
-        // Adiciona o listener para modificar os metadados quando AgentRelation for carregado
-        $eventManager->addEventListener(Events::loadClassMetadata, $this);
+        $app->em->getEventManager()->addEventListener(Events::loadClassMetadata, $this);
+        self::$agentRelationDoctrineListenerRegistered = true;
     }
 
     /**
-     * Retorna os novos mapeamentos a serem adicionados ao DiscriminatorMap do AgentRelation
-     * 
-     * Formato: "NomeCompletoDaClasse" => "NomeCompletoDaClasseAgentRelation"
-     * 
-     * IMPORTANTE: Se você adicionar uma nova entidade aqui, também precisa adicionar
-     * o nome da classe ao ENUM 'object_type' no banco de dados via db-updates.php
-     * 
-     * Exemplo no db-updates.php:
-     * ALTER TYPE object_type ADD VALUE 'Pnab\Entities\FederativeEntity';
-     * 
-     * Sobrescreva este método na classe que usa a trait para retornar seus mapeamentos
-     * 
-     * @return array<string, string>
+     * @return array<string, string> owner entity class => relation entity class
      */
-    protected function getAgentRelationMappings()
+    protected function getAgentRelationMappings(): array
     {
         return [];
     }
 
     /**
-     * Listener do Doctrine que modifica o DiscriminatorMap em runtime
-     * 
-     * Este método é chamado quando o Doctrine carrega os metadados de uma classe
-     * 
-     * @param LoadClassMetadataEventArgs $eventArgs
-     * @return void
+     * Aplica o merge no ClassMetadata raiz AgentRelation (idempotente).
      */
-    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs)
+    protected function ensureAgentRelationDiscriminatorMap(EntityManager $entityManager): void
     {
-        $classMetadata = $eventArgs->getClassMetadata();
-
-        // Verifica se é a classe AgentRelation
-        $agentRelationClass = 'MapasCulturais\Entities\AgentRelation';
-        if ($classMetadata->getName() !== $agentRelationClass) {
-            return;
-        }
-
         $newMappings = $this->getAgentRelationMappings();
-
-        if (empty($newMappings)) {
+        if ($newMappings === []) {
             return;
         }
 
-        // Inicializa o discriminatorMap se não existir
+        $classMetadata = $entityManager->getClassMetadata(self::AGENT_RELATION_CLASS);
+        $this->applyMappingsToAgentRelationMetadata($classMetadata, $newMappings);
+    }
+
+    /**
+     * @param array<string, string> $newMappings
+     */
+    private function applyMappingsToAgentRelationMetadata(ClassMetadata $classMetadata, array $newMappings): void
+    {
+        if ($classMetadata->getName() !== self::AGENT_RELATION_CLASS) {
+            return;
+        }
+
         if (!isset($classMetadata->discriminatorMap) || !is_array($classMetadata->discriminatorMap)) {
             $classMetadata->discriminatorMap = [];
         }
-
-        // Atualiza as subclasses manualmente
         if (!isset($classMetadata->subClasses) || !is_array($classMetadata->subClasses)) {
             $classMetadata->subClasses = [];
         }
 
         foreach ($newMappings as $entityClass => $relationClass) {
-            // Remove barra inicial se existir para normalizar o namespace
             $relationClassNormalized = ltrim($relationClass, '\\');
+            $entityClassNormalized = ltrim($entityClass, '\\');
 
-            // Garante que a classe seja carregada antes de adicionar ao discriminator map
             if (!class_exists($relationClassNormalized)) {
-                // Tenta carregar a classe com barra inicial
                 if (class_exists('\\' . $relationClassNormalized)) {
                     $relationClassNormalized = '\\' . $relationClassNormalized;
                 } else {
-                    // Se ainda não existir, pula este mapeamento
                     continue;
                 }
             }
 
-            // Adiciona ao discriminator map usando o nome normalizado
-            $classMetadata->discriminatorMap[$entityClass] = $relationClassNormalized;
+            $classMetadata->discriminatorMap[$entityClassNormalized] = $relationClassNormalized;
 
-            // Adiciona às subclasses se ainda não estiver
-            if (!in_array($relationClassNormalized, $classMetadata->subClasses)) {
+            if (!in_array($relationClassNormalized, $classMetadata->subClasses, true)) {
                 $classMetadata->subClasses[] = $relationClassNormalized;
             }
         }
     }
-}
 
+    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs): void
+    {
+        $newMappings = $this->getAgentRelationMappings();
+        if ($newMappings === []) {
+            return;
+        }
+
+        $classMetadata = $eventArgs->getClassMetadata();
+        $className = $classMetadata->getName();
+
+        if ($className === self::AGENT_RELATION_CLASS) {
+            $this->applyMappingsToAgentRelationMetadata($classMetadata, $newMappings);
+
+            return;
+        }
+
+        $relationClasses = array_map(
+            static fn (string $relationClass): string => ltrim($relationClass, '\\'),
+            array_values($newMappings)
+        );
+
+        if (!in_array($className, $relationClasses, true)) {
+            return;
+        }
+
+        $entityManager = $eventArgs->getEntityManager();
+        $rootMetadata = $entityManager->getClassMetadata(self::AGENT_RELATION_CLASS);
+        $this->applyMappingsToAgentRelationMetadata($rootMetadata, $newMappings);
+    }
+}
