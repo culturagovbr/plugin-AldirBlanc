@@ -42,7 +42,7 @@ class GestorCultJob
         }
         
         $integrationConfig = $this->getIntegrationConfig();
-        $cacheTtlConfig = $integrationConfig['cacheTTL'];
+        $cacheTtlConfig = (int) ($integrationConfig['cacheTTL'] ?? 0);
         $maxRequestsPerDay = (int) $integrationConfig['maxRequestsPerDay'];
 
         // Chaves de cache para sincronização
