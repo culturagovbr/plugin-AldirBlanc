@@ -10,16 +10,14 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
     private GestorDocument $gestorDocument;
 
-    // Constantes de configuração
-    private const CACHE_TTL = 3600;           // 1 hora em segundos
-    private const MAX_REQUESTS_PER_DAY = 10;  // Limite máximo de requests por dia
-    private const SYNC_LOCK_TTL = 300;        // 5 minutos para lock de sincronização
+    private const SYNC_LOCK_TTL = 300; // 5 minutos para lock de sincronização
 
     public function __construct(GestorDocument $gestorDocument)
     {
@@ -42,6 +40,10 @@ class GestorCultJob
             $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
+        
+        $integrationConfig = $this->getIntegrationConfig();
+        $cacheTtlConfig = $integrationConfig['cacheTTL'];
+        $maxRequestsPerDay = (int) $integrationConfig['maxRequestsPerDay'];
 
         // Chaves de cache para sincronização
         $cacheKey    = "gestor_cult_sync:{$userId}:{$document}";
@@ -52,7 +54,11 @@ class GestorCultJob
         if ($app->cache->contains($lockKey)) {
             // Se está em lock, verifica se já há dados no cache
             // Se houver, marca como concluído (outro processo já sincronizou)
-            $cachedEntities = $app->cache->fetch($cacheKey);
+            $cachedEntities = false;
+            if ($cacheTtlConfig > 0) {
+                $cachedEntities = $app->cache->fetch($cacheKey);
+            }
+
             if ($cachedEntities !== false && $cachedEntities !== null) {
                 $cachedEntities = $this->extractFederativeEntitiesFromResponse($cachedEntities);
                 $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
@@ -70,7 +76,7 @@ class GestorCultJob
 
         // Verifica se o limite (por usuário) de requests por dia foi atingido
         $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
-        if ($requestsCount >= self::MAX_REQUESTS_PER_DAY) {
+        if ($requestsCount >= $maxRequestsPerDay) {
             // Marca que o sync terminou (limite atingido) - sem erro, apenas limite
             $_SESSION['gestor_cult_sync_completed'] = true;
             // Limpa flags de erro se existirem
@@ -79,8 +85,8 @@ class GestorCultJob
             return;
         }
 
-        // Verifica se a última sincronização foi há menos de 1 hora [banco de dados]
-        if ($this->wasSyncedLessThanOneHourAgo($agent)) {
+        // Verifica se a última sincronização foi há menos do TTL configurado [banco de dados]
+        if ($this->wasSyncedLessThanCacheTtlAgo($agent, $cacheTtlConfig)) {
             // Marca que o sync terminou (já sincronizado recentemente) - sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
             // Limpa flags de erro se existirem
@@ -89,8 +95,8 @@ class GestorCultJob
             return;
         }
 
-        // Obtém os entes federados do cache
-        $federativeEntities = $app->cache->fetch($cacheKey);
+        // Obtém os entes federados do cache (desligado quando cacheTTL é null no .env)
+        $federativeEntities = $cacheTtlConfig > 0 ? $app->cache->fetch($cacheKey) : false;
         $syncedFromApi = false;
         $apiResponse = null;
 
@@ -106,7 +112,9 @@ class GestorCultJob
                 $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
                 $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
 
-                $app->cache->save($cacheKey, $federativeEntities, self::CACHE_TTL);
+                if ($cacheTtlConfig > 0) {
+                    $app->cache->save($cacheKey, $federativeEntities, $cacheTtlConfig);
+                }
             } catch (\Throwable $e) {
                 // Dispara alerta para Telegram
                 $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
@@ -132,8 +140,10 @@ class GestorCultJob
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
         // e grava metadado isNotGestorCultBr para pular consolidação nos próximos logins
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+            $hadGestorRole = UserAccessService::isGestorCultBr();
+
             // Se o usuário é gestor CultBR, remove a permissão (mas mantém as associações)
-            if (UserAccessService::isGestorCultBr()) {
+            if ($hadGestorRole) {
                 $app->disableAccessControl();
                 $app->user->removeRole(Role::GESTOR_CULT_BR);
                 $app->enableAccessControl();
@@ -298,20 +308,25 @@ class GestorCultJob
         return [];
     }
 
-    /**
-     * Verifica se a última sincronização foi há menos de 1 hora
-     * 
-     * @param Agent $agent
-     * @return bool Retorna true se foi sincronizado há menos de 1 hora, false caso contrário
-     */
-    private function wasSyncedLessThanOneHourAgo(Agent $agent): bool
+    private function getIntegrationConfig(): array
     {
+        return Plugin::getInstance()->config['integration'] ?? [];
+    }
+
+    /**
+     * Verifica se a última sincronização foi há menos do TTL configurado.
+     */
+    private function wasSyncedLessThanCacheTtlAgo(Agent $agent, ?int $cacheTtlConfig): bool
+    {
+        if ($cacheTtlConfig <= 0 || $cacheTtlConfig === null) {
+            return false;
+        }
+
         $lastSyncedAt = $agent->getMetadata('gestorCultBrLastSyncedAt');
         if (!$lastSyncedAt) {
             return false;
         }
 
-        // Converter para timestamp se necessário
         if ($lastSyncedAt instanceof \DateTimeInterface) {
             $lastSyncTime = $lastSyncedAt->getTimestamp();
         } elseif (is_string($lastSyncedAt)) {
@@ -323,8 +338,7 @@ class GestorCultJob
             return false;
         }
 
-        // Verifica se foi sincronizado há menos de 1 hora
-        return (time() - $lastSyncTime) < self::CACHE_TTL;
+        return (time() - $lastSyncTime) < $cacheTtlConfig;
     }
 
     /**
