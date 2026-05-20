@@ -42,5 +42,9 @@ return [
         if (__table_exists('federative_entity')) {
             __try("ALTER TABLE federative_entity ADD COLUMN exercices JSONB DEFAULT '{}'::jsonb NOT NULL");
         }
+    },
+
+    'Removendo metadado isNotGestorCultBr' => function () {
+        __try("DELETE FROM agent_meta WHERE key = 'isNotGestorCultBr'");
     }
 ];

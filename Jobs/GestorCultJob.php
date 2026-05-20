@@ -138,36 +138,17 @@ class GestorCultJob
         }
 
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
-        // e grava metadado isNotGestorCultBr para pular consolidação nos próximos logins
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
-            $hadGestorRole = UserAccessService::isGestorCultBr();
-
-            // Se o usuário é gestor CultBR, remove a permissão (mas mantém as associações)
-            if ($hadGestorRole) {
+            if (UserAccessService::isGestorCultBr()) {
                 $app->disableAccessControl();
                 $app->user->removeRole(Role::GESTOR_CULT_BR);
                 $app->enableAccessControl();
             }
 
-            // Marca no agente que a API não retornou entes (2º+ login não passará pela consolidação)
-            $app->disableAccessControl();
-            $agent->setMetadata('isNotGestorCultBr', true);
-            $agent->save(true);
-            $app->enableAccessControl();
-            
             $_SESSION['gestor_cult_sync_completed'] = true;
-            // Limpa flags de erro se existirem
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
             return;
-        }
-
-        // API retornou entes: remove o metadado isNotGestorCultBr se existir (estado consistente)
-        if ($agent->getMetadata('isNotGestorCultBr')) {
-            $app->disableAccessControl();
-            $agent->setMetadata('isNotGestorCultBr', false);
-            $agent->save(true);
-            $app->enableAccessControl();
         }
 
         // Se o usuário não é gestor CultBR, adiciona a permissão

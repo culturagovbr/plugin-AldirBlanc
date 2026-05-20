@@ -124,14 +124,6 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true
         ]);
 
-        // Registra metadado isNotGestorCultBr: quando a API do Cult não retorna entes, grava true
-        // para que no 2º ou N-ésimo login o usuário pule a tela de consolidação
-        $this->registerMetadata('MapasCulturais\Entities\Agent', 'isNotGestorCultBr', [
-            'label' => i::__('Indica que a API CultBR não retornou entes para este agente'),
-            'type' => 'boolean',
-            'private' => true
-        ]);
-
         // Registra metadado de data de publicação do edital para Opportunity (usado na integração com Oportunidade Cult)
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', 'publishedTimestamp', [
             'label' => i::__('Data de publicação do edital'),
