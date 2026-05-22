@@ -44,7 +44,6 @@ final class GestorCultBrSyncLimitResetService
 
         $app->disableAccessControl();
         $profile->setMetadata('gestorCultBrLastSyncedAt', null);
-        $profile->setMetadata('isNotGestorCultBr', false);
         $profile->save(true);
 
         $app->enableAccessControl();
