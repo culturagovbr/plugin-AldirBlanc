@@ -34,7 +34,8 @@ class Plugin extends \MapasCulturais\Plugin
             'integration' => [
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
-                'cacheTTL' => (int) env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
+                'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
+                'maxRequestsPerDay' => (int) env('ALDIRBLANC_INTEGRATION_MAX_REQUESTS_PER_DAY', 10),
                 'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
                 'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
             ]
@@ -53,7 +54,6 @@ class Plugin extends \MapasCulturais\Plugin
     {
         return self::$instance;
     }
-
 
     public function _init()
     {
@@ -121,14 +121,6 @@ class Plugin extends \MapasCulturais\Plugin
         $this->registerMetadata('MapasCulturais\Entities\Agent', 'gestorCultBrLastSyncedAt', [
             'label' => i::__('Data da última sincronização com API Gestor CultBR'),
             'type' => 'DateTime',
-            'private' => true
-        ]);
-
-        // Registra metadado isNotGestorCultBr: quando a API do Cult não retorna entes, grava true
-        // para que no 2º ou N-ésimo login o usuário pule a tela de consolidação
-        $this->registerMetadata('MapasCulturais\Entities\Agent', 'isNotGestorCultBr', [
-            'label' => i::__('Indica que a API CultBR não retornou entes para este agente'),
-            'type' => 'boolean',
             'private' => true
         ]);
 

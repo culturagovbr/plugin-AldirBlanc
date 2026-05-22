@@ -7,7 +7,7 @@ return [
     'confirmModalTitle' => i::__('Habilitar sincronização CultBR'),
     'confirmModalListIntro' => i::__('Esta ação:'),
     'confirmModalListItemCache' => i::__('limpa cache'),
-    'confirmModalListItemMetadata' => i::__('Limpa metadados relacionados ao fluxo de consolidação dos dados (isNotGestorCultBr | gestorCultBrLastSyncedAt)'),
+    'confirmModalListItemMetadata' => i::__('Limpa metadados relacionados ao fluxo de consolidação dos dados (gestorCultBrLastSyncedAt)'),
     'confirmModalAttention' => i::__('Atenção!'),
     'confirmModalNextLoginWarning' => i::__('Será feita a consolidação de dados no próximo login do usuário.'),
     'confirmModalQuestion' => i::__('Deseja realmente habilitar a sincronização CultBR para este usuário?'),
