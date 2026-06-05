@@ -7,7 +7,9 @@ use MapasCulturais\i;
 use MapasCulturais\Traits;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Services\GestorCultBrSyncLimitResetService;
@@ -84,6 +86,90 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'federativeEntityId' => $sessionEntityId,
             'exercicios' => FederativeEntityService::getParExerciciosForSessionSelectedEntity(),
         ]);
+    }
+
+    /**
+     * Lista ações do PAR diretamente da API CultBR.
+     *
+     * GET /aldirblanc/parAcoes
+     */
+    function GET_parAcoes()
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::isSaasSuperAdmin()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParAcaoClient::DEFAULT_SKIP;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
+
+        try {
+            $cultBrResponse = (new ParAcaoClient($skip, $limit))->get();
+
+            $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
+            $pagination = is_array($cultBrResponse['pagination'] ?? null) ? $cultBrResponse['pagination'] : [];
+            $normalizedData = array_values(array_filter(array_map(function (array $actionData) {
+                $action = ParAction::fromArray($actionData);
+                return $action->label !== '' ? $action->toArray() : null;
+            }, $data)));
+            $normalizedData = $this->removeDuplicatedParActions($normalizedData);
+            $normalizedData = $this->sortParActionsByLabel($normalizedData);
+        } catch (\Throwable $exception) {
+            $this->errorJson(i::__('Não foi possível buscar as ações do PAR.'), 500);
+            return;
+        }
+
+        $this->json([
+            'pagination' => [
+                'skip' => isset($pagination['skip']) ? (int) $pagination['skip'] : $skip,
+                'limit' => isset($pagination['limit']) ? (int) $pagination['limit'] : $limit,
+                'total' => isset($pagination['total']) ? (int) $pagination['total'] : count($data),
+                'next' => isset($pagination['next']) && $pagination['next'] !== null ? (int) $pagination['next'] : null,
+                'previous' => isset($pagination['previous']) && $pagination['previous'] !== null ? (int) $pagination['previous'] : null,
+            ],
+            'data' => $normalizedData,
+        ]);
+    }
+
+    private function removeDuplicatedParActions(array $actions): array
+    {
+        $uniqueActions = [];
+        $seenLabels = [];
+
+        foreach ($actions as $action) {
+            $label = trim((string) ($action['label'] ?? ''));
+            $labelKey = $this->getParActionLabelKey($label);
+
+            if ($labelKey === '' || isset($seenLabels[$labelKey])) {
+                continue;
+            }
+
+            $seenLabels[$labelKey] = true;
+            $uniqueActions[] = $action;
+        }
+
+        return $uniqueActions;
+    }
+
+    private function getParActionLabelKey(string $label): string
+    {
+        if (preg_match('/^\s*([0-9]+(?:\.[0-9]+)*)\b/u', $label, $matches)) {
+            return $matches[1];
+        }
+
+        return mb_strtolower($label);
+    }
+
+    private function sortParActionsByLabel(array $actions): array
+    {
+        usort($actions, fn(array $firstAction, array $secondAction) => strnatcasecmp(
+            (string) ($firstAction['label'] ?? ''),
+            (string) ($secondAction['label'] ?? '')
+        ));
+
+        return $actions;
     }
 
     /**
@@ -663,4 +749,5 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $this->json($response);
     }
+
 }
