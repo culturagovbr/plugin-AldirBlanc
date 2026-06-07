@@ -108,7 +108,17 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         try {
             $cultBrResponse = (new ParAcaoClient($skip, $limit))->get();
 
+            if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
+                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                return;
+            }
+
             $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
+            if (empty($data)) {
+                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                return;
+            }
+
             $pagination = is_array($cultBrResponse['pagination'] ?? null) ? $cultBrResponse['pagination'] : [];
             $normalizedData = array_values(array_filter(array_map(function (array $actionData) {
                 $action = ParAction::fromArray($actionData);
@@ -117,7 +127,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $normalizedData = $this->removeDuplicatedParActions($normalizedData);
             $normalizedData = $this->sortParActionsByLabel($normalizedData);
         } catch (\Throwable $exception) {
-            $this->errorJson(i::__('Não foi possível buscar as ações do PAR.'), 500);
+            $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
             return;
         }
 
