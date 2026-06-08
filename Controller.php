@@ -232,10 +232,14 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+                $_SESSION['gestor_cult_sync_error_message'] = \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
             
-            $this->json(['started' => false, 'error' => $e->getMessage()]);
+            $this->json([
+                'started' => false,
+                'error' => true,
+                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE,
+            ]);
             return;
         }
         
@@ -335,7 +339,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
                    $_SESSION['gestor_cult_sync_error'] !== null && 
                    $_SESSION['gestor_cult_sync_error'] !== '';
-        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
 
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted) {

@@ -23,6 +23,14 @@ abstract class AbstractClient
     private Curl $curl;
 
     private const PARAMETER_DEFAULT = '{document}';
+    private const HTTP_ERROR_MIN = 400;
+    private const HTTP_NOT_FOUND = 404;
+    private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
+    private const NOT_FOUND_DETAILS = [
+        'não encontrada',
+        'não encontrado',
+        'not found',
+    ];
 
     public function __construct()
     {
@@ -159,7 +167,7 @@ abstract class AbstractClient
     /**
      * Interpreta a resposta do curl (código HTTP, body JSON, erros) e retorna o resultado ou lança exceção.
      * @param mixed $response valor de $this->curl->response (string, array, object ou null)
-     * @return array|object resultado decodificado ou array vazio em 404/vazio
+     * @return array|object resultado decodificado ou array vazio quando a API informa ausência de dados
      * @throws \Exception em erro de JSON, 4xx/5xx ou formato não reconhecido
      */
     private function parseResponse(mixed $response): array|object
@@ -174,15 +182,16 @@ abstract class AbstractClient
             $httpCode = $this->curl->httpStatusCode ?? $this->curl->httpErrorCode ?? 0;
         }
 
-        if ($httpCode === 404) {
-            return [];
+        if ($response === null) {
+            throw new \Exception(self::NO_RESPONSE_MESSAGE, $httpCode);
         }
 
         // Se a resposta é uma string JSON, decodifica para array
         if (is_string($response)) {
-            // Se a string está vazia, retorna array vazio (caso válido quando não encontra dados)
+            // Se a string está vazia, trata como indisponibilidade/erro de API.
             if (trim($response) === '') {
-                return [];
+                $errorMessage = $this->curl->errorMessage ?? "Erro HTTP {$httpCode}";
+                throw new \Exception($errorMessage ?: self::NO_RESPONSE_MESSAGE, $httpCode);
             }
 
             $decoded = json_decode($response, true);
@@ -192,12 +201,9 @@ abstract class AbstractClient
                 throw new \Exception('Resposta da API não é um JSON válido', 0);
             }
 
-            // Verifica se a resposta contém o JSON de erro 404 da API
-            if (is_array($decoded) && isset($decoded['detail'])) {
-                $detail = $decoded['detail'];
-                if (is_string($detail) && strpos(strtolower($detail), 'não encontrada') !== false) {
-                    return [];
-                }
+            // Verifica se a resposta contém o JSON de ausência de dados da API.
+            if ($httpCode === self::HTTP_NOT_FOUND && is_array($decoded) && $this->hasNotFoundDetail($decoded)) {
+                return [];
             }
 
             if (is_array($decoded)) {
@@ -216,13 +222,13 @@ abstract class AbstractClient
         }
 
         // Verifica outros códigos HTTP de erro (500, etc) ANTES de verificar curl->error
-        if ($httpCode >= 400 && $httpCode !== 404) {
+        if ($httpCode >= self::HTTP_ERROR_MIN) {
             $errorMessage = $this->curl->errorMessage ?? "Erro HTTP {$httpCode}";
             throw new \Exception($errorMessage, $httpCode);
         }
 
-        // Verifica se houve erro HTTP (exceto 404 que já foi tratado)
-        if ($this->curl->error && $httpCode !== 404) {
+        // Verifica se houve erro HTTP.
+        if ($this->curl->error) {
             $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
             throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
         }
@@ -232,11 +238,6 @@ abstract class AbstractClient
             return $response;
         }
 
-        // Se é null, retorna array vazio (caso válido quando não encontra dados)
-        if ($response === null) {
-            return [];
-        }
-
         // Se é um objeto, retorna como está
         if (is_object($response)) {
             return $response;
@@ -244,6 +245,23 @@ abstract class AbstractClient
 
         // Se chegou aqui, a resposta não está em um formato esperado
         throw new \Exception('Formato de resposta da API não reconhecido', 0);
+    }
+
+    private function hasNotFoundDetail(array $response): bool
+    {
+        $detail = $response['detail'] ?? null;
+        if (!is_string($detail)) {
+            return false;
+        }
+
+        $normalizedDetail = strtolower($detail);
+        foreach (self::NOT_FOUND_DETAILS as $expectedDetail) {
+            if (str_contains($normalizedDetail, $expectedDetail)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function handleError(string $criticalMessageBase, \Exception $e, bool $isIntegration = false): void
