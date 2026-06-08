@@ -48,6 +48,29 @@ class FederativeEntityService
         return $id !== null ? self::getParExerciciosForFederativeEntityId($id) : [];
     }
 
+    public static function getParActionNameByAcaoId(string $acaoId): ?string
+    {
+        foreach (self::getParExerciciosForSessionSelectedEntity() as $exercice) {
+            if (!is_array($exercice) || empty($exercice[self::EXERCICES_METAS_KEY])) {
+                continue;
+            }
+            foreach ($exercice[self::EXERCICES_METAS_KEY] as $meta) {
+                if (!is_array($meta) || empty($meta[self::EXERCICES_ACOES_KEY])) {
+                    continue;
+                }
+                foreach ($meta[self::EXERCICES_ACOES_KEY] as $action) {
+                    if (!is_array($action) || !isset($action['id'], $action[self::PAR_ACTION_NAME_KEY])) {
+                        continue;
+                    }
+                    if ((string) $action['id'] === $acaoId) {
+                        return trim((string) $action[self::PAR_ACTION_NAME_KEY]);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * @return string[]
      */
