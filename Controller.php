@@ -641,28 +641,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $modelId = isset($requestBody['modelId']) ? (int) $requestBody['modelId'] : 0;
-        $parAcaoId = isset($requestBody['parAcaoId']) ? (string) $requestBody['parAcaoId'] : '';
-
-        if (UserAccessService::isGestorCultBr() && $modelId > 0 && $parAcaoId !== '') {
-            $model = $application->repo('Opportunity')->find($modelId);
-            if ($model) {
-                $parActionsRaw = $model->getMetadata('parActions');
-                if (is_string($parActionsRaw)) {
-                    $parActionsRaw = json_decode($parActionsRaw, true) ?? [];
-                }
-                $parActions = is_array($parActionsRaw) ? $parActionsRaw : [];
-
-                if (!empty($parActions)) {
-                    $acaoNome = FederativeEntityService::getParActionNameByAcaoId($parAcaoId);
-                    if ($acaoNome === null || !in_array($acaoNome, $parActions, true)) {
-                        $this->errorJson(['parAcaoId' => [i::__('A ação selecionada não é compatível com este modelo.')]], 422);
-                        return;
-                    }
-                }
-            }
-        }
-
         $parInstrumentMetadataKeys = [
             'parExercicioId',
             'parMetaId',
