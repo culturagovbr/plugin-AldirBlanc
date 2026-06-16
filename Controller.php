@@ -12,6 +12,7 @@ use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Services\GestorCultBrSyncLimitResetService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
@@ -681,6 +682,20 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             );
             $this->errorJson(i::__('Não foi possível salvar os dados. Tente novamente.'), 500);
             return;
+        }
+
+        $isCultBrCreateSynced = (bool) filter_var(
+            $opportunity->getMetadata(self::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
+            FILTER_VALIDATE_BOOLEAN
+        );
+        if (!$isCultBrCreateSynced) {
+            $application->enqueueOrReplaceJob(
+                OportunidadeCultJob::SLUG,
+                [
+                    'action'      => 'create',
+                    'opportunity' => $opportunity,
+                ],
+            );
         }
 
         $this->json(['success' => true, 'id' => $opportunity->id]);
