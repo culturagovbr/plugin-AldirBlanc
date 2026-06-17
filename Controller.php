@@ -98,7 +98,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $this->requireAuthentication();
 
-        if (!UserAccessService::isSaasSuperAdmin()) {
+        if (!UserAccessService::canAssociatePARAction()) {
             $this->errorJson(i::__('Permissão negada.'), 403);
             return;
         }
