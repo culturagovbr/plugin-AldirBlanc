@@ -7,6 +7,10 @@ use AldirBlanc\Entities\FederativeEntity;
 
 class FederativeEntityService
 {
+    private const EXERCICES_METAS_KEY = 'metas';
+    private const EXERCICES_ACOES_KEY = 'acoes';
+    private const PAR_ACTION_NAME_KEY = 'nome';
+
     public static function getSelectedFederativeEntityIdFromSession(): ?int
     {
         if (!UserAccessService::isGestorCultBr() || !isset($_SESSION['selectedFederativeEntity'])) {
@@ -42,5 +46,61 @@ class FederativeEntityService
     {
         $id = self::getSelectedFederativeEntityIdFromSession();
         return $id !== null ? self::getParExerciciosForFederativeEntityId($id) : [];
+    }
+
+    public static function getParActionNameByAcaoId(string $acaoId): ?string
+    {
+        foreach (self::getParExerciciosForSessionSelectedEntity() as $exercice) {
+            if (!is_array($exercice) || empty($exercice[self::EXERCICES_METAS_KEY])) {
+                continue;
+            }
+            foreach ($exercice[self::EXERCICES_METAS_KEY] as $meta) {
+                if (!is_array($meta) || empty($meta[self::EXERCICES_ACOES_KEY])) {
+                    continue;
+                }
+                foreach ($meta[self::EXERCICES_ACOES_KEY] as $action) {
+                    if (!is_array($action) || !isset($action['id'], $action[self::PAR_ACTION_NAME_KEY])) {
+                        continue;
+                    }
+                    if ((string) $action['id'] === $acaoId) {
+                        return trim((string) $action[self::PAR_ACTION_NAME_KEY]);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function getParActionNamesForSessionSelectedEntity(): array
+    {
+        $actions = [];
+
+        foreach (self::getParExerciciosForSessionSelectedEntity() as $exercice) {
+            if (!is_array($exercice) || empty($exercice[self::EXERCICES_METAS_KEY]) || !is_array($exercice[self::EXERCICES_METAS_KEY])) {
+                continue;
+            }
+
+            foreach ($exercice[self::EXERCICES_METAS_KEY] as $meta) {
+                if (!is_array($meta) || empty($meta[self::EXERCICES_ACOES_KEY]) || !is_array($meta[self::EXERCICES_ACOES_KEY])) {
+                    continue;
+                }
+
+                foreach ($meta[self::EXERCICES_ACOES_KEY] as $action) {
+                    if (!is_array($action) || empty($action[self::PAR_ACTION_NAME_KEY])) {
+                        continue;
+                    }
+
+                    $actions[] = trim((string) $action[self::PAR_ACTION_NAME_KEY]);
+                }
+            }
+        }
+
+        $actions = array_values(array_unique(array_filter($actions)));
+        usort($actions, static fn (string $left, string $right): int => strnatcasecmp($left, $right));
+
+        return $actions;
     }
 }

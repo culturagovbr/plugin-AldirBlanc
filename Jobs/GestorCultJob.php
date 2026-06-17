@@ -15,6 +15,8 @@ use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
+    public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
+
     private GestorDocument $gestorDocument;
 
     private const SYNC_LOCK_TTL = 300; // 5 minutos para lock de sincronização
@@ -121,7 +123,7 @@ class GestorCultJob
                 
                 // Qualquer erro da API é tratado como indisponibilidade
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+                $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
                 
                 // Marca como concluído com erro para não travar a tela
                 $_SESSION['gestor_cult_sync_completed'] = true;
@@ -183,7 +185,7 @@ class GestorCultJob
             
             // Em caso de erro ao associar entes federados, trata como indisponibilidade da API
             $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
             
             // Marca como concluído com erro
             $_SESSION['gestor_cult_sync_completed'] = true;

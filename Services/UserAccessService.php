@@ -27,6 +27,15 @@ class UserAccessService
         return App::i()->user->is(Role::SAAS_SUPER_ADMIN);
     }
 
+    public static function canAssociatePARAction(): bool
+    {
+        $user = App::i()->user;
+
+        return (bool) array_filter(Role::CAN_ASSOCIATE_ACTION_PAR_ROLES, function ($role) use ($user) {
+            return $user->is($role);
+        });
+    }
+
     /**
      * Verifica se o usuário é um administrador
      * 

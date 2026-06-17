@@ -7,9 +7,12 @@ use MapasCulturais\i;
 use MapasCulturais\Traits;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Services\GestorCultBrSyncLimitResetService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
@@ -87,6 +90,100 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
+     * Lista ações do PAR diretamente da API CultBR.
+     *
+     * GET /aldirblanc/parAcoes
+     */
+    function GET_parAcoes()
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::canAssociatePARAction()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParAcaoClient::DEFAULT_SKIP;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
+
+        try {
+            $cultBrResponse = (new ParAcaoClient($skip, $limit))->get();
+
+            if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
+                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                return;
+            }
+
+            $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
+            if (empty($data)) {
+                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                return;
+            }
+
+            $pagination = is_array($cultBrResponse['pagination'] ?? null) ? $cultBrResponse['pagination'] : [];
+            $normalizedData = array_values(array_filter(array_map(function (array $actionData) {
+                $action = ParAction::fromArray($actionData);
+                return $action->label !== '' ? $action->toArray() : null;
+            }, $data)));
+            $normalizedData = $this->removeDuplicatedParActions($normalizedData);
+            $normalizedData = $this->sortParActionsByLabel($normalizedData);
+        } catch (\Throwable $exception) {
+            $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
+            return;
+        }
+
+        $this->json([
+            'pagination' => [
+                'skip' => isset($pagination['skip']) ? (int) $pagination['skip'] : $skip,
+                'limit' => isset($pagination['limit']) ? (int) $pagination['limit'] : $limit,
+                'total' => isset($pagination['total']) ? (int) $pagination['total'] : count($data),
+                'next' => isset($pagination['next']) && $pagination['next'] !== null ? (int) $pagination['next'] : null,
+                'previous' => isset($pagination['previous']) && $pagination['previous'] !== null ? (int) $pagination['previous'] : null,
+            ],
+            'data' => $normalizedData,
+        ]);
+    }
+
+    private function removeDuplicatedParActions(array $actions): array
+    {
+        $uniqueActions = [];
+        $seenLabels = [];
+
+        foreach ($actions as $action) {
+            $label = trim((string) ($action['label'] ?? ''));
+            $labelKey = $this->getParActionLabelKey($label);
+
+            if ($labelKey === '' || isset($seenLabels[$labelKey])) {
+                continue;
+            }
+
+            $seenLabels[$labelKey] = true;
+            $uniqueActions[] = $action;
+        }
+
+        return $uniqueActions;
+    }
+
+    private function getParActionLabelKey(string $label): string
+    {
+        if (preg_match('/^\s*([0-9]+(?:\.[0-9]+)*)\b/u', $label, $matches)) {
+            return $matches[1];
+        }
+
+        return mb_strtolower($label);
+    }
+
+    private function sortParActionsByLabel(array $actions): array
+    {
+        usort($actions, fn(array $firstAction, array $secondAction) => strnatcasecmp(
+            (string) ($firstAction['label'] ?? ''),
+            (string) ($secondAction['label'] ?? '')
+        ));
+
+        return $actions;
+    }
+
+    /**
      * Dispara a sincronização
      * 
      * POST /aldirblanc/start-sync
@@ -136,10 +233,14 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+                $_SESSION['gestor_cult_sync_error_message'] = \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
             
-            $this->json(['started' => false, 'error' => $e->getMessage()]);
+            $this->json([
+                'started' => false,
+                'error' => true,
+                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE,
+            ]);
             return;
         }
         
@@ -239,7 +340,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
                    $_SESSION['gestor_cult_sync_error'] !== null && 
                    $_SESSION['gestor_cult_sync_error'] !== '';
-        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? 'Não foi possível consolidar seus dados, tente novamente mais tarde';
+        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
 
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted) {
@@ -583,6 +684,20 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        $isCultBrCreateSynced = (bool) filter_var(
+            $opportunity->getMetadata(self::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
+            FILTER_VALIDATE_BOOLEAN
+        );
+        if (!$isCultBrCreateSynced) {
+            $application->enqueueOrReplaceJob(
+                OportunidadeCultJob::SLUG,
+                [
+                    'action'      => 'create',
+                    'opportunity' => $opportunity,
+                ],
+            );
+        }
+
         $this->json(['success' => true, 'id' => $opportunity->id]);
     }
 
@@ -663,4 +778,5 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $this->json($response);
     }
+
 }
