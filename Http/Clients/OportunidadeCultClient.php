@@ -23,13 +23,21 @@ class OportunidadeCultClient extends AbstractClient
 
     public function create(OpportunityDto $payload)
     {
-        $this->endpoint = $this->getClientConfig()['createOportunidadeEndpoint'];
+        $endpoint = $this->getClientConfig()['createOportunidadeEndpoint'] ?? null;
+        if (empty($endpoint)) {
+            throw new \RuntimeException('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT não configurado.');
+        }
+        $this->endpoint = $endpoint;
         return $this->post($payload->toArray());
     }
 
     public function update(OpportunityDto $payload)
     {
-		$this->endpoint = $this->getClientConfig()['updateOportunidadeEndpoint'];
+        $endpoint = $this->getClientConfig()['updateOportunidadeEndpoint'] ?? null;
+        if (empty($endpoint)) {
+            throw new \RuntimeException('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT não configurado.');
+        }
+        $this->endpoint = $endpoint;
         return $this->put($payload->toArray());
     }
 }

@@ -29,4 +29,9 @@ class Role
         self::SAAS_SUPER_ADMIN,
         self::SAAS_ADMIN,
     ];
+
+    public const CAN_ASSOCIATE_ACTION_PAR_ROLES = [
+        self::SAAS_SUPER_ADMIN,
+        self::ADMIN,
+    ];
 }

@@ -27,6 +27,7 @@ class Plugin extends \MapasCulturais\Plugin
                 'seficEndpoint' => env('PNAB_CULTBR_SEFIC_ENDPOINT', null),
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
+                'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', 'par/sefic/acoes'),
                 'createOportunidadeEndpoint' => env('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT', null),
                 'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
             ], 
