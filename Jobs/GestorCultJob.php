@@ -43,22 +43,9 @@ class GestorCultJob
         
         $integrationConfig = $this->getIntegrationConfig();
         $cacheTtlConfig = (int) ($integrationConfig['cacheTTL'] ?? 0);
-        $maxRequestsPerDay = (int) $integrationConfig['maxRequestsPerDay'];
 
         // Chaves de cache para sincronização
         $cacheKey    = "gestor_cult_sync:{$userId}:{$document}";
-        $requestsKey = "gestor_cult_requests:{$userId}:" . date('Y-m-d');
-
-        // Verifica se o limite (por usuário) de requests por dia foi atingido
-        $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
-        if ($requestsCount >= $maxRequestsPerDay) {
-            // Marca que o sync terminou (limite atingido) - sem erro, apenas limite
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            // Limpa flags de erro se existirem
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            return;
-        }
 
         // Verifica se a última sincronização foi há menos do TTL configurado [banco de dados]
         if ($this->wasSyncedLessThanCacheTtlAgo($agent, $cacheTtlConfig)) {
@@ -78,7 +65,6 @@ class GestorCultJob
         // Se os entes federados não estão no cache, busca na API
         if ($federativeEntities === false || $federativeEntities === null) {
             try {
-                $app->cache->save($requestsKey, $requestsCount + 1, 86400);
                 $apiResponse = (new GestorClient($this->gestorDocument))->get();
                 $syncedFromApi = true;
 

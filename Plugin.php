@@ -36,7 +36,6 @@ class Plugin extends \MapasCulturais\Plugin
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
                 'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
-                'maxRequestsPerDay' => (int) env('ALDIRBLANC_INTEGRATION_MAX_REQUESTS_PER_DAY', 10),
                 'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
                 'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
             ]
