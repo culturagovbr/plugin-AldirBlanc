@@ -172,15 +172,8 @@ abstract class AbstractClient
      */
     private function parseResponse(mixed $response): array|object
     {
-        // Obtém o código HTTP da resposta usando múltiplas formas
-        $httpCode = 0;
-        if (method_exists($this->curl, 'getInfo')) {
-            $httpCode = $this->curl->getInfo(CURLINFO_HTTP_CODE) ?: 0;
-        }
-
-        if ($httpCode === 0) {
-            $httpCode = $this->curl->httpStatusCode ?? $this->curl->httpErrorCode ?? 0;
-        }
+        // Obtém o código HTTP da resposta (lib curl/curl expõe http_status_code, não getInfo()/httpStatusCode)
+        $httpCode = $this->curl->http_status_code ?? 0;
 
         if ($response === null) {
             throw new \Exception(self::NO_RESPONSE_MESSAGE, $httpCode);
@@ -190,7 +183,7 @@ abstract class AbstractClient
         if (is_string($response)) {
             // Se a string está vazia, trata como indisponibilidade/erro de API.
             if (trim($response) === '') {
-                $errorMessage = $this->curl->errorMessage ?? "Erro HTTP {$httpCode}";
+                $errorMessage = $this->curl->error_message ?? "Erro HTTP {$httpCode}";
                 throw new \Exception($errorMessage ?: self::NO_RESPONSE_MESSAGE, $httpCode);
             }
 
@@ -223,14 +216,14 @@ abstract class AbstractClient
 
         // Verifica outros códigos HTTP de erro (500, etc) ANTES de verificar curl->error
         if ($httpCode >= self::HTTP_ERROR_MIN) {
-            $errorMessage = $this->curl->errorMessage ?? "Erro HTTP {$httpCode}";
+            $errorMessage = $this->curl->error_message ?? "Erro HTTP {$httpCode}";
             throw new \Exception($errorMessage, $httpCode);
         }
 
         // Verifica se houve erro HTTP.
         if ($this->curl->error) {
-            $errorMessage = $this->curl->errorMessage ?? 'Erro desconhecido na requisição';
-            throw new \Exception($errorMessage, $this->curl->errorCode ?? 0);
+            $errorMessage = $this->curl->error_message ?? 'Erro desconhecido na requisição';
+            throw new \Exception($errorMessage, $this->curl->error_code ?? 0);
         }
 
         // Se já é um array, retorna como está (incluindo arrays vazios)
