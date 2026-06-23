@@ -10,7 +10,6 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Http\Clients\GestorClient;
-use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
@@ -41,57 +40,26 @@ class GestorCultJob
             return;
         }
         
-        $integrationConfig = $this->getIntegrationConfig();
-        $cacheTtlConfig = (int) ($integrationConfig['cacheTTL'] ?? 0);
-
-        // Chaves de cache para sincronização
-        $cacheKey    = "gestor_cult_sync:{$userId}:{$document}";
-
-        // Verifica se a última sincronização foi há menos do TTL configurado [banco de dados]
-        if ($this->wasSyncedLessThanCacheTtlAgo($agent, $cacheTtlConfig)) {
-            // Marca que o sync terminou (já sincronizado recentemente) - sem erro
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            // Limpa flags de erro se existirem
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            return;
-        }
-
-        // Obtém os entes federados do cache (desligado quando cacheTTL é null no .env)
-        $federativeEntities = $cacheTtlConfig > 0 ? $app->cache->fetch($cacheKey) : false;
-        $syncedFromApi = false;
         $apiResponse = null;
 
-        // Se os entes federados não estão no cache, busca na API
-        if ($federativeEntities === false || $federativeEntities === null) {
-            try {
-                $apiResponse = (new GestorClient($this->gestorDocument))->get();
-                $syncedFromApi = true;
+        try {
+            $apiResponse = (new GestorClient($this->gestorDocument))->get();
 
-                $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
-                $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-
-                if ($cacheTtlConfig > 0) {
-                    $app->cache->save($cacheKey, $federativeEntities, $cacheTtlConfig);
-                }
-            } catch (\Throwable $e) {
-                // Dispara alerta para Telegram
-                $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-                
-                // Qualquer erro da API é tratado como indisponibilidade
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-                
-                // Marca como concluído com erro para não travar a tela
-                $_SESSION['gestor_cult_sync_completed'] = true;
-                
-                // Re-lança a exceção para ser capturada pelo try/catch externo
-                throw $e;
-            }
-        } else {
-            // Extrai lista de entes (cache pode ter formato novo ou antigo) e normaliza
-            $federativeEntities = $this->extractFederativeEntitiesFromResponse($federativeEntities);
+            $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+        } catch (\Throwable $e) {
+            // Dispara alerta para Telegram
+            $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            
+            // Qualquer erro da API é tratado como indisponibilidade
+            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
+            
+            // Marca como concluído com erro para não travar a tela
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            
+            // Re-lança a exceção para ser capturada pelo try/catch externo
+            throw $e;
         }
 
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
@@ -119,8 +87,8 @@ class GestorCultJob
             // Associa os entes federados ao agente
             $this->associateFederativeEntities($agent, $federativeEntities);
 
-            // Se a sincronização foi feita da API, atualiza o agente com dados do gestor (apenas campos alterados)
-            if ($syncedFromApi && is_array($apiResponse)) {
+            // Atualiza o agente com dados do gestor (apenas campos alterados)
+            if (is_array($apiResponse)) {
                 $app->disableAccessControl();
                 $this->updateAgentFromGestorResponse($agent, $apiResponse);
                 $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
@@ -151,7 +119,7 @@ class GestorCultJob
      * Extrai a lista de entes federados do retorno da API.
      * Suporta formato novo (objeto com chave 'entes_federados') e antigo (array de entes).
      *
-     * @param mixed $response Retorno bruto da API ou do cache
+     * @param mixed $response Retorno bruto da API
      * @return array Lista de entes (cada item com 'name' e 'document')
      */
     private function extractFederativeEntitiesFromResponse($response): array
@@ -235,7 +203,7 @@ class GestorCultJob
                 return $decoded;
             }
             
-            // Se não for JSON válido, tenta unserialize (caso o cache tenha serializado)
+            // Se não for JSON válido, tenta unserialize
             $unserialized = @unserialize($federativeEntities);
             if ($unserialized !== false && is_array($unserialized)) {
                 return $unserialized;
@@ -244,39 +212,6 @@ class GestorCultJob
 
         // Se não conseguiu normalizar, retorna array vazio
         return [];
-    }
-
-    private function getIntegrationConfig(): array
-    {
-        return Plugin::getInstance()->config['integration'] ?? [];
-    }
-
-    /**
-     * Verifica se a última sincronização foi há menos do TTL configurado.
-     */
-    private function wasSyncedLessThanCacheTtlAgo(Agent $agent, ?int $cacheTtlConfig): bool
-    {
-        if ($cacheTtlConfig <= 0 || $cacheTtlConfig === null) {
-            return false;
-        }
-
-        $lastSyncedAt = $agent->getMetadata('gestorCultBrLastSyncedAt');
-        if (!$lastSyncedAt) {
-            return false;
-        }
-
-        if ($lastSyncedAt instanceof \DateTimeInterface) {
-            $lastSyncTime = $lastSyncedAt->getTimestamp();
-        } elseif (is_string($lastSyncedAt)) {
-            $lastSyncTime = strtotime($lastSyncedAt);
-            if ($lastSyncTime === false) {
-                return false;
-            }
-        } else {
-            return false;
-        }
-
-        return (time() - $lastSyncTime) < $cacheTtlConfig;
     }
 
     /**
