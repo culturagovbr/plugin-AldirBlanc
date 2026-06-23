@@ -36,7 +36,6 @@ class Plugin extends \MapasCulturais\Plugin
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
                 'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
-                'maxRequestsPerDay' => (int) env('ALDIRBLANC_INTEGRATION_MAX_REQUESTS_PER_DAY', 10),
                 'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
                 'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
             ]
@@ -68,29 +67,6 @@ class Plugin extends \MapasCulturais\Plugin
             'aldirblanc',
             'integrationOpportunities'
         ];
-
-        /**
-         * Painel user-detail (tema Pnab): botão super/saas super para limpar cache/metadados de sync CultBR (qualquer usuário com perfil).
-         * O callback é executado com applyHookBoundTo(Theme): $this é o tema ativo.
-         */
-        $app->hook('template(panel.user-detail.user-mail):begin', function () use ($app) {
-            if (!class_exists('Pnab\\Theme') || !$app->view instanceof \Pnab\Theme) {
-                return;
-            }
-            /** @var \MapasCulturais\Themes\BaseV2\Theme $this */
-            $this->part('panel/gestor-cult-sync-reset');
-        }, 55);
-
-        $app->hook('GET(panel.user-detail):before', function () use ($app) {
-            if (!class_exists('Pnab\\Theme') || !$app->view instanceof \Pnab\Theme) {
-                return;
-            }
-            $app->view->enqueueStyle(
-                'app-v2',
-                'aldirblanc-panel-gestor-cult-sync-reset',
-                'css/panel-gestor-cult-sync-reset.css',
-            );
-        });
     }
 
     function register()

@@ -13,10 +13,8 @@ use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\OportunidadeCultJob;
-use AldirBlanc\Services\GestorCultBrSyncLimitResetService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserAccessService;
-use MapasCulturais\Entities\User;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -191,19 +189,25 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     function POST_startSync()
     {
         $app = App::i();
+        $userId = $app->user->id ?? 'N/A';
 
-        // Verifica se o sync já foi iniciado
-        if (isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true) {
+        // Evita disparos paralelos enquanto a sincronização atual ainda está em andamento
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        if ($syncStarted && !$syncCompleted) {
+            $app->log->info("[Gestores CultBR] startSync ignorado: sincronização já em andamento | Usuário ID: {$userId}");
             $this->json(['started' => true]);
             return;
         }
+
+        $app->log->info("[Gestores CultBR] startSync disparado | Usuário ID: {$userId}");
 
         // Marca que o sync começou e limpa flags de erro anteriores
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
-        
+
         // Dispara a sincronização em background
         try {
             $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
@@ -243,7 +247,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             ]);
             return;
         }
-        
+
+        $app->log->info("[Gestores CultBR] startSync finalizado | Usuário ID: {$userId}");
         $this->json(['started' => true]);
     }
 
@@ -255,7 +260,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     function POST_logoutOnError()
     {
         $app = App::i();
-        
+        $userId = $app->user->id ?? 'N/A';
+        $app->log->info("[Gestores CultBR] Logout por erro de consolidação | Usuário ID: {$userId}");
+
         // Limpa todas as flags de sync
         unset($_SESSION['gestor_cult_sync_started']);
         unset($_SESSION['gestor_cult_sync_completed']);
@@ -272,54 +279,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'success' => true,
             'redirectTo' => $app->createUrl('auth', 'login')
         ]);
-    }
-
-    /**
-     * Super admin / SaaS super admin: zera cache e metadados de consolidação CultBR do usuário informado (com perfil).
-     *
-     * POST /aldirblanc/clearGestorCultBrSyncLimits
-     * Body: userId (JSON ou application/x-www-form-urlencoded)
-     */
-    public function POST_clearGestorCultBrSyncLimits(): void
-    {
-        $app = App::i();
-        $this->requireAuthentication();
-
-        if ($app->user->is('guest')) {
-            $this->json(['ok' => false, 'message' => i::__('É necessário estar logado.')], 401);
-            return;
-        }
-
-        if (!$app->user->is('superAdmin') && !$app->user->is('saasSuperAdmin')) {
-            $this->json(['ok' => false, 'message' => i::__('Permissão negada.')], 403);
-            return;
-        }
-
-        $payload = is_array($this->data) ? $this->data : [];
-        $userId = (int) ($payload['userId'] ?? 0);
-        if ($userId <= 0) {
-            $this->json(['ok' => false, 'message' => i::__('Identificador de usuário inválido.')], 400);
-            return;
-        }
-
-        /** @var User|null $targetUser */
-        $targetUser = $app->repo('User')->find($userId);
-        if ($targetUser === null) {
-            $this->json(['ok' => false, 'message' => i::__('Usuário não encontrado.')], 404);
-            return;
-        }
-
-        if (!GestorCultBrSyncLimitResetService::isEligibleTarget($targetUser)) {
-            $this->json([
-                'ok' => false,
-                'message' => i::__('Não é possível ajustar sincronização: usuário sem perfil/agente.'),
-            ], 400);
-            return;
-        }
-
-        GestorCultBrSyncLimitResetService::clearForUser($app, $targetUser);
-
-        $this->json(['ok' => true, 'message' => i::__('Limite limpo; consolidação CultBR reabilitada para este usuário, se aplicável.')]);
     }
 
     /**
@@ -376,25 +335,29 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     public function GET_consolidatingData()
     {
         $app = App::i();
+        $userId = $app->user->id ?? 'N/A';
 
         // Verifica se o sync já foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
-                   $_SESSION['gestor_cult_sync_error'] !== null && 
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
+                   $_SESSION['gestor_cult_sync_error'] !== null &&
                    $_SESSION['gestor_cult_sync_error'] !== '';
 
         // Se há erro, mostra a tela de erro (usuário não pode avançar)
         if ($syncCompleted && $hasError) {
+            $app->log->info("[Gestores CultBR] consolidatingData: exibindo tela de erro | Usuário ID: {$userId}");
             $this->render('consolidating-data');
             return;
         }
 
         // Se concluído sem erro, redireciona para o painel
         if ($syncCompleted && !$hasError) {
+            $app->log->info("[Gestores CultBR] consolidatingData: sync já concluído, redirecionando ao painel | Usuário ID: {$userId}");
             $app->redirect($app->createUrl('panel', 'index'));
             return;
         }
 
+        $app->log->info("[Gestores CultBR] consolidatingData: exibindo tela de consolidação (vai disparar sync) | Usuário ID: {$userId}");
         // Mostra a tela de consolidação (que vai disparar o sync)
         $this->render('consolidating-data');
     }
@@ -462,6 +425,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'document' => $entityDocument
         ];
         $_SESSION['selectedFederativeEntity'] = json_encode($federativeEntity);
+
+        $userId = $app->user->id ?? 'N/A';
+        $app->log->info("[Gestores CultBR] Ente Federado selecionado | Usuário ID: {$userId} | Ente ID: {$entityId} | Documento: " . ($entityDocument ?? 'N/A'));
 
         // Limpa cache de permissões sempre que o Ente Federado é alterado
         $userAgent = $app->user->profile;

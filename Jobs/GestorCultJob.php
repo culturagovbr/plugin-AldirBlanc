@@ -10,7 +10,6 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Http\Clients\GestorClient;
-use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
@@ -18,8 +17,6 @@ class GestorCultJob
     public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
 
     private GestorDocument $gestorDocument;
-
-    private const SYNC_LOCK_TTL = 300; // 5 minutos para lock de sincronização
 
     public function __construct(GestorDocument $gestorDocument)
     {
@@ -33,123 +30,60 @@ class GestorCultJob
         $document = $this->gestorDocument->document;
         $agent = $app->user->profile;
 
+        $app->log->info("[Gestores CultBR] Sync iniciado | Usuário ID: {$userId} | Documento: {$document}");
+
         // Limpa flags de erro no início do sync (caso tenha sobrado de tentativa anterior)
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
 
         if (!$agent) {
+            $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
             // Marca que o sync terminou mesmo sem agente (sem erro)
             $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
-        
-        $integrationConfig = $this->getIntegrationConfig();
-        $cacheTtlConfig = (int) ($integrationConfig['cacheTTL'] ?? 0);
-        $maxRequestsPerDay = (int) $integrationConfig['maxRequestsPerDay'];
 
-        // Chaves de cache para sincronização
-        $cacheKey    = "gestor_cult_sync:{$userId}:{$document}";
-        $lockKey     = "gestor_cult_sync_lock:{$userId}:{$document}";
-        $requestsKey = "gestor_cult_requests:{$userId}:" . date('Y-m-d');
-
-        // Verifica se a sincronização já está em andamento
-        if ($app->cache->contains($lockKey)) {
-            // Se está em lock, verifica se já há dados no cache
-            // Se houver, marca como concluído (outro processo já sincronizou)
-            $cachedEntities = false;
-            if ($cacheTtlConfig > 0) {
-                $cachedEntities = $app->cache->fetch($cacheKey);
-            }
-
-            if ($cachedEntities !== false && $cachedEntities !== null) {
-                $cachedEntities = $this->extractFederativeEntitiesFromResponse($cachedEntities);
-                $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
-                if (!empty($cachedEntities)) {
-                    // Já há dados no cache, marca como concluído (sem erro)
-                    $_SESSION['gestor_cult_sync_completed'] = true;
-                    // Limpa flags de erro se existirem
-                    unset($_SESSION['gestor_cult_sync_error']);
-                    unset($_SESSION['gestor_cult_sync_error_message']);
-                }
-            }
-            // Se não há dados, retorna e a tela continuará verificando
-            return;
-        }
-
-        // Verifica se o limite (por usuário) de requests por dia foi atingido
-        $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
-        if ($requestsCount >= $maxRequestsPerDay) {
-            // Marca que o sync terminou (limite atingido) - sem erro, apenas limite
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            // Limpa flags de erro se existirem
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            return;
-        }
-
-        // Verifica se a última sincronização foi há menos do TTL configurado [banco de dados]
-        if ($this->wasSyncedLessThanCacheTtlAgo($agent, $cacheTtlConfig)) {
-            // Marca que o sync terminou (já sincronizado recentemente) - sem erro
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            // Limpa flags de erro se existirem
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            return;
-        }
-
-        // Obtém os entes federados do cache (desligado quando cacheTTL é null no .env)
-        $federativeEntities = $cacheTtlConfig > 0 ? $app->cache->fetch($cacheKey) : false;
-        $syncedFromApi = false;
         $apiResponse = null;
 
-        // Se os entes federados não estão no cache, busca na API
-        if ($federativeEntities === false || $federativeEntities === null) {
-            $app->cache->save($lockKey, true, self::SYNC_LOCK_TTL);
+        try {
+            $apiResponse = (new GestorClient($this->gestorDocument))->get();
 
-            try {
-                $app->cache->save($requestsKey, $requestsCount + 1, 86400);
-                $apiResponse = (new GestorClient($this->gestorDocument))->get();
-                $syncedFromApi = true;
-
-                $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
-                $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-
-                if ($cacheTtlConfig > 0) {
-                    $app->cache->save($cacheKey, $federativeEntities, $cacheTtlConfig);
-                }
-            } catch (\Throwable $e) {
-                // Dispara alerta para Telegram
-                $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-                
-                // Qualquer erro da API é tratado como indisponibilidade
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-                
-                // Marca como concluído com erro para não travar a tela
-                $_SESSION['gestor_cult_sync_completed'] = true;
-                
-                // Re-lança a exceção para ser capturada pelo try/catch externo
-                throw $e;
-            } finally {
-                $app->cache->delete($lockKey);
-            }
-        } else {
-            // Extrai lista de entes (cache pode ter formato novo ou antigo) e normaliza
-            $federativeEntities = $this->extractFederativeEntitiesFromResponse($federativeEntities);
+            $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+
+            $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+        } catch (\Throwable $e) {
+            // Dispara alerta para Telegram
+            $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+            
+            // Qualquer erro da API é tratado como indisponibilidade
+            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
+            
+            // Marca como concluído com erro para não travar a tela
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            
+            // Re-lança a exceção para ser capturada pelo try/catch externo
+            throw $e;
         }
 
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+            $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
+
             if (UserAccessService::isGestorCultBr()) {
                 $app->disableAccessControl();
                 $app->user->removeRole(Role::GESTOR_CULT_BR);
                 $app->enableAccessControl();
+                $app->log->info("[Gestores CultBR] Role GestorCultBr removida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
             }
+
+            $this->removeFederativeEntityAgentRelations($agent);
 
             $_SESSION['gestor_cult_sync_completed'] = true;
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
+            $app->log->info("[Gestores CultBR] Sync concluído (revogação) | Usuário ID: {$userId} | Agente ID: {$agent->id}");
             return;
         }
 
@@ -158,14 +92,15 @@ class GestorCultJob
             $app->disableAccessControl();
             $app->user->addRole(Role::GESTOR_CULT_BR);
             $app->enableAccessControl();
+            $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
         }
 
         try {
             // Associa os entes federados ao agente
             $this->associateFederativeEntities($agent, $federativeEntities);
 
-            // Se a sincronização foi feita da API, atualiza o agente com dados do gestor (apenas campos alterados)
-            if ($syncedFromApi && is_array($apiResponse)) {
+            // Atualiza o agente com dados do gestor (apenas campos alterados)
+            if (is_array($apiResponse)) {
                 $app->disableAccessControl();
                 $this->updateAgentFromGestorResponse($agent, $apiResponse);
                 $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
@@ -176,9 +111,10 @@ class GestorCultJob
             // Limpa flags de erro se o sync foi bem-sucedido
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
-            
+
             // Marca como concluído sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
+            $app->log->info("[Gestores CultBR] Sync concluído com sucesso | Usuário ID: {$userId} | Agente ID: {$agent->id} | Entes federados associados: " . count($federativeEntities));
         } catch (\Throwable $e) {
             // Dispara alerta para Telegram
             $app->log->critical("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
@@ -196,7 +132,7 @@ class GestorCultJob
      * Extrai a lista de entes federados do retorno da API.
      * Suporta formato novo (objeto com chave 'entes_federados') e antigo (array de entes).
      *
-     * @param mixed $response Retorno bruto da API ou do cache
+     * @param mixed $response Retorno bruto da API
      * @return array Lista de entes (cada item com 'name' e 'document')
      */
     private function extractFederativeEntitiesFromResponse($response): array
@@ -280,7 +216,7 @@ class GestorCultJob
                 return $decoded;
             }
             
-            // Se não for JSON válido, tenta unserialize (caso o cache tenha serializado)
+            // Se não for JSON válido, tenta unserialize
             $unserialized = @unserialize($federativeEntities);
             if ($unserialized !== false && is_array($unserialized)) {
                 return $unserialized;
@@ -291,37 +227,47 @@ class GestorCultJob
         return [];
     }
 
-    private function getIntegrationConfig(): array
-    {
-        return Plugin::getInstance()->config['integration'] ?? [];
-    }
-
     /**
-     * Verifica se a última sincronização foi há menos do TTL configurado.
+     * Remove somente as associações entre o agente e Entes Federados.
+     *
+     * @param \MapasCulturais\Entities\Agent $agent
+     * @return void
      */
-    private function wasSyncedLessThanCacheTtlAgo(Agent $agent, ?int $cacheTtlConfig): bool
+    private function removeFederativeEntityAgentRelations(Agent $agent): void
     {
-        if ($cacheTtlConfig <= 0 || $cacheTtlConfig === null) {
-            return false;
+        $app = App::i();
+        $em = $app->em;
+
+        $relations = $app->repo(FederativeEntityAgentRelation::class)->findBy([
+            'agent' => $agent
+        ]);
+
+        if (empty($relations)) {
+            $app->log->info("[Gestores CultBR] Nenhuma associação de Ente Federado para remover | Agente ID: {$agent->id}");
+            return;
         }
 
-        $lastSyncedAt = $agent->getMetadata('gestorCultBrLastSyncedAt');
-        if (!$lastSyncedAt) {
-            return false;
-        }
+        $em->beginTransaction();
 
-        if ($lastSyncedAt instanceof \DateTimeInterface) {
-            $lastSyncTime = $lastSyncedAt->getTimestamp();
-        } elseif (is_string($lastSyncedAt)) {
-            $lastSyncTime = strtotime($lastSyncedAt);
-            if ($lastSyncTime === false) {
-                return false;
+        try {
+            $removedCount = 0;
+            foreach ($relations as $relation) {
+                if (!$relation->owner instanceof FederativeEntity) {
+                    continue;
+                }
+
+                $em->remove($relation);
+                $removedCount++;
             }
-        } else {
-            return false;
-        }
 
-        return (time() - $lastSyncTime) < $cacheTtlConfig;
+            $em->flush();
+            $em->commit();
+            $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
+        } catch (\Throwable $e) {
+            $em->rollback();
+            $app->log->critical("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -365,13 +311,16 @@ class GestorCultJob
 
         try {
             // Remove os Entes Federados Associados ao Agente que não estão na API
+            $removedCount = 0;
             foreach ($currentByDoc as $doc => $relation) {
                 if (!isset($apiLookup[$doc])) {
                     $em->remove($relation);
+                    $removedCount++;
                 }
             }
 
             // Processa os Entes Federados da API
+            $newAssociationsCount = 0;
             foreach ($federativeEntities as $data) {
                 $doc = $data['document'];
 
@@ -411,14 +360,17 @@ class GestorCultJob
                     $relation->hasControl = false;
                     $relation->status = AgentRelation::STATUS_ENABLED;
                     $em->persist($relation);
+                    $newAssociationsCount++;
                 }
             }
 
             // Salva as alterações no banco de dados
             $em->flush();
             $em->commit();
+            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
+            $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
