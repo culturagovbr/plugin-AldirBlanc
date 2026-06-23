@@ -190,8 +190,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $app = App::i();
 
-        // Verifica se o sync já foi iniciado
-        if (isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true) {
+        // Evita disparos paralelos enquanto a sincronização atual ainda está em andamento
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+        if ($syncStarted && !$syncCompleted) {
             $this->json(['started' => true]);
             return;
         }
