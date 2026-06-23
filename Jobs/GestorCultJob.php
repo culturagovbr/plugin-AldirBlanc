@@ -19,8 +19,6 @@ class GestorCultJob
 
     private GestorDocument $gestorDocument;
 
-    private const SYNC_LOCK_TTL = 300; // 5 minutos para lock de sincronização
-
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
@@ -49,32 +47,7 @@ class GestorCultJob
 
         // Chaves de cache para sincronização
         $cacheKey    = "gestor_cult_sync:{$userId}:{$document}";
-        $lockKey     = "gestor_cult_sync_lock:{$userId}:{$document}";
         $requestsKey = "gestor_cult_requests:{$userId}:" . date('Y-m-d');
-
-        // Verifica se a sincronização já está em andamento
-        if ($app->cache->contains($lockKey)) {
-            // Se está em lock, verifica se já há dados no cache
-            // Se houver, marca como concluído (outro processo já sincronizou)
-            $cachedEntities = false;
-            if ($cacheTtlConfig > 0) {
-                $cachedEntities = $app->cache->fetch($cacheKey);
-            }
-
-            if ($cachedEntities !== false && $cachedEntities !== null) {
-                $cachedEntities = $this->extractFederativeEntitiesFromResponse($cachedEntities);
-                $cachedEntities = $this->normalizeFederativeEntities($cachedEntities);
-                if (!empty($cachedEntities)) {
-                    // Já há dados no cache, marca como concluído (sem erro)
-                    $_SESSION['gestor_cult_sync_completed'] = true;
-                    // Limpa flags de erro se existirem
-                    unset($_SESSION['gestor_cult_sync_error']);
-                    unset($_SESSION['gestor_cult_sync_error_message']);
-                }
-            }
-            // Se não há dados, retorna e a tela continuará verificando
-            return;
-        }
 
         // Verifica se o limite (por usuário) de requests por dia foi atingido
         $requestsCount = (int) ($app->cache->fetch($requestsKey) ?? 0);
@@ -104,8 +77,6 @@ class GestorCultJob
 
         // Se os entes federados não estão no cache, busca na API
         if ($federativeEntities === false || $federativeEntities === null) {
-            $app->cache->save($lockKey, true, self::SYNC_LOCK_TTL);
-
             try {
                 $app->cache->save($requestsKey, $requestsCount + 1, 86400);
                 $apiResponse = (new GestorClient($this->gestorDocument))->get();
@@ -130,8 +101,6 @@ class GestorCultJob
                 
                 // Re-lança a exceção para ser capturada pelo try/catch externo
                 throw $e;
-            } finally {
-                $app->cache->delete($lockKey);
             }
         } else {
             // Extrai lista de entes (cache pode ter formato novo ou antigo) e normaliza
