@@ -70,6 +70,8 @@ class GestorCultJob
                 $app->enableAccessControl();
             }
 
+            $this->removeFederativeEntityAgentRelations($agent);
+
             $_SESSION['gestor_cult_sync_completed'] = true;
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
@@ -212,6 +214,44 @@ class GestorCultJob
 
         // Se não conseguiu normalizar, retorna array vazio
         return [];
+    }
+
+    /**
+     * Remove somente as associações entre o agente e Entes Federados.
+     *
+     * @param \MapasCulturais\Entities\Agent $agent
+     * @return void
+     */
+    private function removeFederativeEntityAgentRelations(Agent $agent): void
+    {
+        $app = App::i();
+        $em = $app->em;
+
+        $relations = $app->repo(FederativeEntityAgentRelation::class)->findBy([
+            'agent' => $agent
+        ]);
+
+        if (empty($relations)) {
+            return;
+        }
+
+        $em->beginTransaction();
+
+        try {
+            foreach ($relations as $relation) {
+                if (!$relation->owner instanceof FederativeEntity) {
+                    continue;
+                }
+
+                $em->remove($relation);
+            }
+
+            $em->flush();
+            $em->commit();
+        } catch (\Throwable $e) {
+            $em->rollback();
+            throw $e;
+        }
     }
 
     /**
