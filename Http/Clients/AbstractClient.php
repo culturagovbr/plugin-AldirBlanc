@@ -56,15 +56,20 @@ abstract class AbstractClient
 
     public final function get()
     {
+        $app = App::i();
+
         // Utilizado para testes locais
         if ($this->isDevelopmentMode()) {
+            $app->log->info("[Gestores CultBR] Modo development: usando fixture | Cliente: " . static::class);
             return require $this->getFixturePath();
         }
 
         $fullUrl = $this->prepareUrl();
+        $app->log->info("[Gestores CultBR] GET requisição | Cliente: " . static::class . " | URL: {$fullUrl}");
 
         try {
             $this->curl->get($fullUrl);
+            $app->log->info("[Gestores CultBR] GET resposta recebida | Cliente: " . static::class . " | HTTP: {$this->curl->http_status_code}");
             return $this->parseResponse($this->curl->response);
         } catch (\Exception $e) {
             $this->handleError('[Gestores CultBR] Erro na API ao buscar dados', $e);

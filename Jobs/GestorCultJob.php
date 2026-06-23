@@ -30,16 +30,19 @@ class GestorCultJob
         $document = $this->gestorDocument->document;
         $agent = $app->user->profile;
 
+        $app->log->info("[Gestores CultBR] Sync iniciado | Usuário ID: {$userId} | Documento: {$document}");
+
         // Limpa flags de erro no início do sync (caso tenha sobrado de tentativa anterior)
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
 
         if (!$agent) {
+            $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
             // Marca que o sync terminou mesmo sem agente (sem erro)
             $_SESSION['gestor_cult_sync_completed'] = true;
             return;
         }
-        
+
         $apiResponse = null;
 
         try {
@@ -47,6 +50,8 @@ class GestorCultJob
 
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+
+            $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
             // Dispara alerta para Telegram
             $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
@@ -64,10 +69,13 @@ class GestorCultJob
 
         // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
         if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+            $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
+
             if (UserAccessService::isGestorCultBr()) {
                 $app->disableAccessControl();
                 $app->user->removeRole(Role::GESTOR_CULT_BR);
                 $app->enableAccessControl();
+                $app->log->info("[Gestores CultBR] Role GestorCultBr removida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
             }
 
             $this->removeFederativeEntityAgentRelations($agent);
@@ -75,6 +83,7 @@ class GestorCultJob
             $_SESSION['gestor_cult_sync_completed'] = true;
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
+            $app->log->info("[Gestores CultBR] Sync concluído (revogação) | Usuário ID: {$userId} | Agente ID: {$agent->id}");
             return;
         }
 
@@ -83,6 +92,7 @@ class GestorCultJob
             $app->disableAccessControl();
             $app->user->addRole(Role::GESTOR_CULT_BR);
             $app->enableAccessControl();
+            $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
         }
 
         try {
@@ -101,9 +111,10 @@ class GestorCultJob
             // Limpa flags de erro se o sync foi bem-sucedido
             unset($_SESSION['gestor_cult_sync_error']);
             unset($_SESSION['gestor_cult_sync_error_message']);
-            
+
             // Marca como concluído sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
+            $app->log->info("[Gestores CultBR] Sync concluído com sucesso | Usuário ID: {$userId} | Agente ID: {$agent->id} | Entes federados associados: " . count($federativeEntities));
         } catch (\Throwable $e) {
             // Dispara alerta para Telegram
             $app->log->critical("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
@@ -232,24 +243,29 @@ class GestorCultJob
         ]);
 
         if (empty($relations)) {
+            $app->log->info("[Gestores CultBR] Nenhuma associação de Ente Federado para remover | Agente ID: {$agent->id}");
             return;
         }
 
         $em->beginTransaction();
 
         try {
+            $removedCount = 0;
             foreach ($relations as $relation) {
                 if (!$relation->owner instanceof FederativeEntity) {
                     continue;
                 }
 
                 $em->remove($relation);
+                $removedCount++;
             }
 
             $em->flush();
             $em->commit();
+            $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
+            $app->log->critical("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
@@ -295,13 +311,16 @@ class GestorCultJob
 
         try {
             // Remove os Entes Federados Associados ao Agente que não estão na API
+            $removedCount = 0;
             foreach ($currentByDoc as $doc => $relation) {
                 if (!isset($apiLookup[$doc])) {
                     $em->remove($relation);
+                    $removedCount++;
                 }
             }
 
             // Processa os Entes Federados da API
+            $newAssociationsCount = 0;
             foreach ($federativeEntities as $data) {
                 $doc = $data['document'];
 
@@ -341,14 +360,17 @@ class GestorCultJob
                     $relation->hasControl = false;
                     $relation->status = AgentRelation::STATUS_ENABLED;
                     $em->persist($relation);
+                    $newAssociationsCount++;
                 }
             }
 
             // Salva as alterações no banco de dados
             $em->flush();
             $em->commit();
+            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
+            $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
