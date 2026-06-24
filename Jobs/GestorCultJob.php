@@ -28,7 +28,7 @@ class GestorCultJob
         $this->gestorDocument = $gestorDocument;
     }
 
-    public function sync(): void
+    public function sync(): bool
     {
         $app = App::i();
         $userId = $app->user->id;
@@ -45,7 +45,7 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
             // Marca que o sync terminou mesmo sem agente (sem erro)
             $_SESSION['gestor_cult_sync_completed'] = true;
-            return;
+            return true;
         }
 
         // Evita que requisições concorrentes (ex.: dupla submissão, abas paralelas) disparem
@@ -53,7 +53,7 @@ class GestorCultJob
         $lockKey = "gestor_cult_sync_lock:{$userId}:{$document}";
         if ($app->cache->contains($lockKey)) {
             $app->log->info("[Gestores CultBR] Sync já em andamento em outra requisição, ignorando | Usuário ID: {$userId} | Documento: {$document}");
-            return;
+            return false;
         }
         $app->cache->save($lockKey, true, self::SYNC_LOCK_TTL);
 
@@ -62,6 +62,8 @@ class GestorCultJob
         } finally {
             $app->cache->delete($lockKey);
         }
+
+        return true;
     }
 
     private function performSync(Agent $agent, $userId, string $document): void
