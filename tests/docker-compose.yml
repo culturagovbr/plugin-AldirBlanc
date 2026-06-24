@@ -1,0 +1,19 @@
+services:
+  mapas:
+    volumes:
+      # Habilita o plugin AldirBlanc + tema Pnab na suíte de testes do repositório principal,
+      # sem editar tests/config.d/ do core. "zz-aldirblanc.d" ordena depois de "config.d"
+      # no glob de src/conf/config.php, então sobrescreve as chaves 'plugins' e 'themes.active'
+      # (config.d/plugins.php e config.d/theme.php deste diretório). Plugin + tema são sempre
+      # usados juntos aqui — uma única camada de override, sem variantes opcionais.
+      # Caminho relativo ao cwd esperado do `docker compose` (tests/ do repo principal — ver README.md do plugin)
+      # Monta o DIRETÓRIO (não o arquivo isolado) — bind mount de arquivo único dentro de outro
+      # bind mount (../config:/var/www/config) falha no Docker Desktop/virtiofs (macOS) quando o
+      # subdiretório de destino ainda não existe no host.
+      - ../src/plugins/AldirBlanc/tests/config.d:/var/www/config/zz-aldirblanc.d
+
+      # Testes do próprio plugin, montados como subpasta de /var/www/tests (mesmo destino de tests/src
+      # do core, mapeado por tests/docker-compose.yml). O autoload PSR-4 'Tests\\' => '/var/www/tests'
+      # (composer.json) resolve "Tests\AldirBlanc\SmokeTest" para /var/www/tests/AldirBlanc/SmokeTest.php,
+      # então as classes deste plugin podem usar/estender Tests\Abstract\TestCase e Tests\Traits\* normalmente.
+      - ../src/plugins/AldirBlanc/tests/src:/var/www/tests/AldirBlanc
