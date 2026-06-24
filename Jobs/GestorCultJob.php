@@ -15,6 +15,7 @@ use AldirBlanc\Services\UserAccessService;
 class GestorCultJob
 {
     public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
+    private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
 
@@ -68,10 +69,12 @@ class GestorCultJob
         $apiResponse = null;
 
         try {
-            $apiResponse = (new GestorClient($this->gestorDocument))->get();
+            $apiResponse = $this->fetchGestorData();
 
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+            $this->validateFederativeEntitiesContract($federativeEntities);
+            $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
@@ -162,11 +165,26 @@ class GestorCultJob
         if (!is_array($response)) {
             return [];
         }
-        if (isset($response['entes_federados']) && is_array($response['entes_federados'])) {
+
+        if (array_key_exists('entes_federados', $response)) {
+            if (!is_array($response['entes_federados'])) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
+            }
+
             return $response['entes_federados'];
         }
+
+        if (!$this->isListArray($response)) {
+            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
+        }
+
         // Formato antigo: o próprio retorno é a lista de entes
         return $response;
+    }
+
+    protected function fetchGestorData()
+    {
+        return (new GestorClient($this->gestorDocument))->get();
     }
 
     /**
@@ -249,6 +267,91 @@ class GestorCultJob
         return [];
     }
 
+    private function isListArray(array $data): bool
+    {
+        if ($data === []) {
+            return true;
+        }
+
+        return array_keys($data) === range(0, count($data) - 1);
+    }
+
+    private function normalizeEntityExercises(array $data): array
+    {
+        if (!array_key_exists('exercicios', $data)) {
+            if (array_key_exists('exercices', $data)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave exercices não é suportada');
+            }
+
+            return [];
+        }
+
+        return is_array($data['exercicios']) ? $data['exercicios'] : [];
+    }
+
+    private function hasParData(array $data): bool
+    {
+        return array_key_exists('exercicios', $data) && $this->isValidExercisesList($data['exercicios']);
+    }
+
+    private function filterFederativeEntitiesWithParData(array $federativeEntities): array
+    {
+        return array_values(array_filter($federativeEntities, fn(array $data) => $this->hasParData($data)));
+    }
+
+    private function validateFederativeEntitiesContract(array $federativeEntities): void
+    {
+        $documents = [];
+
+        foreach ($federativeEntities as $index => $data) {
+            if (!is_array($data)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} deve ser array");
+            }
+
+            if (!isset($data['document']) || trim((string) $data['document']) === '') {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem document");
+            }
+
+            if (!isset($data['name']) || trim((string) $data['name']) === '') {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem name");
+            }
+
+            $document = trim((string) $data['document']);
+            if (isset($documents[$document])) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": document duplicado {$document}");
+            }
+            $documents[$document] = true;
+
+            $exercises = $this->normalizeEntityExercises($data);
+            if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} com exercicios inválidos");
+            }
+        }
+    }
+
+    private function isValidExercisesList($exercises): bool
+    {
+        if (!is_array($exercises) || $exercises === [] || !$this->isListArray($exercises)) {
+            return false;
+        }
+
+        foreach ($exercises as $exercise) {
+            if (!is_array($exercise)) {
+                return false;
+            }
+
+            if (!array_key_exists('id', $exercise) || !array_key_exists('ano', $exercise) || !array_key_exists('metas', $exercise)) {
+                return false;
+            }
+
+            if (!is_array($exercise['metas'])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * Remove somente as associações entre o agente e Entes Federados.
      *
@@ -299,10 +402,13 @@ class GestorCultJob
      * @param array $federativeEntities
      * @return void
      */
-    private function associateFederativeEntities(Agent $agent, array $federativeEntities): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities): void
     {
         $app = App::i();
         $em  = $app->em;
+
+        $this->validateFederativeEntitiesContract($federativeEntities);
+        $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
         $apiDocs = array_column($federativeEntities, 'document');
         $apiLookup = array_flip($apiDocs);
@@ -344,20 +450,21 @@ class GestorCultJob
             // Processa os Entes Federados da API
             $newAssociationsCount = 0;
             foreach ($federativeEntities as $data) {
-                $doc = $data['document'];
+                $doc = trim((string) $data['document']);
+                $name = trim((string) $data['name']);
+                $exercicios = $this->normalizeEntityExercises($data);
 
                 $entity = $entitiesByDoc[$doc] ?? null;
 
                 if ($entity) {
                     $changed = false;
-                    if ($entity->name !== ($data['name'] ?? null)) {
-                        $entity->name = $data['name'];
+                    if ($entity->name !== $name) {
+                        $entity->name = $name;
                         $changed = true;
                     }
 
-                    $exercicios = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
                     $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
-                    $newJson = $exercicios === null ? null : json_encode($exercicios);
+                    $newJson = json_encode($exercicios);
                     if ($currentJson !== $newJson) {
                         $entity->exercices = $exercicios;
                         $changed = true;
@@ -367,9 +474,9 @@ class GestorCultJob
                     }
                 } else {
                     $entity = new FederativeEntity();
-                    $entity->name = $data['name'];
+                    $entity->name = $name;
                     $entity->document = $doc;
-                    $entity->exercices = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
+                    $entity->exercices = $exercicios;
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);
