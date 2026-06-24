@@ -8,17 +8,23 @@ use MapasCulturais\Traits;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
+use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Exceptions\Halt;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
     use Traits\ControllerAPI;
+
+    private const SYNC_SESSION_TTL = 300;
 
     /**
      * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
@@ -194,7 +200,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Evita disparos paralelos enquanto a sincronização atual ainda está em andamento
         $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        if ($syncStarted && !$syncCompleted) {
+        if ($syncStarted && !$syncCompleted && !$this->isSyncSessionStale()) {
             $app->log->info("[Gestores CultBR] startSync ignorado: sincronização já em andamento | Usuário ID: {$userId}");
             $this->json(['started' => true]);
             return;
@@ -205,24 +211,35 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Marca que o sync começou e limpa flags de erro anteriores
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
+        $_SESSION['gestor_cult_sync_started_at'] = time();
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
 
         // Dispara a sincronização em background
         try {
-            $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
-            (new \AldirBlanc\Jobs\GestorCultJob($gestorDocument))->sync();
-            
-            // Se o sync foi bem-sucedido mas há flags antigas, limpa
-            if (isset($_SESSION['gestor_cult_sync_error'])) {
-                unset($_SESSION['gestor_cult_sync_error']);
-                unset($_SESSION['gestor_cult_sync_error_message']);
-            }
-            
-            // Garante que syncCompleted está definido
-            if (!isset($_SESSION['gestor_cult_sync_completed'])) {
+            $gestorDocument = new GestorDocument($this->getGestorCpf());
+            $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
+
+            if (!$syncExecuted) {
                 $_SESSION['gestor_cult_sync_completed'] = true;
+                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
+
+            if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
+                $_SESSION['gestor_cult_sync_completed'] = true;
+
+                $this->json([
+                    'started' => false,
+                    'error' => true,
+                    'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                ]);
+                return;
+            }
+
+            $_SESSION['gestor_cult_sync_completed'] = true;
+        } catch (Halt $e) {
+            throw $e;
         } catch (\Throwable $e) {
             // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
             // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
@@ -237,19 +254,36 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
+                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
             
             $this->json([
                 'started' => false,
                 'error' => true,
-                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
             ]);
             return;
         }
 
         $app->log->info("[Gestores CultBR] startSync finalizado | Usuário ID: {$userId}");
         $this->json(['started' => true]);
+    }
+
+    protected function getGestorCpf(): string
+    {
+        return (new UserService())->getCpf();
+    }
+
+    protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob
+    {
+        return new GestorCultJob($gestorDocument);
+    }
+
+    protected function isSyncSessionStale(): bool
+    {
+        $startedAt = $_SESSION['gestor_cult_sync_started_at'] ?? null;
+
+        return is_numeric($startedAt) && ((time() - (int) $startedAt) > self::SYNC_SESSION_TTL);
     }
 
     /**
@@ -266,6 +300,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Limpa todas as flags de sync
         unset($_SESSION['gestor_cult_sync_started']);
         unset($_SESSION['gestor_cult_sync_completed']);
+        unset($_SESSION['gestor_cult_sync_started_at']);
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
         unset($_SESSION['selectedFederativeEntity']);
@@ -308,10 +343,19 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0') . " | hasError: " . ($hasError ? '1' : '0'));
 
         // Se o sync não foi iniciado, ainda não está pronto
-        if (!$syncStarted) {
+        if (!$syncStarted && !$syncCompleted) {
             $app->log->info("[Gestores CultBR] checkSyncStatus: sync não iniciado, retornando ready=false | Usuário ID: {$userId} | Sessão: {$sessionId}");
             $this->json(['ready' => false]);
             return;
+        }
+
+        if ($syncStarted && !$syncCompleted && $this->isSyncSessionStale()) {
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+            $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+            $syncCompleted = true;
+            $hasError = true;
+            $errorMessage = GestorCultJob::API_UNAVAILABLE_MESSAGE;
         }
 
         // Se o sync foi concluído, retorna pronto (com ou sem erro)
