@@ -123,6 +123,37 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $_SESSION['gestor_cult_sync_error_message'] ?? null);
     }
 
+    function testLockEhRemovidoAposSyncComSucesso()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $lockKey = "gestor_cult_sync_lock:{$user->id}:12345678901";
+
+        $job = $this->jobWithResponse([]);
+
+        $this->assertTrue($job->sync());
+        $this->assertFalse($this->app->cache->contains($lockKey));
+    }
+
+    function testLockEhRemovidoAposErroRelancado()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $lockKey = "gestor_cult_sync_lock:{$user->id}:12345678901";
+
+        $job = new TestableGestorCultJob(new GestorDocument('12345678901'));
+        $job->setGestorException(new \RuntimeException('Falha no client'));
+
+        try {
+            $job->sync();
+            $this->fail('Esperava exceção do client');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Falha no client', $exception->getMessage());
+        }
+
+        $this->assertFalse($this->app->cache->contains($lockKey));
+    }
+
     function testErroAoAssociarDadosMarcaSessaoSemRelancarExcecao()
     {
         $user = $this->userDirector->createUser();
