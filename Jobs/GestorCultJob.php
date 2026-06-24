@@ -5,6 +5,7 @@ namespace AldirBlanc\Jobs;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
+use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
@@ -15,15 +16,19 @@ use AldirBlanc\Services\UserAccessService;
 class GestorCultJob
 {
     public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
+    private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
+
+    /** TTL de segurança do lock de concorrência: cobre o tempo de uma sincronização real (chamada à API), liberado no finally ao terminar. */
+    private const SYNC_LOCK_TTL = 300;
 
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
     }
 
-    public function sync(): void
+    public function sync(): bool
     {
         $app = App::i();
         $userId = $app->user->id;
@@ -40,16 +45,39 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
             // Marca que o sync terminou mesmo sem agente (sem erro)
             $_SESSION['gestor_cult_sync_completed'] = true;
-            return;
+            return true;
         }
 
+        // Evita que requisições concorrentes (ex.: dupla submissão, abas paralelas) disparem
+        // chamadas reais simultâneas à API para o mesmo usuário/documento.
+        $lockKey = "gestor_cult_sync_lock:{$userId}:{$document}";
+        if ($app->cache->contains($lockKey)) {
+            $app->log->info("[Gestores CultBR] Sync já em andamento em outra requisição, ignorando | Usuário ID: {$userId} | Documento: {$document}");
+            return false;
+        }
+        $app->cache->save($lockKey, true, self::SYNC_LOCK_TTL);
+
+        try {
+            $this->performSync($agent, $userId, $document);
+        } finally {
+            $app->cache->delete($lockKey);
+        }
+
+        return true;
+    }
+
+    private function performSync(Agent $agent, $userId, string $document): void
+    {
+        $app = App::i();
         $apiResponse = null;
 
         try {
-            $apiResponse = (new GestorClient($this->gestorDocument))->get();
+            $apiResponse = $this->fetchGestorData();
 
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+            $this->validateFederativeEntitiesContract($federativeEntities);
+            $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
@@ -87,26 +115,26 @@ class GestorCultJob
             return;
         }
 
-        // Se o usuário não é gestor CultBR, adiciona a permissão
-        if (!UserAccessService::isGestorCultBr()) {
-            $app->disableAccessControl();
-            $app->user->addRole(Role::GESTOR_CULT_BR);
-            $app->enableAccessControl();
-            $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-        }
+        $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
 
         try {
-            // Associa os entes federados ao agente
-            $this->associateFederativeEntities($agent, $federativeEntities);
-
-            // Atualiza o agente com dados do gestor (apenas campos alterados)
-            if (is_array($apiResponse)) {
+            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $apiResponse, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
-                $this->updateAgentFromGestorResponse($agent, $apiResponse);
-                $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
-                $agent->save(true);
-                $app->enableAccessControl();
-            }
+
+                try {
+                    if (is_array($apiResponse)) {
+                        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+                        $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
+                        $agent->save(false);
+                    }
+
+                    if ($shouldGrantGestorRole) {
+                        $this->grantGestorCultBrRole($userId, $agent);
+                    }
+                } finally {
+                    $app->enableAccessControl();
+                }
+            });
             
             // Limpa flags de erro se o sync foi bem-sucedido
             unset($_SESSION['gestor_cult_sync_error']);
@@ -135,16 +163,31 @@ class GestorCultJob
      * @param mixed $response Retorno bruto da API
      * @return array Lista de entes (cada item com 'name' e 'document')
      */
-    private function extractFederativeEntitiesFromResponse($response): array
+    protected function extractFederativeEntitiesFromResponse($response): array
     {
         if (!is_array($response)) {
             return [];
         }
-        if (isset($response['entes_federados']) && is_array($response['entes_federados'])) {
+
+        if (array_key_exists('entes_federados', $response)) {
+            if (!is_array($response['entes_federados'])) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
+            }
+
             return $response['entes_federados'];
         }
+
+        if (!$this->isListArray($response)) {
+            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
+        }
+
         // Formato antigo: o próprio retorno é a lista de entes
         return $response;
+    }
+
+    protected function fetchGestorData()
+    {
+        return (new GestorClient($this->gestorDocument))->get();
     }
 
     /**
@@ -167,7 +210,7 @@ class GestorCultJob
      * @param Agent $agent
      * @param array $apiResponse Retorno bruto da API (objeto com rg, cep, nome, etc.)
      */
-    private function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
     {
         foreach (self::GESTOR_API_TO_AGENT_METADATA as $apiKey => $agentKey) {
             $apiValue = $apiResponse[$apiKey] ?? null;
@@ -184,10 +227,42 @@ class GestorCultJob
         }
     }
 
+    protected function grantGestorCultBrRole($userId, Agent $agent): void
+    {
+        $app = App::i();
+
+        $roleDefinition = $app->getRoleDefinition(Role::GESTOR_CULT_BR);
+        if (is_null($roleDefinition)) {
+            throw new \RuntimeException('Role GestorCultBr não registrada');
+        }
+
+        if ($app->user->is(Role::GESTOR_CULT_BR)) {
+            return;
+        }
+
+        $role = new MapasRole();
+        $role->user = $app->user;
+        $role->name = Role::GESTOR_CULT_BR;
+        $role->subsiteId = $roleDefinition->subsiteContext ? $app->getCurrentSubsiteId() : null;
+
+        $app->em->persist($role);
+        $this->appendRoleToCurrentUser($role);
+        $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
+    }
+
+    private function appendRoleToCurrentUser(MapasRole $role): void
+    {
+        $user = App::i()->user;
+
+        \Closure::bind(function () use ($role) {
+            $this->roles[] = $role;
+        }, $user, get_class($user))();
+    }
+
     /**
      * Normaliza valor para comparação (evita diferença entre null, '' e espaços).
      */
-    private function normalizeStringForComparison($value): string
+    protected function normalizeStringForComparison($value): string
     {
         if ($value === null || $value === '') {
             return '';
@@ -201,7 +276,7 @@ class GestorCultJob
      * @param mixed $federativeEntities
      * @return array
      */
-    private function normalizeFederativeEntities($federativeEntities): array
+    protected function normalizeFederativeEntities($federativeEntities): array
     {
         // Se já é um array, retorna como está
         if (is_array($federativeEntities)) {
@@ -225,6 +300,91 @@ class GestorCultJob
 
         // Se não conseguiu normalizar, retorna array vazio
         return [];
+    }
+
+    private function isListArray(array $data): bool
+    {
+        if ($data === []) {
+            return true;
+        }
+
+        return array_keys($data) === range(0, count($data) - 1);
+    }
+
+    private function normalizeEntityExercises(array $data): array
+    {
+        if (!array_key_exists('exercicios', $data)) {
+            if (array_key_exists('exercices', $data)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave exercices não é suportada');
+            }
+
+            return [];
+        }
+
+        return is_array($data['exercicios']) ? $data['exercicios'] : [];
+    }
+
+    private function hasParData(array $data): bool
+    {
+        return array_key_exists('exercicios', $data) && $this->isValidExercisesList($data['exercicios']);
+    }
+
+    private function filterFederativeEntitiesWithParData(array $federativeEntities): array
+    {
+        return array_values(array_filter($federativeEntities, fn(array $data) => $this->hasParData($data)));
+    }
+
+    private function validateFederativeEntitiesContract(array $federativeEntities): void
+    {
+        $documents = [];
+
+        foreach ($federativeEntities as $index => $data) {
+            if (!is_array($data)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} deve ser array");
+            }
+
+            if (!isset($data['document']) || trim((string) $data['document']) === '') {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem document");
+            }
+
+            if (!isset($data['name']) || trim((string) $data['name']) === '') {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem name");
+            }
+
+            $document = trim((string) $data['document']);
+            if (isset($documents[$document])) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": document duplicado {$document}");
+            }
+            $documents[$document] = true;
+
+            $exercises = $this->normalizeEntityExercises($data);
+            if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} com exercicios inválidos");
+            }
+        }
+    }
+
+    private function isValidExercisesList($exercises): bool
+    {
+        if (!is_array($exercises) || $exercises === [] || !$this->isListArray($exercises)) {
+            return false;
+        }
+
+        foreach ($exercises as $exercise) {
+            if (!is_array($exercise)) {
+                return false;
+            }
+
+            if (!array_key_exists('id', $exercise) || !array_key_exists('ano', $exercise) || !array_key_exists('metas', $exercise)) {
+                return false;
+            }
+
+            if (!is_array($exercise['metas'])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -277,10 +437,13 @@ class GestorCultJob
      * @param array $federativeEntities
      * @return void
      */
-    private function associateFederativeEntities(Agent $agent, array $federativeEntities): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null): void
     {
         $app = App::i();
         $em  = $app->em;
+
+        $this->validateFederativeEntitiesContract($federativeEntities);
+        $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
         $apiDocs = array_column($federativeEntities, 'document');
         $apiLookup = array_flip($apiDocs);
@@ -322,20 +485,21 @@ class GestorCultJob
             // Processa os Entes Federados da API
             $newAssociationsCount = 0;
             foreach ($federativeEntities as $data) {
-                $doc = $data['document'];
+                $doc = trim((string) $data['document']);
+                $name = trim((string) $data['name']);
+                $exercicios = $this->normalizeEntityExercises($data);
 
                 $entity = $entitiesByDoc[$doc] ?? null;
 
                 if ($entity) {
                     $changed = false;
-                    if ($entity->name !== ($data['name'] ?? null)) {
-                        $entity->name = $data['name'];
+                    if ($entity->name !== $name) {
+                        $entity->name = $name;
                         $changed = true;
                     }
 
-                    $exercicios = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
                     $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
-                    $newJson = $exercicios === null ? null : json_encode($exercicios);
+                    $newJson = json_encode($exercicios);
                     if ($currentJson !== $newJson) {
                         $entity->exercices = $exercicios;
                         $changed = true;
@@ -345,9 +509,9 @@ class GestorCultJob
                     }
                 } else {
                     $entity = new FederativeEntity();
-                    $entity->name = $data['name'];
+                    $entity->name = $name;
                     $entity->document = $doc;
-                    $entity->exercices = isset($data['exercicios']) && is_array($data['exercicios']) ? $data['exercicios'] : null;
+                    $entity->exercices = $exercicios;
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);
@@ -365,6 +529,11 @@ class GestorCultJob
             }
 
             // Salva as alterações no banco de dados
+            $this->beforeFlushFederativeEntityAssociations();
+            if ($beforeFlush) {
+                $beforeFlush();
+            }
+
             $em->flush();
             $em->commit();
             $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
@@ -373,5 +542,9 @@ class GestorCultJob
             $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
+    }
+
+    protected function beforeFlushFederativeEntityAssociations(): void
+    {
     }
 }

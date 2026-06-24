@@ -8,17 +8,35 @@ use MapasCulturais\Traits;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
+use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Exceptions\Halt;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
     use Traits\ControllerAPI;
+
+    private const SYNC_SESSION_TTL = 300;
+
+    private ?\MapasCulturais\Entity $_requestedEntity = null;
+
+    /**
+     * Sobrescreve ControllerEntity::getRequestedEntity() (que só resolve por urlData['id'] ou
+     * action 'create'/'index') para rotas como completeProfile, que não têm id na URL mas
+     * precisam de uma entidade "solicitada" pro layout montar lockedFields/lockedFieldSeals.
+     */
+    public function getRequestedEntity(): ?\MapasCulturais\Entity
+    {
+        return $this->_requestedEntity ?? parent::getRequestedEntity();
+    }
 
     /**
      * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
@@ -41,11 +59,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
 
         if (!UserAccessService::isGestorCultBr()) {
+            $this->json([]);
             return;
         }
 
         $agent = $app->user->profile;
         if (!$agent) {
+            $this->json([]);
             return;
         }
 
@@ -142,7 +162,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ]);
     }
 
-    private function removeDuplicatedParActions(array $actions): array
+    protected function removeDuplicatedParActions(array $actions): array
     {
         $uniqueActions = [];
         $seenLabels = [];
@@ -162,7 +182,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return $uniqueActions;
     }
 
-    private function getParActionLabelKey(string $label): string
+    protected function getParActionLabelKey(string $label): string
     {
         if (preg_match('/^\s*([0-9]+(?:\.[0-9]+)*)\b/u', $label, $matches)) {
             return $matches[1];
@@ -171,7 +191,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return mb_strtolower($label);
     }
 
-    private function sortParActionsByLabel(array $actions): array
+    protected function sortParActionsByLabel(array $actions): array
     {
         usort($actions, fn(array $firstAction, array $secondAction) => strnatcasecmp(
             (string) ($firstAction['label'] ?? ''),
@@ -194,7 +214,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Evita disparos paralelos enquanto a sincronização atual ainda está em andamento
         $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        if ($syncStarted && !$syncCompleted) {
+        if ($syncStarted && !$syncCompleted && !$this->isSyncSessionStale()) {
             $app->log->info("[Gestores CultBR] startSync ignorado: sincronização já em andamento | Usuário ID: {$userId}");
             $this->json(['started' => true]);
             return;
@@ -205,24 +225,35 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Marca que o sync começou e limpa flags de erro anteriores
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
+        $_SESSION['gestor_cult_sync_started_at'] = time();
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
 
         // Dispara a sincronização em background
         try {
-            $gestorDocument = new \AldirBlanc\Dtos\GestorDocument((new \AldirBlanc\Services\UserService())->getCpf());
-            (new \AldirBlanc\Jobs\GestorCultJob($gestorDocument))->sync();
-            
-            // Se o sync foi bem-sucedido mas há flags antigas, limpa
-            if (isset($_SESSION['gestor_cult_sync_error'])) {
-                unset($_SESSION['gestor_cult_sync_error']);
-                unset($_SESSION['gestor_cult_sync_error_message']);
-            }
-            
-            // Garante que syncCompleted está definido
-            if (!isset($_SESSION['gestor_cult_sync_completed'])) {
+            $gestorDocument = new GestorDocument($this->getGestorCpf());
+            $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
+
+            if (!$syncExecuted) {
                 $_SESSION['gestor_cult_sync_completed'] = true;
+                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
+
+            if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
+                $_SESSION['gestor_cult_sync_completed'] = true;
+
+                $this->json([
+                    'started' => false,
+                    'error' => true,
+                    'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                ]);
+                return;
+            }
+
+            $_SESSION['gestor_cult_sync_completed'] = true;
+        } catch (Halt $e) {
+            throw $e;
         } catch (\Throwable $e) {
             // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
             // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
@@ -237,19 +268,36 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
                 $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
+                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
             
             $this->json([
                 'started' => false,
                 'error' => true,
-                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
             ]);
             return;
         }
 
         $app->log->info("[Gestores CultBR] startSync finalizado | Usuário ID: {$userId}");
         $this->json(['started' => true]);
+    }
+
+    protected function getGestorCpf(): string
+    {
+        return (new UserService())->getCpf();
+    }
+
+    protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob
+    {
+        return new GestorCultJob($gestorDocument);
+    }
+
+    protected function isSyncSessionStale(): bool
+    {
+        $startedAt = $_SESSION['gestor_cult_sync_started_at'] ?? null;
+
+        return is_numeric($startedAt) && ((time() - (int) $startedAt) > self::SYNC_SESSION_TTL);
     }
 
     /**
@@ -266,6 +314,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Limpa todas as flags de sync
         unset($_SESSION['gestor_cult_sync_started']);
         unset($_SESSION['gestor_cult_sync_completed']);
+        unset($_SESSION['gestor_cult_sync_started_at']);
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
         unset($_SESSION['selectedFederativeEntity']);
@@ -289,22 +338,38 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      */
     function GET_checkSyncStatus()
     {
+        $app = App::i();
+        $userId = $app->user->id ?? 'N/A';
+        $sessionId = session_id() ?: 'N/A';
+
         // Verifica se o sync foi iniciado
         $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
-        
+
         // Verifica se o sync foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        
+
         // Verifica se houve erro (verifica se a flag existe e não está vazia)
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
-                   $_SESSION['gestor_cult_sync_error'] !== null && 
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
+                   $_SESSION['gestor_cult_sync_error'] !== null &&
                    $_SESSION['gestor_cult_sync_error'] !== '';
         $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
 
+        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0') . " | hasError: " . ($hasError ? '1' : '0'));
+
         // Se o sync não foi iniciado, ainda não está pronto
-        if (!$syncStarted) {
+        if (!$syncStarted && !$syncCompleted) {
+            $app->log->info("[Gestores CultBR] checkSyncStatus: sync não iniciado, retornando ready=false | Usuário ID: {$userId} | Sessão: {$sessionId}");
             $this->json(['ready' => false]);
             return;
+        }
+
+        if ($syncStarted && !$syncCompleted && $this->isSyncSessionStale()) {
+            $_SESSION['gestor_cult_sync_completed'] = true;
+            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+            $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+            $syncCompleted = true;
+            $hasError = true;
+            $errorMessage = GestorCultJob::API_UNAVAILABLE_MESSAGE;
         }
 
         // Se o sync foi concluído, retorna pronto (com ou sem erro)
@@ -314,7 +379,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 unset($_SESSION['gestor_cult_sync_error']);
                 unset($_SESSION['gestor_cult_sync_error_message']);
             }
-            
+
+            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId} | error: " . ($hasError ? '1' : '0'));
             $this->json([
                 'ready' => true,
                 'error' => $hasError,
@@ -324,6 +390,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         // Sync ainda em andamento
+        $app->log->info("[Gestores CultBR] checkSyncStatus: sync em andamento, retornando ready=false | Usuário ID: {$userId} | Sessão: {$sessionId}");
         $this->json(['ready' => false]);
     }
 
@@ -410,18 +477,42 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
 
         $entityId = $this->data['entityId'] ?? null;
-        $entityName = $this->data['entityName'] ?? null;
-        $entityDocument = $this->data['entityDocument'] ?? null;
 
-        if (!$entityId) {
-            $this->error('ID da entidade federativa não informado', 400);
+        if (!$entityId || !is_numeric($entityId)) {
+            $this->errorJson(i::__('ID da entidade federativa não informado'), 400);
             return;
         }
 
+        if (!UserAccessService::isGestorCultBr()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $agent = $app->user->profile;
+        if (!$agent) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        // Não confia em entityName/entityDocument enviados pelo client: só aceita o entityId
+        // se houver de fato uma FederativeEntityAgentRelation do agente logado para ele, e usa
+        // os dados reais da entidade (não o que o client mandou) ao gravar na sessão.
+        $relation = $app->em->getRepository(FederativeEntityAgentRelation::class)->findOneBy([
+            'agent' => $agent,
+            'owner' => (int) $entityId,
+        ]);
+
+        if (!$relation || !$relation->owner) {
+            $this->errorJson(i::__('Você não tem permissão para selecionar este Ente Federado.'), 403);
+            return;
+        }
+
+        $entityDocument = $relation->owner->document;
+
         // Salva na sessão como JSON
         $federativeEntity = [
-            'id' => $entityId,
-            'name' => $entityName,
+            'id' => $relation->owner->id,
+            'name' => $relation->owner->name,
             'document' => $entityDocument
         ];
         $_SESSION['selectedFederativeEntity'] = json_encode($federativeEntity);
@@ -448,7 +539,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $this->json([
             'success' => true,
-            'entityId' => $entityId,
+            'entityId' => $relation->owner->id,
             'redirectUri' => $redirectUri
         ]);
     }
@@ -498,6 +589,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ];
 
         // Define a entidade solicitada para o layout/Theme (evita "lockedFields on null" no Theme.php)
+        // — ver getRequestedEntity() sobrescrito acima, que de fato expõe isto pro core.
         $this->_requestedEntity = $profile;
 
         $this->render('complete-profile', [
@@ -533,18 +625,53 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $data = $this->data;
         $requiredKeys = $theme->getRequeredsAgentIndividualMetadata();
 
-        foreach ($requiredKeys as $key) {
-            if (!array_key_exists($key, $data)) {
-                continue;
+        try {
+            foreach ($requiredKeys as $key) {
+                if (!array_key_exists($key, $data)) {
+                    continue;
+                }
+                $value = $data[$key];
+                if (is_array($value) && empty($value)) {
+                    $value = null;
+                }
+                $profile->$key = $value;
             }
-            $value = $data[$key];
-            if (is_array($value) && empty($value)) {
-                $value = null;
+
+            // Usa a validação declarativa do próprio metadado (agent-types.php: v::email(), v::brPhone(),
+            // formato de CPF etc.) — o mesmo mecanismo que o PATCH genérico do agente usa. Sem isso, esse
+            // endpoint aceitava qualquer valor pras chaves obrigatórias. Só bloqueia pelos campos que vieram
+            // no corpo desta requisição (não por outros campos já inválidos antes, fora do que foi pedido aqui).
+            $relevantErrors = array_intersect_key($profile->validationErrors, $data);
+            if ($relevantErrors) {
+                $this->errorJson($relevantErrors);
+                return;
             }
-            $profile->$key = $value;
+
+            $profile->save(true);
+        } catch (Halt $e) {
+            // errorJson()/json() chamados dentro deste try (validação acima) halt via exceção —
+            // deixa passar direto, sem cair no catch genérico abaixo.
+            throw $e;
+        } catch (\Throwable $e) {
+            // Valor mal formatado pra um campo tipado (ex.: data inválida em dataDeNascimento)
+            // lança exceção do próprio setter/Doctrine — não deixa subir sem tratamento.
+            $app->log->error("[CompleteProfile] Erro ao salvar campos do perfil | Usuário ID: {$app->user->id} | Erro: " . $e->getMessage());
+            $this->errorJson(i::__('Não foi possível salvar os dados informados. Verifique os valores e tente novamente.'), 400);
+            return;
         }
 
-        $profile->save(true);
+        // Revalida a partir do estado real (não confia em "salvei o que veio no corpo, logo terminei") —
+        // quem normalmente persiste os campos é o PATCH genérico do agente, chamado antes deste endpoint
+        // pelo front; sem essa revalidação, uma chamada com corpo vazio (ou direta, sem o PATCH) declararia
+        // sucesso mesmo com o perfil ainda incompleto.
+        $profile->refresh();
+        if (method_exists($theme, 'hasRequiredAgentFieldsFilled') && !$theme->hasRequiredAgentFieldsFilled($profile)) {
+            $this->json([
+                'success' => false,
+                'redirectUri' => $app->createUrl('aldirblanc', 'completeProfile'),
+            ]);
+            return;
+        }
 
         $redirectUri = $app->createUrl('panel', 'index');
         if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {

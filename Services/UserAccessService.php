@@ -3,6 +3,7 @@
 namespace AldirBlanc\Services;
 
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use MapasCulturais\App;
 
 class UserAccessService
@@ -62,5 +63,31 @@ class UserAccessService
         return (bool) array_filter(Role::ROLES_ALLOWED, function ($role) use ($user) {
             return $user->is($role);
         });
+    }
+
+    /**
+     * Verifica se o usuário atual pode ver a equipe (agentes) de um Ente Federado específico:
+     * admins podem ver a de qualquer ente; GestorCultBr só a do(s) ente(s) com que tem vínculo real
+     * (FederativeEntityAgentRelation), nunca por confiar num ID arbitrário vindo de query string.
+     */
+    public static function canViewFederativeEntityTeam(int $federativeEntityId): bool
+    {
+        if (self::isAdmin()) {
+            return true;
+        }
+
+        if (!self::isGestorCultBr()) {
+            return false;
+        }
+
+        $agent = App::i()->user->profile;
+        if (!$agent) {
+            return false;
+        }
+
+        return (bool) App::i()->repo(FederativeEntityAgentRelation::class)->findOneBy([
+            'agent' => $agent,
+            'owner' => $federativeEntityId,
+        ]);
     }
 }
