@@ -637,7 +637,21 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 $profile->$key = $value;
             }
 
+            // Usa a validação declarativa do próprio metadado (agent-types.php: v::email(), v::brPhone(),
+            // formato de CPF etc.) — o mesmo mecanismo que o PATCH genérico do agente usa. Sem isso, esse
+            // endpoint aceitava qualquer valor pras chaves obrigatórias. Só bloqueia pelos campos que vieram
+            // no corpo desta requisição (não por outros campos já inválidos antes, fora do que foi pedido aqui).
+            $relevantErrors = array_intersect_key($profile->validationErrors, $data);
+            if ($relevantErrors) {
+                $this->errorJson($relevantErrors);
+                return;
+            }
+
             $profile->save(true);
+        } catch (Halt $e) {
+            // errorJson()/json() chamados dentro deste try (validação acima) halt via exceção —
+            // deixa passar direto, sem cair no catch genérico abaixo.
+            throw $e;
         } catch (\Throwable $e) {
             // Valor mal formatado pra um campo tipado (ex.: data inválida em dataDeNascimento)
             // lança exceção do próprio setter/Doctrine — não deixa subir sem tratamento.
