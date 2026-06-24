@@ -47,11 +47,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
 
         if (!UserAccessService::isGestorCultBr()) {
+            $this->json([]);
             return;
         }
 
         $agent = $app->user->profile;
         if (!$agent) {
+            $this->json([]);
             return;
         }
 
@@ -463,18 +465,42 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
 
         $entityId = $this->data['entityId'] ?? null;
-        $entityName = $this->data['entityName'] ?? null;
-        $entityDocument = $this->data['entityDocument'] ?? null;
 
-        if (!$entityId) {
-            $this->error('ID da entidade federativa não informado', 400);
+        if (!$entityId || !is_numeric($entityId)) {
+            $this->errorJson(i::__('ID da entidade federativa não informado'), 400);
             return;
         }
 
+        if (!UserAccessService::isGestorCultBr()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $agent = $app->user->profile;
+        if (!$agent) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        // Não confia em entityName/entityDocument enviados pelo client: só aceita o entityId
+        // se houver de fato uma FederativeEntityAgentRelation do agente logado para ele, e usa
+        // os dados reais da entidade (não o que o client mandou) ao gravar na sessão.
+        $relation = $app->em->getRepository(FederativeEntityAgentRelation::class)->findOneBy([
+            'agent' => $agent,
+            'owner' => (int) $entityId,
+        ]);
+
+        if (!$relation || !$relation->owner) {
+            $this->errorJson(i::__('Você não tem permissão para selecionar este Ente Federado.'), 403);
+            return;
+        }
+
+        $entityDocument = $relation->owner->document;
+
         // Salva na sessão como JSON
         $federativeEntity = [
-            'id' => $entityId,
-            'name' => $entityName,
+            'id' => $relation->owner->id,
+            'name' => $relation->owner->name,
             'document' => $entityDocument
         ];
         $_SESSION['selectedFederativeEntity'] = json_encode($federativeEntity);
@@ -501,7 +527,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $this->json([
             'success' => true,
-            'entityId' => $entityId,
+            'entityId' => $relation->owner->id,
             'redirectUri' => $redirectUri
         ]);
     }
