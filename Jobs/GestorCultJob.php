@@ -18,6 +18,9 @@ class GestorCultJob
 
     private GestorDocument $gestorDocument;
 
+    /** TTL de segurança do lock de concorrência: cobre o tempo de uma sincronização real (chamada à API), liberado no finally ao terminar. */
+    private const SYNC_LOCK_TTL = 300;
+
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
@@ -43,6 +46,25 @@ class GestorCultJob
             return;
         }
 
+        // Evita que requisições concorrentes (ex.: dupla submissão, abas paralelas) disparem
+        // chamadas reais simultâneas à API para o mesmo usuário/documento.
+        $lockKey = "gestor_cult_sync_lock:{$userId}:{$document}";
+        if ($app->cache->contains($lockKey)) {
+            $app->log->info("[Gestores CultBR] Sync já em andamento em outra requisição, ignorando | Usuário ID: {$userId} | Documento: {$document}");
+            return;
+        }
+        $app->cache->save($lockKey, true, self::SYNC_LOCK_TTL);
+
+        try {
+            $this->performSync($agent, $userId, $document);
+        } finally {
+            $app->cache->delete($lockKey);
+        }
+    }
+
+    private function performSync(Agent $agent, $userId, string $document): void
+    {
+        $app = App::i();
         $apiResponse = null;
 
         try {
