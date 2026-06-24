@@ -289,20 +289,27 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      */
     function GET_checkSyncStatus()
     {
+        $app = App::i();
+        $userId = $app->user->id ?? 'N/A';
+        $sessionId = session_id() ?: 'N/A';
+
         // Verifica se o sync foi iniciado
         $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
-        
+
         // Verifica se o sync foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        
+
         // Verifica se houve erro (verifica se a flag existe e não está vazia)
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) && 
-                   $_SESSION['gestor_cult_sync_error'] !== null && 
+        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
+                   $_SESSION['gestor_cult_sync_error'] !== null &&
                    $_SESSION['gestor_cult_sync_error'] !== '';
         $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
 
+        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0') . " | hasError: " . ($hasError ? '1' : '0'));
+
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted) {
+            $app->log->info("[Gestores CultBR] checkSyncStatus: sync não iniciado, retornando ready=false | Usuário ID: {$userId} | Sessão: {$sessionId}");
             $this->json(['ready' => false]);
             return;
         }
@@ -314,7 +321,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 unset($_SESSION['gestor_cult_sync_error']);
                 unset($_SESSION['gestor_cult_sync_error_message']);
             }
-            
+
+            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId} | error: " . ($hasError ? '1' : '0'));
             $this->json([
                 'ready' => true,
                 'error' => $hasError,
@@ -324,6 +332,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         // Sync ainda em andamento
+        $app->log->info("[Gestores CultBR] checkSyncStatus: sync em andamento, retornando ready=false | Usuário ID: {$userId} | Sessão: {$sessionId}");
         $this->json(['ready' => false]);
     }
 
