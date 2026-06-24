@@ -68,7 +68,7 @@ abstract class AbstractClient
         $app->log->info("[Gestores CultBR] GET requisição | Cliente: " . static::class . " | URL: {$fullUrl}");
 
         try {
-            $this->curl->get($fullUrl);
+            $this->callCurlSuppressingDeprecations(fn() => $this->curl->get($fullUrl));
             $app->log->info("[Gestores CultBR] GET resposta recebida | Cliente: " . static::class . " | HTTP: {$this->curl->http_status_code}");
             return $this->parseResponse(
                 $this->curl->response,
@@ -94,7 +94,7 @@ abstract class AbstractClient
         $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         try {
-            $this->curl->post($fullUrl, $jsonPayload);
+            $this->callCurlSuppressingDeprecations(fn() => $this->curl->post($fullUrl, $jsonPayload));
             $rawResponse = $this->curl->response;
             $parsed = $this->parseResponse(
                 $rawResponse,
@@ -122,7 +122,7 @@ abstract class AbstractClient
 
         try {
             $this->curl->setOpt(CURLOPT_CUSTOMREQUEST, 'PUT');
-            $this->curl->post($fullUrl, $jsonPayload);
+            $this->callCurlSuppressingDeprecations(fn() => $this->curl->post($fullUrl, $jsonPayload));
             $rawResponse = $this->curl->response;
             $parsed = $this->parseResponse(
                 $rawResponse,
@@ -136,6 +136,24 @@ abstract class AbstractClient
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
         } finally {
             $this->closeCurl();
+        }
+    }
+
+    /**
+     * vendor/curl/curl (lib de terceiros) emite PHP Deprecated (preg_split com $limit nulo) a cada
+     * requisição real sob PHP 8.1+. Com display_errors=STDOUT, esse aviso é ecoado antes do corpo
+     * da resposta e quebra o parse de JSON no front-end. Suprime só E_DEPRECATED, só durante a
+     * chamada à lib, sem mexer em vendor/ nem esconder outros erros.
+     */
+    private function callCurlSuppressingDeprecations(callable $fn): void
+    {
+        $previousLevel = error_reporting();
+        error_reporting($previousLevel & ~E_DEPRECATED);
+
+        try {
+            $fn();
+        } finally {
+            error_reporting($previousLevel);
         }
     }
 
