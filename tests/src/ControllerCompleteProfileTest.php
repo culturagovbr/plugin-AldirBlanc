@@ -82,6 +82,12 @@ class ControllerCompleteProfileTest extends TestCase
         if ($key === 'cpf') {
             return '52998224725';
         }
+        if ($key === 'emailPrivado') {
+            return 'teste@example.com';
+        }
+        if ($key === 'telefonePublico') {
+            return '11999998888';
+        }
         return 'valor-de-teste';
     }
 
@@ -363,7 +369,7 @@ class ControllerCompleteProfileTest extends TestCase
         $this->app->em->clear();
         $reloaded = $this->app->repo(\MapasCulturais\Entities\Agent::class)->find($user->profile->id);
         $this->assertSame('Nome Novo', $reloaded->getMetadata('nomeCompleto'));
-        $this->assertSame('valor-de-teste', $reloaded->getMetadata('emailPrivado'), 'Chave não enviada no corpo deve permanecer com o valor anterior');
+        $this->assertSame('valor-de-teste', $reloaded->getMetadata('genero'), 'Chave não enviada no corpo deve permanecer com o valor anterior');
     }
 
     function testPostCompleteProfileIgnoraChaveForaDaListaPermitida()
@@ -381,7 +387,7 @@ class ControllerCompleteProfileTest extends TestCase
         $this->assertNull($reloaded->getMetadata('someRandomField'));
     }
 
-    function testPostCompleteProfileValorVazioLimpaCampoEArrayVazioNormalizaParaNull()
+    function testPostCompleteProfileValorVazioParaCampoObrigatorioEhRejeitadoSemPersistirNada()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -389,19 +395,53 @@ class ControllerCompleteProfileTest extends TestCase
 
         $controller = $this->controller();
         $controller->data = ['nomeCompleto' => '', 'pessoaDeficiente' => []];
-        $this->callJson(fn() => $controller->POST_completeProfile());
+
+        $this->app->response = new Response();
+        try {
+            $controller->POST_completeProfile();
+            $this->fail('esperava Halt (errorJson)');
+        } catch (Halt) {
+        }
+
+        $this->assertSame(400, $this->app->response->getStatusCode());
+        $body = json_decode((string) $this->app->response->getBody(), true);
+        $this->assertArrayHasKey('nomeCompleto', $body['data']);
+        $this->assertArrayHasKey('pessoaDeficiente', $body['data']);
+
+        // Rejeitado antes do save: nenhum valor (nem o inválido, nem os outros campos do payload) persiste.
+        $this->app->em->clear();
+        $reloaded = $this->app->repo(\MapasCulturais\Entities\Agent::class)->find($user->profile->id);
+        $this->assertSame('valor-de-teste', $reloaded->getMetadata('nomeCompleto'));
+        $this->assertTrue($this->app->view->hasRequiredAgentFieldsFilled($reloaded));
+    }
+
+    function testPostCompleteProfileEmailEFoneComFormatoInvalidoSaoRejeitados()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->fillAllRequiredFields($user->profile);
+
+        $controller = $this->controller();
+        $controller->data = [
+            'emailPrivado' => 'isso-nao-e-um-email',
+            'telefonePublico' => 'abc',
+        ];
+
+        $this->app->response = new Response();
+        try {
+            $controller->POST_completeProfile();
+            $this->fail('esperava Halt (errorJson)');
+        } catch (Halt) {
+        }
+
+        $this->assertSame(400, $this->app->response->getStatusCode());
+        $body = json_decode((string) $this->app->response->getBody(), true);
+        $this->assertArrayHasKey('emailPrivado', $body['data']);
+        $this->assertArrayHasKey('telefonePublico', $body['data']);
 
         $this->app->em->clear();
         $reloaded = $this->app->repo(\MapasCulturais\Entities\Agent::class)->find($user->profile->id);
-        // A camada de metadado normaliza '' para null na persistência — equivalente pra
-        // hasRequiredAgentFieldsFilled, que trata null e '' do mesmo jeito (campo vazio).
-        $this->assertNull($reloaded->getMetadata('nomeCompleto'));
-
-        // 'pessoaDeficiente' é multiselect: o setter da metadata persiste null/[] como a STRING
-        // '[]' (não null nem array PHP vazio). hasRequiredAgentFieldsFilled reconhece essa string
-        // como vazia (corrigido) — o campo deve manter o perfil como incompleto.
-        $this->assertSame('[]', $reloaded->getMetadata('pessoaDeficiente'));
-        $this->assertFalse($this->app->view->hasRequiredAgentFieldsFilled($reloaded), 'Multiselect vazio deveria manter o perfil como incompleto');
+        $this->assertSame('teste@example.com', $reloaded->getMetadata('emailPrivado'), 'Valor inválido não deveria ter sido persistido');
     }
 
     function testPostCompleteProfileGestorSemEnteAposCompletarRedirecionaParaSelecao()
