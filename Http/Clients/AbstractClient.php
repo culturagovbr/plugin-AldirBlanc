@@ -70,7 +70,13 @@ abstract class AbstractClient
         try {
             $this->curl->get($fullUrl);
             $app->log->info("[Gestores CultBR] GET resposta recebida | Cliente: " . static::class . " | HTTP: {$this->curl->http_status_code}");
-            return $this->parseResponse($this->curl->response);
+            return $this->parseResponse(
+                $this->curl->response,
+                $this->curl->http_status_code ?? 0,
+                $this->curl->error,
+                $this->curl->error_message,
+                $this->curl->error_code ?? 0,
+            );
         } catch (\Exception $e) {
             $this->handleError('[Gestores CultBR] Erro na API ao buscar dados', $e);
         } finally {
@@ -90,7 +96,13 @@ abstract class AbstractClient
         try {
             $this->curl->post($fullUrl, $jsonPayload);
             $rawResponse = $this->curl->response;
-            $parsed = $this->parseResponse($rawResponse);
+            $parsed = $this->parseResponse(
+                $rawResponse,
+                $this->curl->http_status_code ?? 0,
+                $this->curl->error,
+                $this->curl->error_message,
+                $this->curl->error_code ?? 0,
+            );
             return $parsed;
         } catch (\Exception $e) {
             $this->handleError('[CultBR] Erro na API ao enviar dados (POST)', $e);
@@ -112,7 +124,13 @@ abstract class AbstractClient
             $this->curl->setOpt(CURLOPT_CUSTOMREQUEST, 'PUT');
             $this->curl->post($fullUrl, $jsonPayload);
             $rawResponse = $this->curl->response;
-            $parsed = $this->parseResponse($rawResponse);
+            $parsed = $this->parseResponse(
+                $rawResponse,
+                $this->curl->http_status_code ?? 0,
+                $this->curl->error,
+                $this->curl->error_message,
+                $this->curl->error_code ?? 0,
+            );
             return $parsed;
         } catch (\Exception $e) {
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
@@ -171,15 +189,23 @@ abstract class AbstractClient
 
     /**
      * Interpreta a resposta do curl (código HTTP, body JSON, erros) e retorna o resultado ou lança exceção.
-     * @param mixed $response valor de $this->curl->response (string, array, object ou null)
+     * Recebe o estado do curl como parâmetros explícitos (em vez de ler $this->curl) para ser testável de forma pura.
+     * @param mixed $response corpo da resposta (string, array, object ou null)
+     * @param int $httpCode código HTTP da resposta
+     * @param bool $curlError se o curl reportou erro de transporte
+     * @param ?string $curlErrorMessage mensagem de erro do curl, se houver
+     * @param int $curlErrorCode código de erro do curl, se houver
      * @return array|object resultado decodificado ou array vazio quando a API informa ausência de dados
      * @throws \Exception em erro de JSON, 4xx/5xx ou formato não reconhecido
      */
-    private function parseResponse(mixed $response): array|object
+    protected function parseResponse(
+        mixed $response,
+        int $httpCode = 0,
+        bool $curlError = false,
+        ?string $curlErrorMessage = null,
+        int $curlErrorCode = 0,
+    ): array|object
     {
-        // Obtém o código HTTP da resposta (lib curl/curl expõe http_status_code, não getInfo()/httpStatusCode)
-        $httpCode = $this->curl->http_status_code ?? 0;
-
         if ($response === null) {
             throw new \Exception(self::NO_RESPONSE_MESSAGE, $httpCode);
         }
@@ -188,7 +214,7 @@ abstract class AbstractClient
         if (is_string($response)) {
             // Se a string está vazia, trata como indisponibilidade/erro de API.
             if (trim($response) === '') {
-                $errorMessage = $this->curl->error_message ?? "Erro HTTP {$httpCode}";
+                $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
                 throw new \Exception($errorMessage ?: self::NO_RESPONSE_MESSAGE, $httpCode);
             }
 
@@ -221,14 +247,14 @@ abstract class AbstractClient
 
         // Verifica outros códigos HTTP de erro (500, etc) ANTES de verificar curl->error
         if ($httpCode >= self::HTTP_ERROR_MIN) {
-            $errorMessage = $this->curl->error_message ?? "Erro HTTP {$httpCode}";
+            $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
             throw new \Exception($errorMessage, $httpCode);
         }
 
         // Verifica se houve erro HTTP.
-        if ($this->curl->error) {
-            $errorMessage = $this->curl->error_message ?? 'Erro desconhecido na requisição';
-            throw new \Exception($errorMessage, $this->curl->error_code ?? 0);
+        if ($curlError) {
+            $errorMessage = $curlErrorMessage ?? 'Erro desconhecido na requisição';
+            throw new \Exception($errorMessage, $curlErrorCode);
         }
 
         // Se já é um array, retorna como está (incluindo arrays vazios)
