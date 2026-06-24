@@ -142,7 +142,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ]);
     }
 
-    private function removeDuplicatedParActions(array $actions): array
+    protected function removeDuplicatedParActions(array $actions): array
     {
         $uniqueActions = [];
         $seenLabels = [];
@@ -162,7 +162,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return $uniqueActions;
     }
 
-    private function getParActionLabelKey(string $label): string
+    protected function getParActionLabelKey(string $label): string
     {
         if (preg_match('/^\s*([0-9]+(?:\.[0-9]+)*)\b/u', $label, $matches)) {
             return $matches[1];
@@ -171,7 +171,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return mb_strtolower($label);
     }
 
-    private function sortParActionsByLabel(array $actions): array
+    protected function sortParActionsByLabel(array $actions): array
     {
         usort($actions, fn(array $firstAction, array $secondAction) => strnatcasecmp(
             (string) ($firstAction['label'] ?? ''),

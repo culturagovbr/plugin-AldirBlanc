@@ -135,7 +135,7 @@ class GestorCultJob
      * @param mixed $response Retorno bruto da API
      * @return array Lista de entes (cada item com 'name' e 'document')
      */
-    private function extractFederativeEntitiesFromResponse($response): array
+    protected function extractFederativeEntitiesFromResponse($response): array
     {
         if (!is_array($response)) {
             return [];
@@ -167,7 +167,7 @@ class GestorCultJob
      * @param Agent $agent
      * @param array $apiResponse Retorno bruto da API (objeto com rg, cep, nome, etc.)
      */
-    private function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
     {
         foreach (self::GESTOR_API_TO_AGENT_METADATA as $apiKey => $agentKey) {
             $apiValue = $apiResponse[$apiKey] ?? null;
@@ -187,7 +187,7 @@ class GestorCultJob
     /**
      * Normaliza valor para comparação (evita diferença entre null, '' e espaços).
      */
-    private function normalizeStringForComparison($value): string
+    protected function normalizeStringForComparison($value): string
     {
         if ($value === null || $value === '') {
             return '';
@@ -201,7 +201,7 @@ class GestorCultJob
      * @param mixed $federativeEntities
      * @return array
      */
-    private function normalizeFederativeEntities($federativeEntities): array
+    protected function normalizeFederativeEntities($federativeEntities): array
     {
         // Se já é um array, retorna como está
         if (is_array($federativeEntities)) {
