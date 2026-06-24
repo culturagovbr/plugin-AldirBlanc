@@ -5,6 +5,7 @@ namespace AldirBlanc\Jobs;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
+use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
@@ -112,26 +113,26 @@ class GestorCultJob
             return;
         }
 
-        // Se o usuário não é gestor CultBR, adiciona a permissão
-        if (!UserAccessService::isGestorCultBr()) {
-            $app->disableAccessControl();
-            $app->user->addRole(Role::GESTOR_CULT_BR);
-            $app->enableAccessControl();
-            $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-        }
+        $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
 
         try {
-            // Associa os entes federados ao agente
-            $this->associateFederativeEntities($agent, $federativeEntities);
-
-            // Atualiza o agente com dados do gestor (apenas campos alterados)
-            if (is_array($apiResponse)) {
+            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $apiResponse, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
-                $this->updateAgentFromGestorResponse($agent, $apiResponse);
-                $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
-                $agent->save(true);
-                $app->enableAccessControl();
-            }
+
+                try {
+                    if (is_array($apiResponse)) {
+                        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+                        $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
+                        $agent->save(false);
+                    }
+
+                    if ($shouldGrantGestorRole) {
+                        $this->grantGestorCultBrRole($userId, $agent);
+                    }
+                } finally {
+                    $app->enableAccessControl();
+                }
+            });
             
             // Limpa flags de erro se o sync foi bem-sucedido
             unset($_SESSION['gestor_cult_sync_error']);
@@ -222,6 +223,38 @@ class GestorCultJob
 
             $agent->setMetadata($agentKey, $apiValue === null ? null : (string) $apiValue);
         }
+    }
+
+    protected function grantGestorCultBrRole($userId, Agent $agent): void
+    {
+        $app = App::i();
+
+        $roleDefinition = $app->getRoleDefinition(Role::GESTOR_CULT_BR);
+        if (is_null($roleDefinition)) {
+            throw new \RuntimeException('Role GestorCultBr não registrada');
+        }
+
+        if ($app->user->is(Role::GESTOR_CULT_BR)) {
+            return;
+        }
+
+        $role = new MapasRole();
+        $role->user = $app->user;
+        $role->name = Role::GESTOR_CULT_BR;
+        $role->subsiteId = $roleDefinition->subsiteContext ? $app->getCurrentSubsiteId() : null;
+
+        $app->em->persist($role);
+        $this->appendRoleToCurrentUser($role);
+        $app->log->info("[Gestores CultBR] Role GestorCultBr concedida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
+    }
+
+    private function appendRoleToCurrentUser(MapasRole $role): void
+    {
+        $user = App::i()->user;
+
+        \Closure::bind(function () use ($role) {
+            $this->roles[] = $role;
+        }, $user, get_class($user))();
     }
 
     /**
@@ -402,7 +435,7 @@ class GestorCultJob
      * @param array $federativeEntities
      * @return void
      */
-    protected function associateFederativeEntities(Agent $agent, array $federativeEntities): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null): void
     {
         $app = App::i();
         $em  = $app->em;
@@ -494,6 +527,11 @@ class GestorCultJob
             }
 
             // Salva as alterações no banco de dados
+            $this->beforeFlushFederativeEntityAssociations();
+            if ($beforeFlush) {
+                $beforeFlush();
+            }
+
             $em->flush();
             $em->commit();
             $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
@@ -502,5 +540,9 @@ class GestorCultJob
             $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
+    }
+
+    protected function beforeFlushFederativeEntityAssociations(): void
+    {
     }
 }
