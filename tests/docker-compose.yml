@@ -1,5 +1,12 @@
 services:
   mapas:
+    environment:
+      # AbstractClient::$host/$token são propriedades tipadas (string, não-nullable) e são atribuídas
+      # no construtor independente do modo — mesmo em modo "development" (fixture local, sem chamada
+      # real), faltando essas envs o construtor quebra com TypeError. Valores fictícios: nunca usados
+      # de fato, pois PNAB_CULTBR_MODE não é setado aqui e o default do Plugin é 'development'.
+      - PNAB_CULTBR_HOST=http://cultbr.invalid
+      - PNAB_CULTBR_TOKEN=fake-token-de-teste
     volumes:
       # Habilita o plugin AldirBlanc + tema Pnab na suíte de testes do repositório principal,
       # sem editar tests/config.d/ do core. "zz-aldirblanc.d" ordena depois de "config.d"
