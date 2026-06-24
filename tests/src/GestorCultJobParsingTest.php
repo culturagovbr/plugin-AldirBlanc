@@ -43,20 +43,24 @@ class GestorCultJobParsingTest extends TestCase
         $this->assertSame([], $this->job()->callExtractFederativeEntitiesFromResponse(new \stdClass()));
     }
 
-    /**
-     * BUG DE PRODUÇÃO (GestorCultJob::extractFederativeEntitiesFromResponse): quando
-     * 'entes_federados' existe mas NÃO é array, `is_array(...)` falha e cai no fallthrough do
-     * formato antigo — retorna a resposta INTEIRA (incluindo chaves como 'rg') como se fosse a
-     * lista de entes. Comportamento IDEAL abaixo (tratar como ausência de entes, retornar []);
-     * remover markTestIncomplete() quando corrigido.
-     */
-    function testExtractComEntesFederadosNaoArrayDeveriaRetornarArrayVazio()
+    function testExtractComEntesFederadosNaoArrayLancaErroDeContrato()
     {
-        $this->markTestIncomplete('Bug conhecido: entes_federados não-array cai no formato antigo e retorna a resposta inteira. Ver analysis.md.');
-
         $response = ['entes_federados' => 'não é um array', 'rg' => '123'];
 
-        $this->assertSame([], $this->job()->callExtractFederativeEntitiesFromResponse($response));
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('entes_federados deve ser array');
+
+        $this->job()->callExtractFederativeEntitiesFromResponse($response);
+    }
+
+    function testExtractFormatoNovoSemEntesFederadosLancaErroDeContrato()
+    {
+        $response = ['rg' => '123', 'nome' => 'Gestor Sem Chave De Entes'];
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('chave entes_federados ausente');
+
+        $this->job()->callExtractFederativeEntitiesFromResponse($response);
     }
 
     // ===== normalizeFederativeEntities =====
