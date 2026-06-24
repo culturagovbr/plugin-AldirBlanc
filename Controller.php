@@ -26,6 +26,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     private const SYNC_SESSION_TTL = 300;
 
+    private ?\MapasCulturais\Entity $_requestedEntity = null;
+
+    /**
+     * Sobrescreve ControllerEntity::getRequestedEntity() (que só resolve por urlData['id'] ou
+     * action 'create'/'index') para rotas como completeProfile, que não têm id na URL mas
+     * precisam de uma entidade "solicitada" pro layout montar lockedFields/lockedFieldSeals.
+     */
+    public function getRequestedEntity(): ?\MapasCulturais\Entity
+    {
+        return $this->_requestedEntity ?? parent::getRequestedEntity();
+    }
+
     /**
      * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
      * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
@@ -577,6 +589,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ];
 
         // Define a entidade solicitada para o layout/Theme (evita "lockedFields on null" no Theme.php)
+        // — ver getRequestedEntity() sobrescrito acima, que de fato expõe isto pro core.
         $this->_requestedEntity = $profile;
 
         $this->render('complete-profile', [
