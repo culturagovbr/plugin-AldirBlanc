@@ -72,11 +72,11 @@ docker compose build
 
 # roda um teste/método específico, com o plugin AldirBlanc + tema Pnab habilitados
 docker compose -f docker-compose.yml -f ../src/plugins/AldirBlanc/tests/docker-compose.yml \
-  run --rm mapas pu /var/www/tests/AldirBlancSmokeTest.php
+  run --rm mapas pu /var/www/tests/AldirBlanc/SmokeTest.php
 
 # roda um método específico
 docker compose -f docker-compose.yml -f ../src/plugins/AldirBlanc/tests/docker-compose.yml \
-  run --rm mapas pu /var/www/tests/AldirBlancSmokeTest.php --filter "testCommonUserIsNotGestorCultBr"
+  run --rm mapas pu /var/www/tests/AldirBlanc/SmokeTest.php --filter "testFederativeEntityAssociationIsPersisted"
 ```
 
 Sem esse `-f`, a suíte roda normalmente sem o plugin — exatamente como antes, sem nenhum impacto (validado: `RoutesTest` segue `OK (14 tests, 93 assertions)` sem o override).
@@ -92,3 +92,11 @@ Por que o tema Pnab é sempre habilitado junto: alguns comportamentos (hooks de 
 ### Modo `development` (fixtures)
 
 Com `PNAB_CULTBR_MODE=development` (o default quando a variável não está definida), os clients HTTP (`AbstractClient::get()`) retornam o conteúdo de `Http/Fixtures/<NomeDoClient>Fixture.php` em vez de fazer uma requisição real — é assim que os testes (e o ambiente de desenvolvimento local) simulam a API CultBR sem rede.
+
+### Testes existentes (`tests/src/`)
+
+| Arquivo | O que valida |
+|---|---|
+| `SmokeTest.php` | Add-on funcionando: asserts genéricos (round-trip de `ParAction`) + persistência real em banco (`FederativeEntity`/`FederativeEntityAgentRelation`) |
+| `Traits/AssertsHooks.php` | Helper `assertHookFired()`/`assertHookNotFired()` — registra um listener temporário para confirmar que um hook foi (ou não foi) disparado, útil quando o efeito do hook não é observável diretamente |
+| `AssertsHooksTest.php` | Valida o helper acima nos dois sentidos (positivo e negativo), provando que ele detecta falha de verdade |
