@@ -11,7 +11,7 @@ use Tests\Abstract\TestCase;
 use Tests\Traits\UserDirector;
 
 /**
- * Tier A6: hooks do Theme.php (Pnab) que reagem à seleção de Ente Federado.
+ * Hooks do Theme.php (Pnab) que reagem à seleção de Ente Federado.
  * Cobre só os hooks cuja checagem de papel/permissão é avaliada *dentro* do corpo do
  * closure (UserAccessService::is*() chamado ao vivo) — não os que capturam $canAccess
  * via `use ($canAccess)` no momento do boot do tema (ver achado em analysis.md:

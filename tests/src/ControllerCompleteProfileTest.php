@@ -14,8 +14,7 @@ use Tests\Abstract\TestCase;
 use Tests\Traits\UserDirector;
 
 /**
- * Tier A7: GET_completeProfile, POST_completeProfile e a ordem de gates em blockAccessOnError.
- * [DB]
+ * Gate de cadastro obrigatório: GET_completeProfile, POST_completeProfile e a ordem de gates em blockAccessOnError.
  */
 class ControllerCompleteProfileTest extends TestCase
 {

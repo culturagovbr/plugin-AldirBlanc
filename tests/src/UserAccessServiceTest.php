@@ -11,7 +11,7 @@ use Tests\Abstract\TestCase;
 use Tests\Traits\UserDirector;
 
 /**
- * Tier A6: UserAccessService::canViewFederativeEntityTeam — usado por
+ * UserAccessService::canViewFederativeEntityTeam — usado por
  * API.find(agent).params (Theme.php) para validar ownership do federativeEntityId
  * consultado, em vez de confiar no valor vindo da query string.
  */

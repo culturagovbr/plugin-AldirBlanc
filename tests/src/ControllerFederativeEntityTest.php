@@ -14,8 +14,8 @@ use Tests\AldirBlanc\Traits\AssertsHooks;
 use Tests\Traits\UserDirector;
 
 /**
- * Tier A6: GET_federativeEntities, POST_selectFederativeEntity, GET_selectFederativeEntity,
- * GET_changeFederativeEntity, GET_parExercicios. [DB] [HOOK]
+ * Seleção de Ente Federado: GET_federativeEntities, POST_selectFederativeEntity, GET_selectFederativeEntity,
+ * GET_changeFederativeEntity, GET_parExercicios.
  */
 class ControllerFederativeEntityTest extends TestCase
 {
