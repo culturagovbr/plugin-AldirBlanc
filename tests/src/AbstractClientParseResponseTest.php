@@ -64,6 +64,15 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame([], $result);
     }
 
+    function testHttp404ComDetailRealDaCultBrRetornaArrayVazio()
+    {
+        $response = json_encode(['detail' => 'Pessoa com o CPF fornecido não encontrada no sistema.']);
+
+        $result = $this->client()->callParseResponse($response, 404);
+
+        $this->assertSame([], $result);
+    }
+
     function testHttp404ComDetailNotFoundEmInglesRetornaArrayVazio()
     {
         $response = json_encode(['detail' => 'Resource not found']);
@@ -91,16 +100,8 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    /**
-     * BUG DE PRODUÇÃO (AbstractClient::hasNotFoundDetail): usa strtolower() em vez de
-     * mb_strtolower(), que não lowercasa corretamente acentos em UTF-8 — "NÃO" maiúsculo
-     * acentuado não vira "não" minúsculo, então o match falha e a resposta vira sucesso
-     * (incorretamente). Comportamento IDEAL abaixo; remover markTestIncomplete() quando corrigido.
-     */
-    function testHttp404ComDetailMaiusculoAcentuadoDeveriaSerReconhecido()
+    function testHttp404ComDetailMaiusculoAcentuadoRetornaArrayVazio()
     {
-        $this->markTestIncomplete('Bug conhecido: hasNotFoundDetail() usa strtolower() em vez de mb_strtolower() — não normaliza "Ã"/"Á"/etc. Ver analysis.md.');
-
         $response = json_encode(['detail' => 'PESSOA NÃO ENCONTRADA']);
 
         $result = $this->client()->callParseResponse($response, 404);
@@ -110,12 +111,12 @@ class AbstractClientParseResponseTest extends TestCase
 
     function testHttp404ComDetailNaoStringNaoAtivaCasoDeAusencia()
     {
-        // 'detail' não é string (é array) — hasNotFoundDetail deve ignorar e tratar como sucesso.
         $response = json_encode(['detail' => ['motivo' => 'algo']]);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
 
-        $this->assertSame(['detail' => ['motivo' => 'algo']], $result);
+        $this->client()->callParseResponse($response, 404);
     }
 
     /**
@@ -144,23 +145,24 @@ class AbstractClientParseResponseTest extends TestCase
         }
     }
 
-    /**
-     * Mesmo cenário do teste acima, mas com a resposta como STRING JSON: o código trata como
-     * sucesso e retorna o array decodificado, mesmo com httpCode=404/500 — porque o branch de
-     * erro HTTP só é avaliado depois do bloco is_string(), que já retornou antes.
-     */
-    function testHttp404ComDetailNaoRelacionadoEStringRetornaComoSucesso()
+    function testHttp404ComDetailNaoRelacionadoEStringLancaExcecao()
     {
         $response = json_encode(['detail' => 'Algum outro motivo']);
 
-        $this->assertSame(['detail' => 'Algum outro motivo'], $this->client()->callParseResponse($response, 404));
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
+
+        $this->client()->callParseResponse($response, 404);
     }
 
-    function testHttpErro500ComStringJsonValidaRetornaComoSucesso()
+    function testHttpErro500ComStringJsonValidaLancaExcecao()
     {
         $response = json_encode(['algo' => 'sem chave de erro']);
 
-        $this->assertSame(['algo' => 'sem chave de erro'], $this->client()->callParseResponse($response, 500));
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(500);
+
+        $this->client()->callParseResponse($response, 500);
     }
 
     function testRespostaComChaveErrorLancaExcecaoComMensagemDaApi()
@@ -196,17 +198,14 @@ class AbstractClientParseResponseTest extends TestCase
         }
     }
 
-    /**
-     * Achado: isset($decoded['error']) é false quando o valor é null — então uma resposta
-     * {"error": null} NÃO lança exceção, é tratada como sucesso e retornada como está.
-     */
-    function testChaveErrorComValorNullNaoLancaExcecao()
+    function testChaveErrorComValorNullLancaExcecaoGenerica()
     {
         $response = json_encode(['error' => null, 'rg' => '123']);
 
-        $result = $this->client()->callParseResponse($response, 400);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('Erro na resposta da API');
 
-        $this->assertSame(['error' => null, 'rg' => '123'], $result);
+        $this->client()->callParseResponse($response, 400);
     }
 
     function testJsonStringNullRetornaArrayVazio()
@@ -214,6 +213,14 @@ class AbstractClientParseResponseTest extends TestCase
         $result = $this->client()->callParseResponse('null', 200);
 
         $this->assertSame([], $result);
+    }
+
+    function testJsonStringNullComErroHttpLancaExcecao()
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(500);
+
+        $this->client()->callParseResponse('null', 500);
     }
 
     /**

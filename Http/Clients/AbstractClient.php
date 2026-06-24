@@ -249,9 +249,14 @@ abstract class AbstractClient
             }
 
             if (is_array($decoded)) {
-                if (!empty($decoded) && (isset($decoded['error']) || isset($decoded['message']) || isset($decoded['erro']))) {
+                if (!empty($decoded) && (array_key_exists('error', $decoded) || array_key_exists('message', $decoded) || array_key_exists('erro', $decoded))) {
                     $errorMsg = $decoded['message'] ?? $decoded['error'] ?? $decoded['erro'] ?? 'Erro na resposta da API';
                     throw new \Exception($errorMsg, $httpCode ?: 0);
+                }
+
+                if ($httpCode >= self::HTTP_ERROR_MIN) {
+                    $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
+                    throw new \Exception($errorMessage, $httpCode);
                 }
 
                 return $decoded;
@@ -259,6 +264,11 @@ abstract class AbstractClient
 
             // Se decodificou para null, retorna array vazio (caso válido)
             if ($decoded === null) {
+                if ($httpCode >= self::HTTP_ERROR_MIN) {
+                    $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
+                    throw new \Exception($errorMessage, $httpCode);
+                }
+
                 return [];
             }
         }
@@ -296,7 +306,7 @@ abstract class AbstractClient
             return false;
         }
 
-        $normalizedDetail = strtolower($detail);
+        $normalizedDetail = function_exists('mb_strtolower') ? mb_strtolower($detail, 'UTF-8') : strtolower($detail);
         foreach (self::NOT_FOUND_DETAILS as $expectedDetail) {
             if (str_contains($normalizedDetail, $expectedDetail)) {
                 return true;
