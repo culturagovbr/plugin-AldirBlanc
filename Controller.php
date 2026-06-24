@@ -625,18 +625,39 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $data = $this->data;
         $requiredKeys = $theme->getRequeredsAgentIndividualMetadata();
 
-        foreach ($requiredKeys as $key) {
-            if (!array_key_exists($key, $data)) {
-                continue;
+        try {
+            foreach ($requiredKeys as $key) {
+                if (!array_key_exists($key, $data)) {
+                    continue;
+                }
+                $value = $data[$key];
+                if (is_array($value) && empty($value)) {
+                    $value = null;
+                }
+                $profile->$key = $value;
             }
-            $value = $data[$key];
-            if (is_array($value) && empty($value)) {
-                $value = null;
-            }
-            $profile->$key = $value;
+
+            $profile->save(true);
+        } catch (\Throwable $e) {
+            // Valor mal formatado pra um campo tipado (ex.: data inválida em dataDeNascimento)
+            // lança exceção do próprio setter/Doctrine — não deixa subir sem tratamento.
+            $app->log->error("[CompleteProfile] Erro ao salvar campos do perfil | Usuário ID: {$app->user->id} | Erro: " . $e->getMessage());
+            $this->errorJson(i::__('Não foi possível salvar os dados informados. Verifique os valores e tente novamente.'), 400);
+            return;
         }
 
-        $profile->save(true);
+        // Revalida a partir do estado real (não confia em "salvei o que veio no corpo, logo terminei") —
+        // quem normalmente persiste os campos é o PATCH genérico do agente, chamado antes deste endpoint
+        // pelo front; sem essa revalidação, uma chamada com corpo vazio (ou direta, sem o PATCH) declararia
+        // sucesso mesmo com o perfil ainda incompleto.
+        $profile->refresh();
+        if (method_exists($theme, 'hasRequiredAgentFieldsFilled') && !$theme->hasRequiredAgentFieldsFilled($profile)) {
+            $this->json([
+                'success' => false,
+                'redirectUri' => $app->createUrl('aldirblanc', 'completeProfile'),
+            ]);
+            return;
+        }
 
         $redirectUri = $app->createUrl('panel', 'index');
         if (UserAccessService::isGestorCultBr() && !isset($_SESSION['selectedFederativeEntity'])) {
