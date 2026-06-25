@@ -26,7 +26,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     private const SYNC_SESSION_TTL = 300;
 
-    private ?\MapasCulturais\Entity $_requestedEntity = null;
+    /**
+     * `false` = ainda não resolvido (null é um valor de retorno legítimo de getRequestedEntity(),
+     * não pode ser usado como sentinela de "não resolvido").
+     */
+    protected $_requestedEntity = false;
 
     /**
      * Sobrescreve ControllerEntity::getRequestedEntity() (que só resolve por urlData['id'] ou
@@ -35,7 +39,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      */
     public function getRequestedEntity(): ?\MapasCulturais\Entity
     {
-        return $this->_requestedEntity ?? parent::getRequestedEntity();
+        if ($this->_requestedEntity !== false) {
+            return $this->_requestedEntity;
+        }
+        return parent::getRequestedEntity();
     }
 
     /**
