@@ -304,6 +304,8 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
         $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        // create já foi sincronizado: permite enfileirar update
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -311,6 +313,59 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $job = $this->findJob($opportunity->id, 'update');
         $this->assertNotNull($job);
         $this->assertSame('update', $job->action);
+    }
+
+    /**
+     * Quando a oportunidade ainda não foi enviada ao CultBr (cultBrCreateSynced ausente/false),
+     * o hook update:finish NÃO deve enfileirar o job de update mesmo com status ENABLED.
+     * O PUT chegaria antes do POST e resultaria em 404 na API.
+     */
+    function testNaoDisparaUpdateJobQuandoCreateAindaNaoFoiSincronizado()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Sync');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        // cultBrCreateSynced deliberadamente NÃO setado (create não executou ainda)
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Não deve enfileirar update se o create ainda não foi sincronizado'
+        );
+    }
+
+    /**
+     * Quando cultBrCreateSynced está explicitamente como false,
+     * o update:finish também não deve enfileirar o job de update.
+     */
+    function testNaoDisparaUpdateJobQuandoCultBrCreateSyncedEhFalso()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab False');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '0');
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Não deve enfileirar update se cultBrCreateSynced é false'
+        );
     }
 
     /**
