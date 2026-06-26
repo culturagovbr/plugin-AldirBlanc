@@ -67,6 +67,14 @@ class Plugin extends \MapasCulturais\Plugin
             'aldirblanc',
             'integrationOpportunities'
         ];
+
+        // Exclui flags de estado do AldirBlanc ao gerar oportunidade a partir de modelo.
+        // Sem isso, a oportunidade-destino herdaria cultBrCreateSynced=1 do modelo e nunca seria
+        // enviada ao CultBr, e herdaria isGeneratedFromModel=1 antes do saveOpportunityPostGenerate.
+        $app->hook('EntityManagerModel.generateMetadata.excludedKeys', function (array &$keys) {
+            $keys[] = Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED;
+            $keys[] = Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL;
+        });
     }
 
     function register()
