@@ -392,4 +392,95 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $this->assertNull($this->findJob($opportunity->id, 'update'));
     }
+
+    /**
+     * Oportunidade sem federativeEntityId não deve disparar job de update,
+     * mesmo que todos os outros guards passem.
+     */
+    function testNaoDisparaUpdateQuandoFederativeEntityIdAusente(): void
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab FedId');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        // federativeEntityId deliberadamente ausente
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Oportunidade sem federativeEntityId não deve enfileirar job de update'
+        );
+    }
+
+    /**
+     * Oportunidade filha (com parent) não deve disparar job de update.
+     * Fases e oportunidades complementares têm parent definido.
+     */
+    function testNaoDisparaUpdateQuandoOportunidadeTemParent(): void
+    {
+        $user = $this->userDirector->createUser();
+        $main = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Parent');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $className = $user->profile->opportunityClassName;
+        $child = new $className();
+        $child->parent = $main;
+        $child->owner = $user->profile;
+        $child->ownerEntity = $user->profile;
+        $child->name = 'Fase filha';
+        $child->shortDescription = 'fase';
+        $child->subsite = $subsite;
+        $child->setMetadata('federativeEntityId', 1);
+        $child->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        $child->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $child->status = Opportunity::STATUS_ENABLED;
+        $child->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($child->id, 'update'),
+            'Oportunidade com parent não deve enfileirar job de update'
+        );
+    }
+
+    /**
+     * O delay de enfileiramento do job de update é configurável via ALDIRBLANC_INTEGRATION_DELAY_JOB.
+     * Com "+5 minutes", o nextExecutionTimestamp deve ser posterior ao momento atual.
+     */
+    function testDelayDeEnfileiramentoEhConfiguravelPorVariavelDeAmbiente(): void
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Delay');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+        $_ENV['ALDIRBLANC_INTEGRATION_DELAY_JOB'] = '+5 minutes';
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $job = $this->findJob($opportunity->id, 'update');
+        $this->assertNotNull($job, 'Job de update deve ser enfileirado');
+        $this->assertGreaterThan(
+            new \DateTime(),
+            $job->nextExecutionTimestamp,
+            'Com delay de +5 minutes, nextExecutionTimestamp deve ser posterior ao momento atual'
+        );
+
+        unset($_ENV['ALDIRBLANC_INTEGRATION_DELAY_JOB']);
+    }
 }
