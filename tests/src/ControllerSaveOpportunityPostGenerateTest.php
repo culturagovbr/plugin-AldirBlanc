@@ -257,6 +257,21 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
         $opportunity = $this->opportunity($user);
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Pnab';
+        $subsite->url = 'subsite-pnab-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $this->app->enableAccessControl();
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', '123');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
         $controller = $this->controller();
         $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
 
@@ -265,6 +280,8 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $job = $this->findJob($opportunity->id);
         $this->assertNotNull($job);
         $this->assertSame('create', $job->action);
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 
     function testNaoReenfileiraCreateQuandoJaSincronizado()
@@ -302,6 +319,65 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
 
         $this->assertSame(500, $this->responseStatus());
         $this->assertTrue($payload['error'] ?? null);
+    }
+
+    // ===== Elegibilidade para job de create (guards) =====
+
+    function testNaoEnfileiraCreateJobQuandoFederativeEntityIdAusente()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $opportunity = $this->opportunity($user);
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Guard Test';
+        $subsite->url = 'subsite-guard-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $opportunity->subsite = $subsite;
+        // federativeEntityId deliberadamente não setado
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
+        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertNull($this->findJob($opportunity->id), 'Não deve enfileirar sem federativeEntityId');
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
+    }
+
+    function testNaoEnfileiraCreateJobQuandoSubsiteDaOportunidadeNaoCoincideComPnab()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $opportunity = $this->opportunity($user);
+
+        $subsiteOpp = new \MapasCulturais\Entities\Subsite();
+        $subsiteOpp->name = 'Subsite Da Oportunidade';
+        $subsiteOpp->url = 'subsite-opp-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsiteOpp->save(true);
+        $opportunity->subsite = $subsiteOpp;
+        $opportunity->setMetadata('federativeEntityId', '1');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        // ALDIRBLANC_SUBSITE_ID aponta para subsite diferente
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) ($subsiteOpp->id + 9999);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
+        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertNull(
+            $this->findJob($opportunity->id),
+            'Não deve enfileirar quando subsite da oportunidade não coincide com ALDIRBLANC_SUBSITE_ID'
+        );
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 
     // ===== Achado 1: guest é Halt/401, não um JSON de 403 =====
@@ -371,6 +447,19 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
         $opportunity = $this->opportunity($user);
+
+        // eligibilidade mínima para que enqueueOportunidadeCreateJob seja chamado
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Pnab Falha';
+        $subsite->url = 'subsite-pnab-falha-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', '1');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
         $controller = $this->controller();
         $controller->setEnqueueCreateJobException(new \RuntimeException('fila indisponível'));
         $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
@@ -382,5 +471,7 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
 
         $refreshed = $this->app->repo('Opportunity')->find($opportunity->id);
         $this->assertSame('desc', $refreshed->shortDescription);
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 }

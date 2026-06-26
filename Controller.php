@@ -794,7 +794,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $opportunity->getMetadata(self::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
             FILTER_VALIDATE_BOOLEAN
         );
-        if (!$isCultBrCreateSynced) {
+        if (!$isCultBrCreateSynced && $this->isEligibleForCultBrCreateJob($opportunity)) {
             try {
                 $this->enqueueOportunidadeCreateJob($opportunity);
             } catch (\Throwable $enqueueFailure) {
@@ -842,6 +842,39 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'opportunity' => $opportunity,
             ],
         );
+    }
+
+    /**
+     * Verifica se a oportunidade está elegível para o job de create no CultBr.
+     * Espelha os guards de validateIntegrationJob (Theme.php) para evitar enfileirar
+     * oportunidades que falhariam na integração.
+     */
+    protected function isEligibleForCultBrCreateJob(Opportunity $opportunity): bool
+    {
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId');
+        if (empty($federativeEntityId)) {
+            return false;
+        }
+
+        $subsiteId = (int) $opportunity->subsite?->id;
+        if ($subsiteId < 1) {
+            return false;
+        }
+
+        $themePnabSubsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if ($themePnabSubsiteId === 0 || $subsiteId !== $themePnabSubsiteId) {
+            return false;
+        }
+
+        if ($opportunity->parent !== null) {
+            return false;
+        }
+
+        if ((int) $opportunity->status === Opportunity::STATUS_PHASE) {
+            return false;
+        }
+
+        return true;
     }
 
     /*
