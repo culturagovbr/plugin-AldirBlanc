@@ -388,6 +388,71 @@ class GenerateOpportunityModelTest extends TestCase
         $this->assertSame(['qualification', 'technical'], $emcByType, 'Cada fase gerada deve ter o tipo de EMC correto');
     }
 
+    // ===== generateEvaluationMethods: metadados com default array =====
+
+    /**
+     * Metadados de EvaluationMethodConfiguration com tipo 'array' e default PHP array
+     * (como statusLabels, registrado por OpportunityPhases) devem ser persistidos como
+     * string JSON ao copiar o EMC, sem "Array to string conversion" no PDO.
+     *
+     * Reproduz o bug onde getMetadata() retornava o array-default diretamente sem serializar:
+     * o valor do metadado nunca existia no banco do modelo, então a cópia recebia um PHP array
+     * e Doctrine tentava bindá-lo como parâmetro text, gerando o warning.
+     */
+    function testGeraOportunidadeComEMCSemStatusLabelsBancoPersistidoComoJsonString()
+    {
+        $user = $this->userDirector->createUser();
+        $model = $this->createModel($user);
+        $phase = $this->createPhase($model, $user, 'Fase com avaliação');
+
+        $this->app->disableAccessControl();
+        $emc = new EvaluationMethodConfiguration();
+        $emc->opportunity = $phase;
+        $emc->type = 'simple';
+        $emc->name = 'Avaliação Simplificada';
+        $emc->save(true);
+        $this->app->enableAccessControl();
+
+        // Pré-condição: statusLabels não existe no banco — o default PHP array seria usado
+        $existsInDb = $this->app->em->getConnection()->fetchOne(
+            "SELECT value FROM evaluationmethodconfiguration_meta WHERE object_id = ? AND key = 'statusLabels'",
+            [$emc->id]
+        );
+        $this->assertFalse($existsInDb, 'Pré-condição: statusLabels não deve existir no banco do EMC do modelo');
+
+        $this->login($user);
+        $payload = $this->callGenerateOpportunity($model->id, ['name' => 'Oportunidade Gerada']);
+
+        $this->assertSame(200, $this->app->response->getStatusCode());
+        $generatedId = $payload['id'];
+
+        // Localizar o EMC clonado na oportunidade gerada
+        $generatedPhases = $this->app->repo('Opportunity')->findBy(['parent' => $generatedId]);
+        $clonedEmcId = null;
+        foreach ($generatedPhases as $p) {
+            if ($p->evaluationMethodConfiguration) {
+                $clonedEmcId = $p->evaluationMethodConfiguration->id;
+                break;
+            }
+        }
+        $this->assertNotNull($clonedEmcId, 'Deve existir EMC na oportunidade gerada');
+
+        // statusLabels deve ter sido persistido como string JSON — não como literal "Array"
+        $storedValue = $this->app->em->getConnection()->fetchOne(
+            "SELECT value FROM evaluationmethodconfiguration_meta WHERE object_id = ? AND key = 'statusLabels'",
+            [$clonedEmcId]
+        );
+        $this->assertIsString($storedValue, 'statusLabels deve ter sido persistido como string no banco');
+        $this->assertJson($storedValue, 'statusLabels deve ser JSON válido, não literal "Array"');
+
+        // Acessado via magic getter (com unserializer), deve retornar o array correto
+        $clonedEmc = $this->app->repo('EvaluationMethodConfiguration')->find($clonedEmcId);
+        $this->app->em->refresh($clonedEmc);
+        $statusLabels = $clonedEmc->statusLabels;
+        $this->assertIsArray($statusLabels, 'statusLabels via magic getter deve retornar array');
+        $this->assertArrayHasKey('2', $statusLabels, 'Deve conter o label para o status 2 (Inválida)');
+    }
+
     // ===== ALL_generateopportunity: restauração do controle de acesso =====
 
     /**
