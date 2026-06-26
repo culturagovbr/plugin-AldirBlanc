@@ -130,18 +130,29 @@ class OportunidadeCultJob extends JobType
 		}
 	}
 
-	private function persistCultCreateSyncedFlag(App $app, int $opportunityId): void
+	protected function persistCultCreateSyncedFlag(App $app, int $opportunityId): void
 	{
-		$app->disableAccessControl();
-		try {
-			$entity = $app->repo('Opportunity')->find($opportunityId);
-			if ($entity === null) {
-				return;
-			}
-			$entity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
-			$entity->save(true);
-		} finally {
-			$app->enableAccessControl();
+		// SQL direto evita chamar Entity::save(), que dispararia update:finish
+		// e enfileiraria um job de update logo após o create.
+		if ($app->repo('Opportunity')->find($opportunityId) === null) {
+			return;
+		}
+		$conn = $app->em->getConnection();
+		$updated = $conn->executeStatement(
+			'UPDATE opportunity_meta SET value = \'1\' WHERE object_id = :id AND key = :key',
+			[
+				'id'  => $opportunityId,
+				'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED,
+			]
+		);
+		if ($updated === 0) {
+			$conn->executeStatement(
+				'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, \'1\')',
+				[
+					'id'  => $opportunityId,
+					'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED,
+				]
+			);
 		}
 	}
 
