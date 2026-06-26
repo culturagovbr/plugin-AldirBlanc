@@ -26,7 +26,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     private const SYNC_SESSION_TTL = 300;
 
-    private ?\MapasCulturais\Entity $_requestedEntity = null;
+    /**
+     * `false` = ainda não resolvido (null é um valor de retorno legítimo de getRequestedEntity(),
+     * não pode ser usado como sentinela de "não resolvido").
+     */
+    protected $_requestedEntity = false;
 
     /**
      * Sobrescreve ControllerEntity::getRequestedEntity() (que só resolve por urlData['id'] ou
@@ -35,7 +39,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      */
     public function getRequestedEntity(): ?\MapasCulturais\Entity
     {
-        return $this->_requestedEntity ?? parent::getRequestedEntity();
+        if ($this->_requestedEntity !== false) {
+            return $this->_requestedEntity;
+        }
+        return parent::getRequestedEntity();
     }
 
     /**
@@ -699,11 +706,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $this->requireAuthentication();
 
-        if ($application->user->is('guest')) {
-            $this->errorJson(i::__('Não autorizado'), 403);
-            return;
-        }
-
         $requestBody = $this->data;
         $opportunityId = isset($requestBody['opportunityId'])
             ? (int) $requestBody['opportunityId']
@@ -713,9 +715,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $shortDescriptionFromRequest = isset($requestBody['shortDescription'])
-            ? trim((string) $requestBody['shortDescription'])
-            : '';
+        $shortDescriptionRaw = $requestBody['shortDescription'] ?? null;
+        if ($shortDescriptionRaw !== null && !is_string($shortDescriptionRaw) && !is_numeric($shortDescriptionRaw)) {
+            $this->errorJson(['shortDescription' => [i::__('O campo "Descrição curta" tem um formato inválido.')]], 400);
+            return;
+        }
+
+        $shortDescriptionFromRequest = trim((string) $shortDescriptionRaw);
         if ($shortDescriptionFromRequest === '') {
             $this->errorJson(['shortDescription' => [i::__('O campo "Descrição curta" é obrigatório.')]], 400);
             return;
@@ -729,9 +735,16 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         try {
-            $opportunity->checkPermission('@control');
+            $this->checkOpportunityControlPermission($opportunity);
         } catch (\MapasCulturais\Exceptions\PermissionDenied) {
             $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        } catch (\Throwable $permissionCheckFailure) {
+            $application->log->error(
+                '[AldirBlanc] saveOpportunityPostGenerate: falha ao verificar permissão: '
+                . $permissionCheckFailure->getMessage()
+            );
+            $this->errorJson(i::__('Não foi possível verificar a permissão. Tente novamente.'), 500);
             return;
         }
 
@@ -767,7 +780,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 }
             }
 
-            $opportunity->save(true);
+            $this->saveOpportunityAfterPostGenerate($opportunity);
         } catch (\Throwable $persistenceOrMetadataFailure) {
             $application->log->error(
                 '[AldirBlanc] saveOpportunityPostGenerate: '
@@ -781,17 +794,87 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $opportunity->getMetadata(self::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
             FILTER_VALIDATE_BOOLEAN
         );
-        if (!$isCultBrCreateSynced) {
-            $application->enqueueOrReplaceJob(
-                OportunidadeCultJob::SLUG,
-                [
-                    'action'      => 'create',
-                    'opportunity' => $opportunity,
-                ],
-            );
+        if (!$isCultBrCreateSynced && $this->isEligibleForCultBrCreateJob($opportunity)) {
+            try {
+                $this->enqueueOportunidadeCreateJob($opportunity);
+            } catch (\Throwable $enqueueFailure) {
+                // Os dados da oportunidade já foram persistidos com sucesso; o enfileiramento
+                // é fire-and-forget (mesma filosofia de retry do OportunidadeCultJob), então uma
+                // falha aqui não deve impedir a resposta de sucesso ao cliente.
+                $application->log->error(
+                    '[AldirBlanc] saveOpportunityPostGenerate: falha ao enfileirar job de create: '
+                    . $enqueueFailure->getMessage()
+                );
+            }
         }
 
         $this->json(['success' => true, 'id' => $opportunity->id]);
+    }
+
+    /**
+     * Extraído como ponto de extensão para permitir testar o catch genérico de
+     * saveOpportunityPostGenerate sem depender de um cenário real de falha de ACL.
+     */
+    protected function checkOpportunityControlPermission(Opportunity $opportunity): void
+    {
+        $opportunity->checkPermission('@control');
+    }
+
+    /**
+     * Extraído como ponto de extensão para permitir testar o catch de persistência de
+     * saveOpportunityPostGenerate sem depender de uma falha real de banco/Doctrine.
+     */
+    protected function saveOpportunityAfterPostGenerate(Opportunity $opportunity): void
+    {
+        $opportunity->save(true);
+    }
+
+    /**
+     * Extraído como ponto de extensão para permitir testar o catch de enfileiramento de
+     * saveOpportunityPostGenerate sem depender de uma falha real do sistema de filas.
+     */
+    protected function enqueueOportunidadeCreateJob(Opportunity $opportunity): void
+    {
+        App::i()->enqueueOrReplaceJob(
+            OportunidadeCultJob::SLUG,
+            [
+                'action'      => 'create',
+                'opportunity' => $opportunity,
+            ],
+        );
+    }
+
+    /**
+     * Verifica se a oportunidade está elegível para o job de create no CultBr.
+     * Espelha os guards de validateIntegrationJob (Theme.php) para evitar enfileirar
+     * oportunidades que falhariam na integração.
+     */
+    protected function isEligibleForCultBrCreateJob(Opportunity $opportunity): bool
+    {
+        $federativeEntityId = $opportunity->getMetadata('federativeEntityId');
+        if (empty($federativeEntityId)) {
+            return false;
+        }
+
+        $subsiteId = (int) $opportunity->subsite?->id;
+        if ($subsiteId < 1) {
+            return false;
+        }
+
+        $themePnabSubsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if ($themePnabSubsiteId === 0 || $subsiteId !== $themePnabSubsiteId) {
+            return false;
+        }
+
+        if ($opportunity->parent !== null) {
+            return false;
+        }
+
+        if ((int) $opportunity->status === Opportunity::STATUS_PHASE) {
+            return false;
+        }
+
+        return true;
     }
 
     /*

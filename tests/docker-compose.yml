@@ -7,6 +7,17 @@ services:
       # de fato, pois PNAB_CULTBR_MODE não é setado aqui e o default do Plugin é 'development'.
       - PNAB_CULTBR_HOST=http://cultbr.invalid
       - PNAB_CULTBR_TOKEN=fake-token-de-teste
+      # Endpoint fictício para OportunidadeCultClient::create()/update() — apenas satisfaz o
+      # guard `empty($endpoint)` antes de chamar post()/put(). Em modo 'development', o post()/put()
+      # de AbstractClient faz short-circuit e retorna o payload sem nenhuma chamada HTTP.
+      - PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT=oportunidade/create
+      - PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT=oportunidade/{id}/update
+      # Delay de retry nulo causaria TypeError em enqueueOrReplaceJob (string typed, nullable config).
+      # 'now' enfileira o retry imediatamente, permitindo testar o mecanismo sem aguardar intervalo.
+      - ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now
+      # TTL=0 expira itens de cache imediatamente em algumas implementações (Symfony Cache).
+      # 3600 s garante que os itens de tentativa (attempt counter) persistam durante a execução dos testes.
+      - ALDIRBLANC_INTEGRATION_CACHE_TTL=3600
     volumes:
       # Habilita o plugin AldirBlanc + tema Pnab na suíte de testes do repositório principal,
       # sem editar tests/config.d/ do core. "zz-aldirblanc.d" ordena depois de "config.d"

@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc\Doubles;
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Jobs\GestorCultJob;
+use MapasCulturais\Entities\Opportunity;
 
 /**
  * Expõe os métodos protected de Controller usados na normalização de ações do PAR
@@ -16,6 +17,56 @@ class TestableController extends Controller
     private ?\Throwable $cpfException = null;
     private $syncCallback = null;
     private int $syncCalls = 0;
+    private ?\Throwable $controlPermissionException = null;
+    private ?\Throwable $enqueueCreateJobException = null;
+    private ?\Throwable $saveAfterPostGenerateException = null;
+
+    public function callSaveOpportunityPostGenerate(): void
+    {
+        $this->POST_saveOpportunityPostGenerate();
+    }
+
+    public function setControlPermissionException(\Throwable $exception): void
+    {
+        $this->controlPermissionException = $exception;
+    }
+
+    public function setEnqueueCreateJobException(\Throwable $exception): void
+    {
+        $this->enqueueCreateJobException = $exception;
+    }
+
+    public function setSaveAfterPostGenerateException(\Throwable $exception): void
+    {
+        $this->saveAfterPostGenerateException = $exception;
+    }
+
+    protected function checkOpportunityControlPermission(Opportunity $opportunity): void
+    {
+        if ($this->controlPermissionException) {
+            throw $this->controlPermissionException;
+        }
+
+        parent::checkOpportunityControlPermission($opportunity);
+    }
+
+    protected function enqueueOportunidadeCreateJob(Opportunity $opportunity): void
+    {
+        if ($this->enqueueCreateJobException) {
+            throw $this->enqueueCreateJobException;
+        }
+
+        parent::enqueueOportunidadeCreateJob($opportunity);
+    }
+
+    protected function saveOpportunityAfterPostGenerate(Opportunity $opportunity): void
+    {
+        if ($this->saveAfterPostGenerateException) {
+            throw $this->saveAfterPostGenerateException;
+        }
+
+        parent::saveOpportunityAfterPostGenerate($opportunity);
+    }
 
     public function setGestorCpf(string $cpf): void
     {
