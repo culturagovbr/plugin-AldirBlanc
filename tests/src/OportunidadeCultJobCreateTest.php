@@ -136,10 +136,17 @@ class OportunidadeCultJobCreateTest extends TestCase
         $this->enqueueCreateJob($opp);
         $this->deleteOpportunityFromDb($oppId);
 
-        // Sem limite: o loop processa original + 2 retries até esgotar MAX_ATTEMPTS=3.
-        // O delay de retry é 'now' (ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now), então
-        // cada retry é imediatamente processável na próxima iteração do loop.
-        $this->processJobs();
+        // processJobs() sem número limite falha quando o cast (int) do hash do job retorna 0
+        // (hash hex começa com letra a-f), pois o while do core sai sem iterar. Além disso,
+        // processJobs() chama login() no final, que limpa o cache de tentativas de retry —
+        // zerando o contador antes de MAX_ATTEMPTS ser atingido.
+        // Solução: chamar executeJob() diretamente, sem o wrapper, até não restar job.
+        for ($i = 0; $i < 5; $i++) {
+            if ($this->findCreateJob($oppId) === null) {
+                break;
+            }
+            $this->app->executeJob('2100-01-01 00:00');
+        }
 
         $this->assertNull(
             $this->findCreateJob($oppId),
