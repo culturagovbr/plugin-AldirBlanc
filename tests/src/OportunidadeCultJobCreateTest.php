@@ -177,6 +177,38 @@ class OportunidadeCultJobCreateTest extends TestCase
     }
 
     /**
+     * Action não presente em OportunidadeCultJob::ACTIONS lança Exception FORA do try/catch
+     * de _execute() — o bloco catch (que escreve o retry counter e reenfileira) nunca
+     * executa. Job::execute() captura internamente e retorna success=false, então o job
+     * fica stuck (status=1, iterations_count=0) sem nenhum job de retry na fila.
+     */
+    function testActionInvalidaFalhaAntesDoRetryNaoEnfileiraRetry()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+        $oppId = $opp->id;
+
+        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
+            'opportunity' => $opp,
+            'action'      => 'inexistente',
+        ]);
+
+        $this->app->executeJob('2100-01-01 00:00');
+
+        $internalId = "oportunidade-cult-inexistente:{$oppId}";
+        $hashedId = md5("oportunidade-cult:{$internalId}");
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT status, iterations_count FROM job WHERE id = ?',
+            [$hashedId]
+        );
+
+        $this->assertNotFalse($row, 'Job com action inválida deve permanecer na fila (success=false)');
+        $this->assertSame(1, (int) $row['status'], 'Job deve estar stuck (status=1), não reenfileirado como retry');
+        $this->assertSame(0, (int) $row['iterations_count'], 'Lógica de sucesso não deve ter executado');
+    }
+
+    /**
      * Quando cultBrCreateSynced já existe (UPDATE path), o valor deve ser sobrescrito para '1'.
      * Garante que persistCultCreateSyncedFlag executa UPDATE quando o registro já existe,
      * sem duplicar a linha.
