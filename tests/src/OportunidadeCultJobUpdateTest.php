@@ -184,4 +184,63 @@ class OportunidadeCultJobUpdateTest extends TestCase
         );
         $this->assertFalse($row, 'Update job com falha não deve gravar flag cultBrCreateSynced');
     }
+
+    function testUpdateJobGravaCultBrLastSyncedAtAposSucesso()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+        $this->assertNotFalse($row, 'cultBrLastSyncedAt deve ser gravado após update bem-sucedido');
+        $this->assertNotEmpty($row['value'], 'cultBrLastSyncedAt não deve ser vazio');
+    }
+
+    function testUpdateJobNaoGravaCultBrLastSyncedAtEmFalha()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+        $oppId = $opp->id;
+
+        $this->enqueueUpdateJob($opp);
+        $this->deleteOpportunityFromDb($oppId);
+        $this->processJobs(number_of_jobs: 1);
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $oppId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+        $this->assertFalse($row, 'cultBrLastSyncedAt não deve ser gravado após falha do job');
+    }
+
+    function testUpdateJobSobrescreveCultBrLastSyncedAtNaSegundaExecucao()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $first = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+
+        sleep(1);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $rows = $this->app->em->getConnection()->fetchAllAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+        $this->assertCount(1, $rows, 'Deve existir exatamente uma linha de cultBrLastSyncedAt');
+        $this->assertNotEquals($first['value'], $rows[0]['value'], 'Timestamp deve ser atualizado na segunda execução');
+    }
 }
