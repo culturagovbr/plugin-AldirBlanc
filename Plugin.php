@@ -7,6 +7,7 @@ use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -162,7 +163,14 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT, [
+            'label' => i::__('Último envio ao CultBR (timestamp)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
+        $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
     }
 
     /**
