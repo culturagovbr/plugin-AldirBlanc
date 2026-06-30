@@ -54,6 +54,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
     public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
 
+    /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
+    public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
+
     function __construct() {}
 
     /**
@@ -837,10 +840,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         App::i()->enqueueOrReplaceJob(
             OportunidadeCultJob::SLUG,
-            [
-                'action'      => 'create',
-                'opportunity' => $opportunity,
-            ],
+            ['action' => 'create', 'opportunity' => $opportunity],
+            'now',
         );
     }
 
