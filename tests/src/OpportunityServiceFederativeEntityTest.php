@@ -171,7 +171,7 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    function testNaoRetornaOportunidadeComStatusDraft()
+    function testRetornaOportunidadeComStatusDraft()
     {
         $user = $this->userDirector->createUser();
         $subsite = $this->subsite($user);
@@ -195,7 +195,8 @@ class OpportunityServiceFederativeEntityTest extends TestCase
 
         $result = $this->service->findOpportunitiesByFederativeEntity($entity->document, $subsite->id);
 
-        $this->assertSame([], $result);
+        $this->assertCount(1, $result);
+        $this->assertSame($opp->id, $result[0]->id);
     }
 
     function testNaoRetornaOportunidadeComStatusPhase()
