@@ -136,10 +136,17 @@ class OportunidadeCultJobCreateTest extends TestCase
         $this->enqueueCreateJob($opp);
         $this->deleteOpportunityFromDb($oppId);
 
-        // Sem limite: o loop processa original + 2 retries até esgotar MAX_ATTEMPTS=3.
-        // O delay de retry é 'now' (ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now), então
-        // cada retry é imediatamente processável na próxima iteração do loop.
-        $this->processJobs();
+        // processJobs() sem número limite falha quando o cast (int) do hash do job retorna 0
+        // (hash hex começa com letra a-f), pois o while do core sai sem iterar. Além disso,
+        // processJobs() chama login() no final, que limpa o cache de tentativas de retry —
+        // zerando o contador antes de MAX_ATTEMPTS ser atingido.
+        // Solução: chamar executeJob() diretamente, sem o wrapper, até não restar job.
+        for ($i = 0; $i < 5; $i++) {
+            if ($this->findCreateJob($oppId) === null) {
+                break;
+            }
+            $this->app->executeJob('2100-01-01 00:00');
+        }
 
         $this->assertNull(
             $this->findCreateJob($oppId),
@@ -167,6 +174,38 @@ class OportunidadeCultJobCreateTest extends TestCase
             ['id' => $oppId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED]
         );
         $this->assertFalse($row, 'Flag cultBrCreateSynced não deve existir após falha do job');
+    }
+
+    /**
+     * Action não presente em OportunidadeCultJob::ACTIONS lança Exception FORA do try/catch
+     * de _execute() — o bloco catch (que escreve o retry counter e reenfileira) nunca
+     * executa. Job::execute() captura internamente e retorna success=false, então o job
+     * fica stuck (status=1, iterations_count=0) sem nenhum job de retry na fila.
+     */
+    function testActionInvalidaFalhaAntesDoRetryNaoEnfileiraRetry()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+        $oppId = $opp->id;
+
+        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
+            'opportunity' => $opp,
+            'action'      => 'inexistente',
+        ]);
+
+        $this->app->executeJob('2100-01-01 00:00');
+
+        $internalId = "oportunidade-cult-inexistente:{$oppId}";
+        $hashedId = md5("oportunidade-cult:{$internalId}");
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT status, iterations_count FROM job WHERE id = ?',
+            [$hashedId]
+        );
+
+        $this->assertNotFalse($row, 'Job com action inválida deve permanecer na fila (success=false)');
+        $this->assertSame(1, (int) $row['status'], 'Job deve estar stuck (status=1), não reenfileirado como retry');
+        $this->assertSame(0, (int) $row['iterations_count'], 'Lógica de sucesso não deve ter executado');
     }
 
     /**

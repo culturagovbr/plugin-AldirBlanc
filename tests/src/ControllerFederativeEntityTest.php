@@ -101,7 +101,8 @@ class ControllerFederativeEntityTest extends TestCase
     {
         $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
         $this->login($user);
-        $entity = $this->persistFederativeEntity('11111111111111', 'Ente Um');
+        $exercices = [['id' => 1, 'ano' => 2025, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('11111111111111', 'Ente Um', $exercices);
         $this->persistRelation($user->profile, $entity);
 
         $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
@@ -110,6 +111,7 @@ class ControllerFederativeEntityTest extends TestCase
             'id' => $entity->id,
             'name' => 'Ente Um',
             'document' => '11111111111111',
+            'exercices' => $exercices,
         ]], $payload);
     }
 

@@ -7,6 +7,7 @@ use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -68,12 +69,28 @@ class Plugin extends \MapasCulturais\Plugin
             'integrationOpportunities'
         ];
 
-        // Exclui flags de estado do AldirBlanc ao gerar oportunidade a partir de modelo.
-        // Sem isso, a oportunidade-destino herdaria cultBrCreateSynced=1 do modelo e nunca seria
-        // enviada ao CultBr, e herdaria isGeneratedFromModel=1 antes do saveOpportunityPostGenerate.
-        $app->hook('EntityManagerModel.generateMetadata.excludedKeys', function (array &$keys) {
-            $keys[] = Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED;
-            $keys[] = Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL;
+        $app->config['routes']['shortcuts']['aldirblanc/federative-entity'] = [
+            'aldirblanc',
+            'integrationFederativeEntityOpportunities'
+        ];
+
+        // Valida campos obrigatórios antes de executar generateopportunity, evitando que
+        // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
+        // ownerEntity inexistente cause null dereference no core.
+        $app->hook('ALL(opportunity.generateopportunity):before', function () use ($app) {
+            $name = $this->postData['name'] ?? null;
+            if (!is_string($name) || trim($name) === '') {
+                $this->errorJson(['name' => 'O campo name é obrigatório'], 400);
+            }
+
+            if (isset($this->postData['objectType']) && isset($this->postData['ownerEntity'])) {
+                $ownerEntity = $app->repo($this->postData['objectType'])->find($this->postData['ownerEntity']);
+                if (is_null($ownerEntity)) {
+                    throw new \InvalidArgumentException(
+                        "Entidade do tipo {$this->postData['objectType']} com id {$this->postData['ownerEntity']} não encontrada"
+                    );
+                }
+            }
         });
     }
 
@@ -151,7 +168,14 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT, [
+            'label' => i::__('Último envio ao CultBR (timestamp)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
+        $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
     }
 
     /**

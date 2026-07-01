@@ -200,7 +200,7 @@ class GestorCultJobAssociationTest extends TestCase
 
     // ===== Contrato, PAR vazio e volume =====
 
-    function testEnteSemExerciciosOuComExerciciosInvalidosNaoEhPersistido()
+    function testEnteSemExerciciosOuComExerciciosInvalidosPersisteSemDadosPar()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -216,11 +216,12 @@ class GestorCultJobAssociationTest extends TestCase
 
         foreach (['66111111111111', '66111111111112', '66111111111113', '66111111111114', '66111111111115'] as $document) {
             $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $document]);
-            $this->assertNull($entity);
+            $this->assertNotNull($entity, "Ente $document deve ser criado mesmo sem dados PAR");
+            $this->assertEmpty($entity->exercices);
         }
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
-        $this->assertCount(0, $relations);
+        $this->assertCount(5, $relations);
     }
 
     function testEnteComExerciciosGrandePersisteEstruturaCompleta()
@@ -307,7 +308,7 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertNotNull($entityStillExists);
     }
 
-    function testPayloadMistoPersisteSomenteEntesComPar()
+    function testPayloadMistoPersisteTodosEntesMesmoSemPar()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -325,18 +326,22 @@ class GestorCultJobAssociationTest extends TestCase
         $this->app->em->clear();
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
-        $this->assertCount(5, $relations);
+        $this->assertCount(10, $relations);
 
         foreach ($comPar as $data) {
-            $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => $data['document']]));
+            $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $data['document']]);
+            $this->assertNotNull($entity);
+            $this->assertNotEmpty($entity->exercices);
         }
 
         foreach ($semPar as $data) {
-            $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => $data['document']]));
+            $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $data['document']]);
+            $this->assertNotNull($entity, "Ente {$data['document']} deve ser criado mesmo sem PAR");
+            $this->assertEmpty($entity->exercices);
         }
     }
 
-    function testEnteJaAssociadoRetornadoSemParTemRelationRemovida()
+    function testEnteJaAssociadoRetornadoSemParMantemRelation()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -353,10 +358,11 @@ class GestorCultJobAssociationTest extends TestCase
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
 
         $this->assertNotNull($entityStillExists);
-        $this->assertCount(0, $relations);
+        $this->assertEmpty($entityStillExists->exercices);
+        $this->assertCount(1, $relations);
     }
 
-    function testSyncComTodosEntesSemParRevogaRoleERemoveRelations()
+    function testSyncComTodosEntesSemParMantémRoleEAssociacoes()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -381,10 +387,10 @@ class GestorCultJobAssociationTest extends TestCase
         $job->sync();
         $this->app->em->clear();
 
-        $this->assertFalse(UserAccessService::isGestorCultBr());
+        $this->assertTrue(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $agent]));
-        $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66888888888889']));
+        $this->assertCount(2, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $agent]));
+        $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66888888888889']));
     }
 
     function testDocumentoDuplicadoNoPayloadLancaErroDeContratoSemPersistenciaParcial()

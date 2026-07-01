@@ -137,6 +137,23 @@ class TestableController extends Controller
         };
     }
 
+    public function callGetIntegrationOpportunities(): void
+    {
+        $ref = new \ReflectionMethod($this, '_getIntegrationOpportunities');
+        $ref->setAccessible(true);
+        $ref->invoke($this);
+    }
+
+    public function callIntegrationFederativeEntityOpportunities(): void
+    {
+        $this->API_integrationFederativeEntityOpportunities();
+    }
+
+    public function callGetIntegrationFederativeEntityOpportunities(): void
+    {
+        $this->_getIntegrationFederativeEntityOpportunities();
+    }
+
     public function callRemoveDuplicatedParActions(array $actions): array
     {
         return $this->removeDuplicatedParActions($actions);

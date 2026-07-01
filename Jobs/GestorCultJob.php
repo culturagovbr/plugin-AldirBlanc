@@ -77,7 +77,6 @@ class GestorCultJob
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
             $this->validateFederativeEntitiesContract($federativeEntities);
-            $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
@@ -443,7 +442,6 @@ class GestorCultJob
         $em  = $app->em;
 
         $this->validateFederativeEntitiesContract($federativeEntities);
-        $federativeEntities = $this->filterFederativeEntitiesWithParData($federativeEntities);
 
         $apiDocs = array_column($federativeEntities, 'document');
         $apiLookup = array_flip($apiDocs);

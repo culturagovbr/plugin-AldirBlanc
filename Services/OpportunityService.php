@@ -26,6 +26,41 @@ class OpportunityService
     ];
 
     /**
+     * Retorna oportunidades elegíveis para o batch sync do CultBR:
+     * raiz (sem parent), publicadas, geradas de modelo, no subsite e dona pelo agente indicado.
+     *
+     * @return Opportunity[]
+     */
+    public function findEligibleOpportunitiesForSync(int $agentId, int $subsiteId): array
+    {
+        $app = App::i();
+        $conn = $app->em->getConnection();
+
+        $ids = $conn->fetchFirstColumn(
+            "SELECT o.id
+             FROM opportunity o
+             INNER JOIN opportunity_meta om_gen
+                ON om_gen.object_id = o.id
+               AND om_gen.key = 'isGeneratedFromModel'
+               AND om_gen.value = '1'
+             WHERE o.status = :status
+               AND o.parent_id IS NULL
+               AND o.subsite_id = :subsiteId
+               AND o.agent_id = :agentId",
+            [
+                'agentId'  => $agentId,
+                'status'   => \MapasCulturais\Entity::STATUS_ENABLED,
+                'subsiteId' => $subsiteId,
+            ]
+        );
+
+        return array_map(
+            fn($id) => $app->em->getReference(Opportunity::class, (int) $id),
+            $ids
+        );
+    }
+
+    /**
      * Carrega uma oportunidade por ID com metadados, arquivos, subsite e parent (primeira fase)
      * já hidratados em uma única query, para uso na integração (job/API).
      */
@@ -45,6 +80,47 @@ class OpportunityService
         $query = $app->em->createQuery($dql)->setParameter('id', $id);
         $opportunity = $query->getOneOrNullResult();
         return $opportunity instanceof Opportunity ? $opportunity : null;
+    }
+
+    public function findOpportunitiesByFederativeEntity(string $document, int $subsiteId): array
+    {
+        $app = App::i();
+
+        $entity = $app->repo('AldirBlanc\Entities\FederativeEntity')->findOneBy(['document' => $document]);
+        if (!$entity) {
+            return [];
+        }
+
+        $dql = "
+            SELECT o, om, s, p, pm, opf
+            FROM MapasCulturais\Entities\Opportunity o
+            LEFT JOIN o.__metadata om
+            LEFT JOIN o.subsite s
+            LEFT JOIN o.parent p
+            LEFT JOIN p.__metadata pm
+            LEFT JOIN o.__files opf
+            WHERE EXISTS (
+                SELECT 1 FROM MapasCulturais\Entities\OpportunityMeta fm
+                WHERE fm.owner = o
+                AND fm.key = 'federativeEntityId'
+                AND fm.value = :federativeEntityId
+            )
+            AND EXISTS (
+                SELECT 1 FROM MapasCulturais\Entities\OpportunityMeta gm
+                WHERE gm.owner = o
+                AND gm.key = 'isGeneratedFromModel'
+                AND gm.value = '1'
+            )
+            AND s.id = :subsiteId
+            AND o.parent IS NULL
+            AND o.status != :statusPhase
+        ";
+        $query = $app->em->createQuery($dql)
+            ->setParameter('federativeEntityId', (string) $entity->id)
+            ->setParameter('subsiteId', $subsiteId)
+            ->setParameter('statusPhase', Opportunity::STATUS_PHASE);
+        $result = $query->getResult();
+        return is_array($result) ? $result : [];
     }
 
     /**
@@ -134,7 +210,7 @@ class OpportunityService
             'forma_de_execucao' => $tipoDeEditalVal,
             'status' => $this->getOpportunityStatus($opportunity),
             'data_publicacao_edital' => $this->normalizeDateValue($opportunity->getMetadata('publishedTimestamp') ?? null),
-            'detalhamento_objeto' => $opportunity->longDescription ?? $opportunity->shortDescription ?? null,
+            'detalhamento_objeto' => mb_substr($opportunity->longDescription ?? $opportunity->shortDescription ?? '', 0, 600) ?: null,
             'numero_previsto_vagas' => $vacanciesVal,
             'valor_total_edital' => $this->normalizeDecimalValue($totalResourceVal),
             'data_inicial_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationFrom ?? null),

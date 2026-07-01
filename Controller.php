@@ -15,6 +15,7 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
@@ -54,6 +55,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
     public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
 
+    /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
+    public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
+
     function __construct() {}
 
     /**
@@ -82,11 +86,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $federativeEntities = [];
         foreach ($relations as $relation) {
-            if ($relation->owner) {
+            $exercices = $relation->owner->exercices ?? [];
+            if ($relation->owner && !empty($exercices)) {
                 $federativeEntities[] = [
                     'id' => $relation->owner->id,
                     'name' => $relation->owner->name,
-                    'document' => $relation->owner->document
+                    'document' => $relation->owner->document,
+                    'exercices' => $exercices,
                 ];
             }
         }
@@ -259,6 +265,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             }
 
             $_SESSION['gestor_cult_sync_completed'] = true;
+            $this->enqueueBatchSyncJobs($app->user->profile);
         } catch (Halt $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -298,6 +305,23 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob
     {
         return new GestorCultJob($gestorDocument);
+    }
+
+    protected function enqueueBatchSyncJobs(?\MapasCulturais\Entities\Agent $agent): void
+    {
+        if (!$agent) {
+            return;
+        }
+
+        $subsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if (!$subsiteId) {
+            return;
+        }
+
+        App::i()->enqueueOrReplaceJob(OpportunityBatchSyncJob::SLUG, [
+            'agentId'   => $agent->id,
+            'subsiteId' => $subsiteId,
+        ]);
     }
 
     protected function isSyncSessionStale(): bool
@@ -837,10 +861,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         App::i()->enqueueOrReplaceJob(
             OportunidadeCultJob::SLUG,
-            [
-                'action'      => 'create',
-                'opportunity' => $opportunity,
-            ],
+            ['action' => 'create', 'opportunity' => $opportunity],
+            'now',
         );
     }
 
@@ -878,8 +900,65 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /*
+     * GET /aldirblanc/federative-entity/{document}/opportunities
+     */
+    public function API_integrationFederativeEntityOpportunities()
+    {
+        $app = App::i();
+
+        $method = strtoupper($app->request->getMethod());
+        if ($method !== 'GET') {
+            $this->json(['error' => true, 'message' => 'Método ' . $method . ' não permitido'], 405);
+            return;
+        }
+
+        IntegrationTokenHelper::validateOrFail();
+
+        $this->_getIntegrationFederativeEntityOpportunities();
+    }
+
+    protected function _getIntegrationFederativeEntityOpportunities(): void
+    {
+        $app = App::i();
+
+        $cacheTTL = (int) ($app->plugins['AldirBlanc']->config['integration']['cacheTTL']);
+        $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? null);
+
+        // Extrai o CNPJ do path: /(api/)aldirblanc/federative-entity/{document}/opportunities
+        $pathParts = array_values(array_filter(explode('/', $app->request->getPathInfo())));
+        $feIdx = array_search('federative-entity', $pathParts);
+        $document = ($feIdx !== false && ($pathParts[$feIdx + 2] ?? null) === 'opportunities')
+            ? ($pathParts[$feIdx + 1] ?? null)
+            : null;
+
+        if (!$document) {
+            $this->json(['error' => true, 'message' => 'document (CNPJ) não informado'], 400);
+            return;
+        }
+
+        $cacheKey = "aldirblanc:integration_opportunities:federative_entity:{$subsiteId}:document:{$document}";
+        if ($app->cache->contains($cacheKey)) {
+            $this->json($app->cache->fetch($cacheKey));
+            return;
+        }
+
+        $service = new OpportunityService();
+        $opportunities = $service->findOpportunitiesByFederativeEntity($document, $subsiteId);
+
+        $data = array_map(fn($opp) => $service->mapOpportunityToIntegrationPayload($opp), $opportunities);
+
+        $response = [
+            'success' => true,
+            'data' => array_values($data),
+        ];
+        $app->cache->save($cacheKey, $response, $cacheTTL);
+
+        $this->json($response);
+    }
+
+    /*
     * Endpoint de integração de oportunidades
-     * 
+     *
      * GET /aldirblanc/opportunities/{id}
      */
     public function API_integrationOpportunities()
