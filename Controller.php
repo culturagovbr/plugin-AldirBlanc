@@ -898,8 +898,65 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /*
+     * GET /aldirblanc/federative-entity/{document}/opportunities
+     */
+    public function API_integrationFederativeEntityOpportunities()
+    {
+        $app = App::i();
+
+        $method = strtoupper($app->request->getMethod());
+        if ($method !== 'GET') {
+            $this->json(['error' => true, 'message' => 'Método ' . $method . ' não permitido'], 405);
+            return;
+        }
+
+        IntegrationTokenHelper::validateOrFail();
+
+        $this->_getIntegrationFederativeEntityOpportunities();
+    }
+
+    protected function _getIntegrationFederativeEntityOpportunities(): void
+    {
+        $app = App::i();
+
+        $cacheTTL = (int) ($app->plugins['AldirBlanc']->config['integration']['cacheTTL']);
+        $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? null);
+
+        // Extrai o CNPJ do path: /(api/)aldirblanc/federative-entity/{document}/opportunities
+        $pathParts = array_values(array_filter(explode('/', $app->request->getPathInfo())));
+        $feIdx = array_search('federative-entity', $pathParts);
+        $document = ($feIdx !== false && ($pathParts[$feIdx + 2] ?? null) === 'opportunities')
+            ? ($pathParts[$feIdx + 1] ?? null)
+            : null;
+
+        if (!$document) {
+            $this->json(['error' => true, 'message' => 'document (CNPJ) não informado'], 400);
+            return;
+        }
+
+        $cacheKey = "aldirblanc:integration_opportunities:federative_entity:{$subsiteId}:document:{$document}";
+        if ($app->cache->contains($cacheKey)) {
+            $this->json($app->cache->fetch($cacheKey));
+            return;
+        }
+
+        $service = new OpportunityService();
+        $opportunities = $service->findOpportunitiesByFederativeEntity($document, $subsiteId);
+
+        $data = array_map(fn($opp) => $service->mapOpportunityToIntegrationPayload($opp), $opportunities);
+
+        $response = [
+            'success' => true,
+            'data' => array_values($data),
+        ];
+        $app->cache->save($cacheKey, $response, $cacheTTL);
+
+        $this->json($response);
+    }
+
+    /*
     * Endpoint de integração de oportunidades
-     * 
+     *
      * GET /aldirblanc/opportunities/{id}
      */
     public function API_integrationOpportunities()

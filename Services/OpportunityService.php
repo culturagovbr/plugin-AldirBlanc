@@ -82,6 +82,47 @@ class OpportunityService
         return $opportunity instanceof Opportunity ? $opportunity : null;
     }
 
+    public function findOpportunitiesByFederativeEntity(string $document, int $subsiteId): array
+    {
+        $app = App::i();
+
+        $entity = $app->repo('AldirBlanc\Entities\FederativeEntity')->findOneBy(['document' => $document]);
+        if (!$entity) {
+            return [];
+        }
+
+        $dql = "
+            SELECT o, om, s, p, pm, opf
+            FROM MapasCulturais\Entities\Opportunity o
+            LEFT JOIN o.__metadata om
+            LEFT JOIN o.subsite s
+            LEFT JOIN o.parent p
+            LEFT JOIN p.__metadata pm
+            LEFT JOIN o.__files opf
+            WHERE EXISTS (
+                SELECT 1 FROM MapasCulturais\Entities\OpportunityMeta fm
+                WHERE fm.owner = o
+                AND fm.key = 'federativeEntityId'
+                AND fm.value = :federativeEntityId
+            )
+            AND EXISTS (
+                SELECT 1 FROM MapasCulturais\Entities\OpportunityMeta gm
+                WHERE gm.owner = o
+                AND gm.key = 'isGeneratedFromModel'
+                AND gm.value = '1'
+            )
+            AND s.id = :subsiteId
+            AND o.parent IS NULL
+            AND o.status != :statusPhase
+        ";
+        $query = $app->em->createQuery($dql)
+            ->setParameter('federativeEntityId', (string) $entity->id)
+            ->setParameter('subsiteId', $subsiteId)
+            ->setParameter('statusPhase', Opportunity::STATUS_PHASE);
+        $result = $query->getResult();
+        return is_array($result) ? $result : [];
+    }
+
     /**
      * Lê o valor bruto de um metadado da coleção __metadata da entidade (sem depender de definição registrada).
      * Usado quando getMetadata() retorna null por falta de tema/registro no worker.

@@ -69,6 +69,11 @@ class Plugin extends \MapasCulturais\Plugin
             'integrationOpportunities'
         ];
 
+        $app->config['routes']['shortcuts']['aldirblanc/federative-entity'] = [
+            'aldirblanc',
+            'integrationFederativeEntityOpportunities'
+        ];
+
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
         // ownerEntity inexistente cause null dereference no core.
