@@ -86,11 +86,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $federativeEntities = [];
         foreach ($relations as $relation) {
-            if ($relation->owner) {
+            $exercices = $relation->owner->exercices ?? [];
+            if ($relation->owner && !empty($exercices)) {
                 $federativeEntities[] = [
                     'id' => $relation->owner->id,
                     'name' => $relation->owner->name,
-                    'document' => $relation->owner->document
+                    'document' => $relation->owner->document,
+                    'exercices' => $exercices,
                 ];
             }
         }
