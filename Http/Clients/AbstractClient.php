@@ -120,10 +120,14 @@ abstract class AbstractClient
         $fullUrl = $this->prepareUrl();
         $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
+        $app = App::i();
+        $app->log->info("[CultBR] PUT payload | URL: {$fullUrl} | Body: {$jsonPayload}");
+
         try {
             $this->curl->setOpt(CURLOPT_CUSTOMREQUEST, 'PUT');
             $this->callCurlSuppressingDeprecations(fn() => $this->curl->post($fullUrl, $jsonPayload));
             $rawResponse = $this->curl->response;
+            $app->log->info("[CultBR] PUT response | HTTP: {$this->curl->http_status_code} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
             $parsed = $this->parseResponse(
                 $rawResponse,
                 $this->curl->http_status_code ?? 0,

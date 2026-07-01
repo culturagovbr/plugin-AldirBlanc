@@ -380,6 +380,105 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 
+    function testNaoEnfileiraCreateJobQuandoALDIRBLANCSubsiteIdNaoConfigurado()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $opportunity = $this->opportunity($user);
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Sem Env';
+        $subsite->url = 'subsite-sem-env-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', '1');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        // ALDIRBLANC_SUBSITE_ID deliberadamente não configurado
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
+        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertNull(
+            $this->findJob($opportunity->id),
+            'Não deve enfileirar quando ALDIRBLANC_SUBSITE_ID não está configurado'
+        );
+    }
+
+    function testNaoEnfileiraCreateJobQuandoOportunidadeTemParent()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $main = $this->opportunity($user, 'Oportunidade principal');
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Parent Guard';
+        $subsite->url = 'subsite-parent-guard-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+
+        $opportunityClassName = $user->profile->opportunityClassName;
+        $child = new $opportunityClassName();
+        $child->parent = $main;
+        $child->owner = $user->profile;
+        $child->ownerEntity = $user->profile;
+        $child->name = 'Fase filha';
+        $child->shortDescription = 'fase';
+        $child->status = Opportunity::STATUS_DRAFT;
+        $child->subsite = $subsite;
+        $child->setMetadata('federativeEntityId', '1');
+        $child->save(true);
+        $this->app->enableAccessControl();
+
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $child->id, 'shortDescription' => 'desc'];
+        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertNull(
+            $this->findJob($child->id),
+            'Oportunidade com parent não deve enfileirar job de create'
+        );
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
+    }
+
+    function testNaoEnfileiraCreateJobQuandoStatusEhStatusPhase()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $opportunity = $this->opportunity($user);
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Phase Guard';
+        $subsite->url = 'subsite-phase-guard-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', '1');
+        $opportunity->status = Opportunity::STATUS_PHASE;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
+        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertNull(
+            $this->findJob($opportunity->id),
+            'Oportunidade com status STATUS_PHASE não deve enfileirar job de create'
+        );
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
+    }
+
     // ===== Achado 1: guest é Halt/401, não um JSON de 403 =====
 
     function testGuestRecebeHalt401NaoJson403()

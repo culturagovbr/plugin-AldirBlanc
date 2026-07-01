@@ -26,6 +26,41 @@ class OpportunityService
     ];
 
     /**
+     * Retorna oportunidades elegíveis para o batch sync do CultBR:
+     * raiz (sem parent), publicadas, geradas de modelo, no subsite e dona pelo agente indicado.
+     *
+     * @return Opportunity[]
+     */
+    public function findEligibleOpportunitiesForSync(int $agentId, int $subsiteId): array
+    {
+        $app = App::i();
+        $conn = $app->em->getConnection();
+
+        $ids = $conn->fetchFirstColumn(
+            "SELECT o.id
+             FROM opportunity o
+             INNER JOIN opportunity_meta om_gen
+                ON om_gen.object_id = o.id
+               AND om_gen.key = 'isGeneratedFromModel'
+               AND om_gen.value = '1'
+             WHERE o.status = :status
+               AND o.parent_id IS NULL
+               AND o.subsite_id = :subsiteId
+               AND o.agent_id = :agentId",
+            [
+                'agentId'  => $agentId,
+                'status'   => \MapasCulturais\Entity::STATUS_ENABLED,
+                'subsiteId' => $subsiteId,
+            ]
+        );
+
+        return array_map(
+            fn($id) => $app->em->getReference(Opportunity::class, (int) $id),
+            $ids
+        );
+    }
+
+    /**
      * Carrega uma oportunidade por ID com metadados, arquivos, subsite e parent (primeira fase)
      * já hidratados em uma única query, para uso na integração (job/API).
      */

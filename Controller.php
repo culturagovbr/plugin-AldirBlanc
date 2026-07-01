@@ -15,6 +15,7 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
@@ -53,6 +54,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
     public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
+
+    /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
+    public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
 
     function __construct() {}
 
@@ -259,6 +263,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             }
 
             $_SESSION['gestor_cult_sync_completed'] = true;
+            $this->enqueueBatchSyncJobs($app->user->profile);
         } catch (Halt $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -298,6 +303,23 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob
     {
         return new GestorCultJob($gestorDocument);
+    }
+
+    protected function enqueueBatchSyncJobs(?\MapasCulturais\Entities\Agent $agent): void
+    {
+        if (!$agent) {
+            return;
+        }
+
+        $subsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if (!$subsiteId) {
+            return;
+        }
+
+        App::i()->enqueueOrReplaceJob(OpportunityBatchSyncJob::SLUG, [
+            'agentId'   => $agent->id,
+            'subsiteId' => $subsiteId,
+        ]);
     }
 
     protected function isSyncSessionStale(): bool
@@ -837,10 +859,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         App::i()->enqueueOrReplaceJob(
             OportunidadeCultJob::SLUG,
-            [
-                'action'      => 'create',
-                'opportunity' => $opportunity,
-            ],
+            ['action' => 'create', 'opportunity' => $opportunity],
+            'now',
         );
     }
 
