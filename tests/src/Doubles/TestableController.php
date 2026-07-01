@@ -144,6 +144,16 @@ class TestableController extends Controller
         $ref->invoke($this);
     }
 
+    public function callIntegrationFederativeEntityOpportunities(): void
+    {
+        $this->API_integrationFederativeEntityOpportunities();
+    }
+
+    public function callGetIntegrationFederativeEntityOpportunities(): void
+    {
+        $this->_getIntegrationFederativeEntityOpportunities();
+    }
+
     public function callRemoveDuplicatedParActions(array $actions): array
     {
         return $this->removeDuplicatedParActions($actions);
