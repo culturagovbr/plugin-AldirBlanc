@@ -127,7 +127,6 @@ class ControllerFederativeEntityOpportunitiesTest extends TestCase
         $opp->status = Opportunity::STATUS_ENABLED;
         $opp->save(true);
         $opp->setMetadata('federativeEntityId', (string) $entity->id);
-        $opp->setMetadata('isGeneratedFromModel', '1');
         $opp->save(true);
         $this->app->enableAccessControl();
         return $opp;

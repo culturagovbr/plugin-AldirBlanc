@@ -101,12 +101,6 @@ class OpportunityService
                 AND fm.key = 'federativeEntityId'
                 AND fm.value = :federativeEntityId
             )
-            AND EXISTS (
-                SELECT 1 FROM MapasCulturais\Entities\OpportunityMeta gm
-                WHERE gm.owner = o
-                AND gm.key = 'isGeneratedFromModel'
-                AND gm.value = '1'
-            )
             AND s.id = :subsiteId
             AND o.parent IS NULL
             AND o.status != :statusPhase
