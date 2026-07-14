@@ -45,12 +45,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return parent::getRequestedEntity();
     }
 
-    /**
-     * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
-     * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
-     */
-    public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
-
     /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
     public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
 
@@ -784,7 +778,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         try {
             $opportunity->shortDescription = $shortDescriptionFromRequest;
-            $opportunity->setMetadata(self::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
 
             if ($requestIncludesAnyParField) {
                 foreach ($parInstrumentMetadataKeys as $parFieldKey) {

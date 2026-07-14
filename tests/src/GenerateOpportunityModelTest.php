@@ -2,7 +2,6 @@
 
 namespace Tests\AldirBlanc;
 
-use AldirBlanc\Controller;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\ServerRequest;
 use MapasCulturais\Entities\EvaluationMethodConfiguration;
@@ -119,39 +118,6 @@ class GenerateOpportunityModelTest extends TestCase
         } catch (Halt) {
         }
         return json_decode((string) $this->app->response->getBody(), true, flags: JSON_THROW_ON_ERROR);
-    }
-
-    // ===== generateMetadata: exclusão de flags de integração =====
-
-    /**
-     * O flag isGeneratedFromModel do modelo NÃO deve ser copiado para a oportunidade gerada.
-     * Ele só deve ser gravado pelo saveOpportunityPostGenerate, após os dados PAR estarem salvos.
-     */
-    function testNaoCopiaIsGeneratedFromModelDoModelo()
-    {
-        $user = $this->userDirector->createUser();
-        $model = $this->createModel($user);
-
-        $this->app->disableAccessControl();
-        $model->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $model->save(true);
-        $this->app->enableAccessControl();
-
-        $this->login($user);
-        $payload = $this->callGenerateOpportunity($model->id, ['name' => 'Oportunidade Gerada']);
-
-        $this->assertSame(200, $this->app->response->getStatusCode());
-        $generatedId = $payload['id'];
-
-        // Limpa o identity map: o clone herda __createdMetadata do modelo (estado em memória)
-        // mas o banco está correto (sem a metadata). Reload do DB para leitura consistente.
-        $this->app->em->clear();
-        $generated = $this->app->repo('Opportunity')->find($generatedId);
-        $this->assertNotSame(
-            '1',
-            $generated->getMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL),
-            'isGeneratedFromModel do modelo não deve ser herdado imediatamente ao gerar'
-        );
     }
 
     // ===== generatePhases: lock de entidade em fase clonada =====

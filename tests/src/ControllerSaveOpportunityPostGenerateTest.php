@@ -145,9 +145,9 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $this->assertSame(403, $this->responseStatus());
     }
 
-    // ===== Persistência de shortDescription + flags =====
+    // ===== Persistência de shortDescription =====
 
-    function testGravaShortDescriptionEIsGeneratedFromModelSemCamposPar()
+    function testGravaShortDescriptionSemCamposPar()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -166,7 +166,6 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
 
         $refreshed = $this->app->repo('Opportunity')->find($opportunity->id);
         $this->assertSame('Nova descrição', $refreshed->shortDescription);
-        $this->assertSame('1', $refreshed->getMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL));
     }
 
     function testGravaCamposParApenasQuandoPresentesNoPayload()
