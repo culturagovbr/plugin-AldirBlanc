@@ -50,9 +50,6 @@ class OpportunityBatchSyncJobTest extends TestCase
         $opp->subsite = $subsite;
         $opp->save(true);
 
-        $opp->setMetadata('isGeneratedFromModel', '1');
-        $opp->save(true);
-
         $this->app->enableAccessControl();
         return $opp;
     }

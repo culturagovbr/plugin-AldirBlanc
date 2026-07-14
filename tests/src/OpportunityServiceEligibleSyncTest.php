@@ -13,7 +13,7 @@ use Tests\Traits\UserDirector;
  * Testes de OpportunityService::findEligibleOpportunitiesForSync.
  *
  * Garante que apenas oportunidades que passam todos os guards de elegibilidade
- * são retornadas: ENABLED, raiz (sem parent), isGeneratedFromModel=1,
+ * são retornadas: ENABLED, raiz (sem parent),
  * agente correto e subsite correto.
  */
 class OpportunityServiceEligibleSyncTest extends TestCase
@@ -56,15 +56,6 @@ class OpportunityServiceEligibleSyncTest extends TestCase
 
         $opp->save(true);
 
-        $isGeneratedFromModel = array_key_exists('isGeneratedFromModel', $overrides)
-            ? $overrides['isGeneratedFromModel']
-            : '1';
-
-        if ($isGeneratedFromModel !== null) {
-            $opp->setMetadata('isGeneratedFromModel', $isGeneratedFromModel);
-            $opp->save(true);
-        }
-
         $this->app->enableAccessControl();
         return $opp;
     }
@@ -101,15 +92,6 @@ class OpportunityServiceEligibleSyncTest extends TestCase
         $subsite = $this->createSubsite($owner);
         $outroSubsite = $this->createSubsite($owner);
         $opp = $this->createOpportunity($owner, $subsite, ['subsite' => $outroSubsite]);
-
-        $this->assertNotContains($opp->id, $this->eligibleIds($owner, $subsite));
-    }
-
-    function testNaoRetornaOportunidadeSemIsGeneratedFromModel()
-    {
-        $owner = $this->userDirector->createUser();
-        $subsite = $this->createSubsite($owner);
-        $opp = $this->createOpportunity($owner, $subsite, ['isGeneratedFromModel' => null]);
 
         $this->assertNotContains($opp->id, $this->eligibleIds($owner, $subsite));
     }
