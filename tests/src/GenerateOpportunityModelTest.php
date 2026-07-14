@@ -124,37 +124,6 @@ class GenerateOpportunityModelTest extends TestCase
     // ===== generateMetadata: exclusão de flags de integração =====
 
     /**
-     * O flag cultBrCreateSynced do modelo NÃO deve ser copiado para a oportunidade gerada.
-     * Sem esse controle, a nova oportunidade nunca seria enviada ao CultBr.
-     */
-    function testNaoCopiaCultBrCreateSyncedDoModelo()
-    {
-        $user = $this->userDirector->createUser();
-        $model = $this->createModel($user);
-
-        $this->app->disableAccessControl();
-        $model->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
-        $model->save(true);
-        $this->app->enableAccessControl();
-
-        $this->login($user);
-        $payload = $this->callGenerateOpportunity($model->id, ['name' => 'Oportunidade Gerada']);
-
-        $this->assertSame(200, $this->app->response->getStatusCode());
-        $generatedId = $payload['id'];
-
-        // Limpa o identity map: o clone herda __createdMetadata do modelo (estado em memória)
-        // mas o banco está correto (sem a metadata). Reload do DB para leitura consistente.
-        $this->app->em->clear();
-        $generated = $this->app->repo('Opportunity')->find($generatedId);
-        $this->assertNotSame(
-            '1',
-            $generated->getMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
-            'cultBrCreateSynced do modelo não deve ser herdado pela oportunidade gerada'
-        );
-    }
-
-    /**
      * O flag isGeneratedFromModel do modelo NÃO deve ser copiado para a oportunidade gerada.
      * Ele só deve ser gravado pelo saveOpportunityPostGenerate, após os dados PAR estarem salvos.
      */

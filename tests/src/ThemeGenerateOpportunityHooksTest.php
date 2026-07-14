@@ -255,7 +255,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayHasKey('parAcaoId', $payload['data']);
     }
 
-    // ===== validateIntegrationJob (gate de integração CultBr), via insert:finish/update:finish =====
+    // ===== validateIntegrationJob (gate de integração CultBr), via update:finish =====
 
     function testNaoDisparaJobQuandoIsGeneratedFromModelEhFalso()
     {
@@ -268,25 +268,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
         // isGeneratedFromModel deliberadamente não setado (simula o clone recém-gerado).
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $this->assertNull($this->findJob($opportunity->id, 'create'));
-        $this->assertNull($this->findJob($opportunity->id, 'update'));
-    }
-
-    function testNaoDisparaUpdateQuandoStatusContinuaDraftAposMarcarComoGerada()
-    {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // status permanece DRAFT (equivalente ao saveOpportunityPostGenerate, antes da publicação).
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
@@ -304,8 +285,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
         $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // create já foi sincronizado: permite enfileirar update
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -313,59 +292,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $job = $this->findJob($opportunity->id, 'update');
         $this->assertNotNull($job);
         $this->assertSame('update', $job->action);
-    }
-
-    /**
-     * Quando a oportunidade ainda não foi enviada ao CultBr (cultBrCreateSynced ausente/false),
-     * o hook update:finish NÃO deve enfileirar o job de update mesmo com status ENABLED.
-     * O PUT chegaria antes do POST e resultaria em 404 na API.
-     */
-    function testNaoDisparaUpdateJobQuandoCreateAindaNaoFoiSincronizado()
-    {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab Sync');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // cultBrCreateSynced deliberadamente NÃO setado (create não executou ainda)
-        $opportunity->status = Opportunity::STATUS_ENABLED;
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $this->assertNull(
-            $this->findJob($opportunity->id, 'update'),
-            'Não deve enfileirar update se o create ainda não foi sincronizado'
-        );
-    }
-
-    /**
-     * Quando cultBrCreateSynced está explicitamente como false,
-     * o update:finish também não deve enfileirar o job de update.
-     */
-    function testNaoDisparaUpdateJobQuandoCultBrCreateSyncedEhFalso()
-    {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab False');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '0');
-        $opportunity->status = Opportunity::STATUS_ENABLED;
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $this->assertNull(
-            $this->findJob($opportunity->id, 'update'),
-            'Não deve enfileirar update se cultBrCreateSynced é false'
-        );
     }
 
     /**
@@ -408,7 +334,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->subsite = $subsite;
         // federativeEntityId deliberadamente ausente
         $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -441,7 +366,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $child->subsite = $subsite;
         $child->setMetadata('federativeEntityId', 1);
         $child->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $child->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $child->status = Opportunity::STATUS_ENABLED;
         $child->save(true);
         $this->app->enableAccessControl();
@@ -468,7 +392,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
         $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
