@@ -257,23 +257,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
     // ===== validateIntegrationJob (gate de integração CultBr), via update:finish =====
 
-    function testNaoDisparaJobQuandoIsGeneratedFromModelEhFalso()
-    {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        // isGeneratedFromModel deliberadamente não setado (simula o clone recém-gerado).
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $this->assertNull($this->findJob($opportunity->id, 'update'));
-    }
-
     function testDisparaUpdateQuandoTudoCorretoESubsiteCoincide()
     {
         $user = $this->userDirector->createUser();
@@ -284,7 +267,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -295,10 +277,8 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
     }
 
     /**
-     * Regressão do achado: a guarda de subsite em validateIntegrationJob era inalcançável
-     * (a condição "!$isGeneratedFromModel" nela já era sempre falsa nesse ponto da função),
-     * então uma oportunidade gerada a partir de modelo em outro subsite disparava a integração
-     * mesmo assim. Depois do fix, deve bloquear.
+     * Oportunidade em subsite diferente do subsite do Pnab (ALDIRBLANC_SUBSITE_ID)
+     * não deve disparar o job de update.
      */
     function testNaoDisparaUpdateQuandoSubsiteDaOportunidadeNaoEhOSubsitePnab()
     {
@@ -311,7 +291,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsiteDaOportunidade;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -333,7 +312,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         // federativeEntityId deliberadamente ausente
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -365,7 +343,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $child->shortDescription = 'fase';
         $child->subsite = $subsite;
         $child->setMetadata('federativeEntityId', 1);
-        $child->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
         $child->status = Opportunity::STATUS_ENABLED;
         $child->save(true);
         $this->app->enableAccessControl();
@@ -391,7 +368,6 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
