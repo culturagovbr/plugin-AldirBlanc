@@ -23,7 +23,6 @@ class OportunidadeCultJob extends JobType
 	const MAX_ATTEMPTS = 3;
 
 	private const ACTIONS = [
-		'create' => 'createInCult',
 		'update' => 'updateInCult',
 	];
 
@@ -79,10 +78,6 @@ class OportunidadeCultJob extends JobType
 		try {
 			$this->{$method}($opportunity);
 
-			if ($action === 'create') {
-				$this->persistCultCreateSyncedFlag($app, (int) $job->opportunity->id);
-			}
-
 			if ($action === 'update') {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 			}
@@ -101,32 +96,6 @@ class OportunidadeCultJob extends JobType
 				], $delay);
 			}
 			return true;
-		}
-	}
-
-	protected function persistCultCreateSyncedFlag(App $app, int $opportunityId): void
-	{
-		// SQL direto evita chamar Entity::save(), que dispararia update:finish
-		// e enfileiraria um job de update logo após o create.
-		if ($app->repo('Opportunity')->find($opportunityId) === null) {
-			return;
-		}
-		$conn = $app->em->getConnection();
-		$updated = $conn->executeStatement(
-			'UPDATE opportunity_meta SET value = \'1\' WHERE object_id = :id AND key = :key',
-			[
-				'id'  => $opportunityId,
-				'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED,
-			]
-		);
-		if ($updated === 0) {
-			$conn->executeStatement(
-				'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, \'1\')',
-				[
-					'id'  => $opportunityId,
-					'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED,
-				]
-			);
 		}
 	}
 
@@ -155,20 +124,6 @@ class OportunidadeCultJob extends JobType
 				]
 			);
 		}
-	}
-
-	private function createInCult(Opportunity $opportunity)
-	{
-		$loaded = $this->getOpportunityWithIntegrationData($opportunity);
-		if (!$loaded) {
-			throw new \Exception("Oportunidade não encontrada: {$opportunity->id}");
-		}
-
-		$opportunityDto = OpportunityDto::fromArray($this->opportunityService->mapOpportunityToIntegrationPayload($loaded));
-
-		$response = $this->oportunidadeCultClient->create($opportunityDto);
-
-		return $response;
 	}
 
 	private function updateInCult(Opportunity $opportunity)
