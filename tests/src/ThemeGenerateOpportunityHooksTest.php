@@ -123,6 +123,15 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
 
+    /** Preenche os 4 dados do PAR exigidos por validateIntegrationJob. */
+    private function setPar($entity): void
+    {
+        $entity->setMetadata('parExercicioId', '1');
+        $entity->setMetadata('parMetaId', '2');
+        $entity->setMetadata('parAcaoId', '3');
+        $entity->setMetadata('parAtividadeId', '4');
+    }
+
     // ===== POST(opportunity.generateopportunity):before — validação de compatibilidade do PAR =====
 
     private function fireGenerateOpportunityBeforeHook(Opportunity $model, ?string $parAcaoId): void
@@ -267,6 +276,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -274,6 +284,30 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $job = $this->findJob($opportunity->id, 'update');
         $this->assertNotNull($job);
         $this->assertSame('update', $job->action);
+    }
+
+    /**
+     * Sem os 4 dados do PAR preenchidos, o hook não deve enfileirar o job de update.
+     */
+    function testNaoDisparaUpdateQuandoSemDadosDoPar()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Par');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        // PAR deliberadamente ausente
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Oportunidade sem os dados do PAR não deve enfileirar job de update'
+        );
     }
 
     /**
@@ -291,6 +325,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsiteDaOportunidade;
         $opportunity->setMetadata('federativeEntityId', 1);
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -311,6 +346,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
+        $this->setPar($opportunity);
         // federativeEntityId deliberadamente ausente
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
@@ -343,6 +379,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $child->shortDescription = 'fase';
         $child->subsite = $subsite;
         $child->setMetadata('federativeEntityId', 1);
+        $this->setPar($child);
         $child->status = Opportunity::STATUS_ENABLED;
         $child->save(true);
         $this->app->enableAccessControl();
@@ -368,6 +405,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
