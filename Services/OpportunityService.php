@@ -27,7 +27,7 @@ class OpportunityService
 
     /**
      * Retorna oportunidades elegíveis para o batch sync do CultBR:
-     * raiz (sem parent), publicadas, no subsite e dona pelo agente indicado.
+     * raiz (sem parent), com os 4 dados do PAR preenchidos, no subsite e dona pelo agente indicado.
      *
      * @return Opportunity[]
      */
@@ -39,13 +39,18 @@ class OpportunityService
         $ids = $conn->fetchFirstColumn(
             "SELECT o.id
              FROM opportunity o
-             WHERE o.status = :status
-               AND o.parent_id IS NULL
+             WHERE o.parent_id IS NULL
                AND o.subsite_id = :subsiteId
-               AND o.agent_id = :agentId",
+               AND o.agent_id = :agentId
+               AND (
+                   SELECT COUNT(DISTINCT m.key)
+                   FROM opportunity_meta m
+                   WHERE m.object_id = o.id
+                     AND m.key IN ('parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId')
+                     AND trim(m.value) <> ''
+               ) = 4",
             [
                 'agentId'  => $agentId,
-                'status'   => \MapasCulturais\Entity::STATUS_ENABLED,
                 'subsiteId' => $subsiteId,
             ]
         );

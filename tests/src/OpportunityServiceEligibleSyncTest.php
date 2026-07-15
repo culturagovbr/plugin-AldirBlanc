@@ -13,7 +13,7 @@ use Tests\Traits\UserDirector;
  * Testes de OpportunityService::findEligibleOpportunitiesForSync.
  *
  * Garante que apenas oportunidades que passam todos os guards de elegibilidade
- * são retornadas: ENABLED, raiz (sem parent),
+ * são retornadas: raiz (sem parent), com os 4 dados do PAR preenchidos,
  * agente correto e subsite correto.
  */
 class OpportunityServiceEligibleSyncTest extends TestCase
@@ -56,6 +56,14 @@ class OpportunityServiceEligibleSyncTest extends TestCase
 
         $opp->save(true);
 
+        if ($overrides['par'] ?? true) {
+            $opp->setMetadata('parExercicioId', '1');
+            $opp->setMetadata('parMetaId', '2');
+            $opp->setMetadata('parAcaoId', '3');
+            $opp->setMetadata('parAtividadeId', '4');
+            $opp->save(true);
+        }
+
         $this->app->enableAccessControl();
         return $opp;
     }
@@ -77,11 +85,20 @@ class OpportunityServiceEligibleSyncTest extends TestCase
         $this->assertContains($opp->id, $this->eligibleIds($owner, $subsite));
     }
 
-    function testNaoRetornaOportunidadeComStatusDraft()
+    function testRetornaOportunidadeComStatusDraft()
     {
         $owner = $this->userDirector->createUser();
         $subsite = $this->createSubsite($owner);
         $opp = $this->createOpportunity($owner, $subsite, ['status' => Opportunity::STATUS_DRAFT]);
+
+        $this->assertContains($opp->id, $this->eligibleIds($owner, $subsite));
+    }
+
+    function testNaoRetornaOportunidadeSemDadosDoPar()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->createSubsite($owner);
+        $opp = $this->createOpportunity($owner, $subsite, ['par' => false]);
 
         $this->assertNotContains($opp->id, $this->eligibleIds($owner, $subsite));
     }

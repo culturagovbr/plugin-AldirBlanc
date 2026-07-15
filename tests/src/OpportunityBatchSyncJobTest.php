@@ -50,6 +50,14 @@ class OpportunityBatchSyncJobTest extends TestCase
         $opp->subsite = $subsite;
         $opp->save(true);
 
+        if ($overrides['par'] ?? true) {
+            $opp->setMetadata('parExercicioId', '1');
+            $opp->setMetadata('parMetaId', '2');
+            $opp->setMetadata('parAcaoId', '3');
+            $opp->setMetadata('parAtividadeId', '4');
+            $opp->save(true);
+        }
+
         $this->app->enableAccessControl();
         return $opp;
     }
@@ -146,7 +154,7 @@ class OpportunityBatchSyncJobTest extends TestCase
         $owner = $this->userDirector->createUser();
         $subsite = $this->createSubsite($owner);
 
-        $inelegivel = $this->createOpportunity($owner, $subsite, ['status' => Opportunity::STATUS_DRAFT]);
+        $inelegivel = $this->createOpportunity($owner, $subsite, ['par' => false]);
 
         $this->app->enqueueOrReplaceJob(OpportunityBatchSyncJob::SLUG, [
             'agentId'   => $owner->profile->id,
@@ -157,7 +165,7 @@ class OpportunityBatchSyncJobTest extends TestCase
 
         $this->assertNull(
             $this->findUpdateJob($inelegivel->id),
-            'Não deve enfileirar update job para oportunidade inelegível (DRAFT)'
+            'Não deve enfileirar update job para oportunidade inelegível (sem PAR)'
         );
     }
 }
