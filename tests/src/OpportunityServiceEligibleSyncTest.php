@@ -103,6 +103,24 @@ class OpportunityServiceEligibleSyncTest extends TestCase
         $this->assertNotContains($opp->id, $this->eligibleIds($owner, $subsite));
     }
 
+    function testNaoRetornaOportunidadeComPARIncompleto()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->createSubsite($owner);
+        $opp = $this->createOpportunity($owner, $subsite, ['par' => false]);
+
+        $this->login($owner);
+        $this->app->disableAccessControl();
+        $opp->setMetadata('parExercicioId', '1');
+        $opp->setMetadata('parMetaId', '2');
+        $opp->setMetadata('parAcaoId', '3');
+        // parAtividadeId deliberadamente ausente (3 de 4)
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNotContains($opp->id, $this->eligibleIds($owner, $subsite));
+    }
+
     function testNaoRetornaOportunidadeComSubsiteDiferente()
     {
         $owner = $this->userDirector->createUser();

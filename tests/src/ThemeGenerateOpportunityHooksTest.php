@@ -311,6 +311,59 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
     }
 
     /**
+     * Sem gate de status: uma oportunidade em rascunho que passa os demais guards
+     * também enfileira o job de update (o envio ao CultBR ocorre em qualquer save).
+     */
+    function testDisparaUpdateEmRascunho()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Rascunho');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $this->setPar($opportunity);
+        $opportunity->status = Opportunity::STATUS_DRAFT;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNotNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Rascunho elegível também deve enfileirar o job de update'
+        );
+    }
+
+    /**
+     * Com apenas parte dos 4 dados do PAR (3 de 4), o hook não deve enfileirar o job —
+     * a regra exige os 4.
+     */
+    function testNaoDisparaUpdateQuandoPARIncompleto()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Par Parcial');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $opportunity->setMetadata('parExercicioId', '1');
+        $opportunity->setMetadata('parMetaId', '2');
+        $opportunity->setMetadata('parAcaoId', '3');
+        // parAtividadeId deliberadamente ausente (3 de 4)
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNull(
+            $this->findJob($opportunity->id, 'update'),
+            'PAR incompleto (3 de 4) não deve enfileirar job de update'
+        );
+    }
+
+    /**
      * Oportunidade em subsite diferente do subsite do Pnab (ALDIRBLANC_SUBSITE_ID)
      * não deve disparar o job de update.
      */

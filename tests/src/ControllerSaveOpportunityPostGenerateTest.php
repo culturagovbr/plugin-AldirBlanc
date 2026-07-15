@@ -15,7 +15,7 @@ use Tests\Traits\UserDirector;
 
 /**
  * POST_saveOpportunityPostGenerate: persistência pós "usar modelo" (shortDescription + PAR)
- * e enfileiramento condicional do job de create na API CultBr.
+ * e enfileiramento do job de update (PUT) via hook update:finish.
  */
 class ControllerSaveOpportunityPostGenerateTest extends TestCase
 {
@@ -63,6 +63,16 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $opportunity->save(true);
         $this->app->enableAccessControl();
         return $opportunity;
+    }
+
+    /**
+     * O id real do job é md5("{$slug}:{$id-interno}") — ver JobType::generateId().
+     */
+    private function findUpdateJob(int $opportunityId)
+    {
+        $internalId = "oportunidade-cult-update:{$opportunityId}";
+        $hashedId = md5("oportunidade-cult:{$internalId}");
+        return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
 
     // ===== Validações de entrada =====
@@ -314,6 +324,47 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $payload = $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
 
         $this->assertSame(500, $this->responseStatus());
+    }
+
+    // ===== Enfileiramento do job de update (via hook update:finish) =====
+
+    function testPostGenerateEnfileiraJobDeUpdateQuandoOportunidadeElegivel()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $opportunity = $this->opportunity($user);
+
+        $subsite = new \MapasCulturais\Entities\Subsite();
+        $subsite->name = 'Subsite Pnab PostGenerate';
+        $subsite->url = 'subsite-pnab-postgen-' . uniqid();
+        $this->app->disableAccessControl();
+        $subsite->save(true);
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', '1');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $controller = $this->controller();
+        $controller->data = [
+            'opportunityId' => $opportunity->id,
+            'shortDescription' => 'desc',
+            'parExercicioId' => '10',
+            'parMetaId' => '20',
+            'parAcaoId' => '30',
+            'parAtividadeId' => '40',
+        ];
+
+        $payload = $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
+
+        $this->assertSame(200, $this->responseStatus());
+        $this->assertTrue($payload['success']);
+        $this->assertNotNull(
+            $this->findUpdateJob($opportunity->id),
+            'saveOpportunityPostGenerate deve enfileirar o job de update (PUT) via hook'
+        );
+
+        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 
 }
