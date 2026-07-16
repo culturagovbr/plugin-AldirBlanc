@@ -264,6 +264,49 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayHasKey('parAcaoId', $payload['data']);
     }
 
+    // ===== entity(Opportunity).validationErrors — trava do PAR sem parActions =====
+
+    function testValidationBloqueiaSalvarParSemParActions()
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade sem parActions');
+
+        $federativeEntity = $this->persistFederativeEntity('55555555555555', 'Ente Cinco', [
+            ['metas' => [['acoes' => [['id' => '3', 'nome' => 'Ação Qualquer']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $errors = $opportunity->validationErrors;
+        $this->assertArrayHasKey('parAcaoId', $errors);
+        $this->assertStringContainsString('entre em contato com o suporte', $errors['parAcaoId'][0]);
+    }
+
+    function testValidationLiberaOParComParActionsEAcaoCompativel()
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade com parActions');
+        $this->app->disableAccessControl();
+        $opportunity->setMetadata('parActions', json_encode(['Ação Compatível']));
+        $opportunity->setMetadata('parExercicioId', '1');
+        $opportunity->setMetadata('parMetaId', '2');
+        $opportunity->setMetadata('parAcaoId', '42');
+        $opportunity->setMetadata('parAtividadeId', '4');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $federativeEntity = $this->persistFederativeEntity('66666666666666', 'Ente Seis', [
+            ['metas' => [['acoes' => [['id' => '42', 'nome' => 'Ação Compatível']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $errors = $opportunity->validationErrors;
+        $this->assertArrayNotHasKey('parAcaoId', $errors);
+    }
+
     // ===== validateIntegrationJob (gate de integração CultBr), via update:finish =====
 
     function testDisparaUpdateQuandoTudoCorretoESubsiteCoincide()
