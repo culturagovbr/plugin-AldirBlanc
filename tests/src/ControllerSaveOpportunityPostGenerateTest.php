@@ -15,7 +15,7 @@ use Tests\Traits\UserDirector;
 
 /**
  * POST_saveOpportunityPostGenerate: persistência pós "usar modelo" (shortDescription + PAR)
- * e enfileiramento condicional do job de create na API CultBr.
+ * e enfileiramento do job de update (PUT) via hook update:finish.
  */
 class ControllerSaveOpportunityPostGenerateTest extends TestCase
 {
@@ -68,9 +68,9 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
     /**
      * O id real do job é md5("{$slug}:{$id-interno}") — ver JobType::generateId().
      */
-    private function findJob(int $opportunityId, string $action = 'create')
+    private function findUpdateJob(int $opportunityId)
     {
-        $internalId = "oportunidade-cult-{$action}:{$opportunityId}";
+        $internalId = "oportunidade-cult-update:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
@@ -155,9 +155,9 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $this->assertSame(403, $this->responseStatus());
     }
 
-    // ===== Persistência de shortDescription + flags =====
+    // ===== Persistência de shortDescription =====
 
-    function testGravaShortDescriptionEIsGeneratedFromModelSemCamposPar()
+    function testGravaShortDescriptionSemCamposPar()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -176,7 +176,6 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
 
         $refreshed = $this->app->repo('Opportunity')->find($opportunity->id);
         $this->assertSame('Nova descrição', $refreshed->shortDescription);
-        $this->assertSame('1', $refreshed->getMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL));
     }
 
     function testGravaCamposParApenasQuandoPresentesNoPayload()
@@ -250,60 +249,6 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $this->assertSame('2023', $refreshed->getMetadata('parExercicioId'));
     }
 
-    // ===== Enfileiramento do job de create =====
-
-    function testEnfileiraJobDeCreateQuandoAindaNaoSincronizado()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Pnab';
-        $subsite->url = 'subsite-pnab-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsite->save(true);
-        $this->app->enableAccessControl();
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', '123');
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $job = $this->findJob($opportunity->id);
-        $this->assertNotNull($job);
-        $this->assertSame('create', $job->action);
-
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
-    }
-
-    function testNaoReenfileiraCreateQuandoJaSincronizado()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $this->app->disableAccessControl();
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $job = $this->findJob($opportunity->id);
-        $this->assertNull($job);
-    }
-
     // ===== 500 genérico ao salvar (caso original da lista, sem achado novo) =====
 
     function testFalhaAoSalvarRetorna500ELoga()
@@ -319,164 +264,6 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
 
         $this->assertSame(500, $this->responseStatus());
         $this->assertTrue($payload['error'] ?? null);
-    }
-
-    // ===== Elegibilidade para job de create (guards) =====
-
-    function testNaoEnfileiraCreateJobQuandoFederativeEntityIdAusente()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Guard Test';
-        $subsite->url = 'subsite-guard-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsite->save(true);
-        $opportunity->subsite = $subsite;
-        // federativeEntityId deliberadamente não setado
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $this->assertNull($this->findJob($opportunity->id), 'Não deve enfileirar sem federativeEntityId');
-
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
-    }
-
-    function testNaoEnfileiraCreateJobQuandoSubsiteDaOportunidadeNaoCoincideComPnab()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $subsiteOpp = new \MapasCulturais\Entities\Subsite();
-        $subsiteOpp->name = 'Subsite Da Oportunidade';
-        $subsiteOpp->url = 'subsite-opp-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsiteOpp->save(true);
-        $opportunity->subsite = $subsiteOpp;
-        $opportunity->setMetadata('federativeEntityId', '1');
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        // ALDIRBLANC_SUBSITE_ID aponta para subsite diferente
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) ($subsiteOpp->id + 9999);
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $this->assertNull(
-            $this->findJob($opportunity->id),
-            'Não deve enfileirar quando subsite da oportunidade não coincide com ALDIRBLANC_SUBSITE_ID'
-        );
-
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
-    }
-
-    function testNaoEnfileiraCreateJobQuandoALDIRBLANCSubsiteIdNaoConfigurado()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Sem Env';
-        $subsite->url = 'subsite-sem-env-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsite->save(true);
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', '1');
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        // ALDIRBLANC_SUBSITE_ID deliberadamente não configurado
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $this->assertNull(
-            $this->findJob($opportunity->id),
-            'Não deve enfileirar quando ALDIRBLANC_SUBSITE_ID não está configurado'
-        );
-    }
-
-    function testNaoEnfileiraCreateJobQuandoOportunidadeTemParent()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $main = $this->opportunity($user, 'Oportunidade principal');
-
-        $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Parent Guard';
-        $subsite->url = 'subsite-parent-guard-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsite->save(true);
-
-        $opportunityClassName = $user->profile->opportunityClassName;
-        $child = new $opportunityClassName();
-        $child->parent = $main;
-        $child->owner = $user->profile;
-        $child->ownerEntity = $user->profile;
-        $child->name = 'Fase filha';
-        $child->shortDescription = 'fase';
-        $child->status = Opportunity::STATUS_DRAFT;
-        $child->subsite = $subsite;
-        $child->setMetadata('federativeEntityId', '1');
-        $child->save(true);
-        $this->app->enableAccessControl();
-
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $child->id, 'shortDescription' => 'desc'];
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $this->assertNull(
-            $this->findJob($child->id),
-            'Oportunidade com parent não deve enfileirar job de create'
-        );
-
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
-    }
-
-    function testNaoEnfileiraCreateJobQuandoStatusEhStatusPhase()
-    {
-        $user = $this->userDirector->createUser();
-        $this->login($user);
-        $opportunity = $this->opportunity($user);
-
-        $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Phase Guard';
-        $subsite->url = 'subsite-phase-guard-' . uniqid();
-        $this->app->disableAccessControl();
-        $subsite->save(true);
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', '1');
-        $opportunity->status = Opportunity::STATUS_PHASE;
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $controller = $this->controller();
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
-        $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
-
-        $this->assertNull(
-            $this->findJob($opportunity->id),
-            'Oportunidade com status STATUS_PHASE não deve enfileirar job de create'
-        );
-
-        unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
 
     // ===== Achado 1: guest é Halt/401, não um JSON de 403 =====
@@ -539,18 +326,17 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $this->assertSame(500, $this->responseStatus());
     }
 
-    // ===== Achado 4: falha ao enfileirar não deve impedir a resposta de sucesso =====
+    // ===== Enfileiramento do job de update (via hook update:finish) =====
 
-    function testFalhaAoEnfileirarJobNaoImpedeRespostaDeSucesso()
+    function testPostGenerateEnfileiraJobDeUpdateQuandoOportunidadeElegivel()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
         $opportunity = $this->opportunity($user);
 
-        // eligibilidade mínima para que enqueueOportunidadeCreateJob seja chamado
         $subsite = new \MapasCulturais\Entities\Subsite();
-        $subsite->name = 'Subsite Pnab Falha';
-        $subsite->url = 'subsite-pnab-falha-' . uniqid();
+        $subsite->name = 'Subsite Pnab PostGenerate';
+        $subsite->url = 'subsite-pnab-postgen-' . uniqid();
         $this->app->disableAccessControl();
         $subsite->save(true);
         $opportunity->subsite = $subsite;
@@ -560,17 +346,25 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
         $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
 
         $controller = $this->controller();
-        $controller->setEnqueueCreateJobException(new \RuntimeException('fila indisponível'));
-        $controller->data = ['opportunityId' => $opportunity->id, 'shortDescription' => 'desc'];
+        $controller->data = [
+            'opportunityId' => $opportunity->id,
+            'shortDescription' => 'desc',
+            'parExercicioId' => '10',
+            'parMetaId' => '20',
+            'parAcaoId' => '30',
+            'parAtividadeId' => '40',
+        ];
 
         $payload = $this->callJson(fn() => $controller->callSaveOpportunityPostGenerate());
 
         $this->assertSame(200, $this->responseStatus());
         $this->assertTrue($payload['success']);
-
-        $refreshed = $this->app->repo('Opportunity')->find($opportunity->id);
-        $this->assertSame('desc', $refreshed->shortDescription);
+        $this->assertNotNull(
+            $this->findUpdateJob($opportunity->id),
+            'saveOpportunityPostGenerate deve enfileirar o job de update (PUT) via hook'
+        );
 
         unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
     }
+
 }

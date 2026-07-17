@@ -18,7 +18,6 @@ class TestableController extends Controller
     private $syncCallback = null;
     private int $syncCalls = 0;
     private ?\Throwable $controlPermissionException = null;
-    private ?\Throwable $enqueueCreateJobException = null;
     private ?\Throwable $saveAfterPostGenerateException = null;
 
     public function callSaveOpportunityPostGenerate(): void
@@ -29,11 +28,6 @@ class TestableController extends Controller
     public function setControlPermissionException(\Throwable $exception): void
     {
         $this->controlPermissionException = $exception;
-    }
-
-    public function setEnqueueCreateJobException(\Throwable $exception): void
-    {
-        $this->enqueueCreateJobException = $exception;
     }
 
     public function setSaveAfterPostGenerateException(\Throwable $exception): void
@@ -48,15 +42,6 @@ class TestableController extends Controller
         }
 
         parent::checkOpportunityControlPermission($opportunity);
-    }
-
-    protected function enqueueOportunidadeCreateJob(Opportunity $opportunity): void
-    {
-        if ($this->enqueueCreateJobException) {
-            throw $this->enqueueCreateJobException;
-        }
-
-        parent::enqueueOportunidadeCreateJob($opportunity);
     }
 
     protected function saveOpportunityAfterPostGenerate(Opportunity $opportunity): void

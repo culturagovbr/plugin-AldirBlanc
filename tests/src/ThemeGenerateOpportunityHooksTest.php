@@ -123,6 +123,15 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
 
+    /** Preenche os 4 dados do PAR exigidos por validateIntegrationJob. */
+    private function setPar($entity): void
+    {
+        $entity->setMetadata('parExercicioId', '1');
+        $entity->setMetadata('parMetaId', '2');
+        $entity->setMetadata('parAcaoId', '3');
+        $entity->setMetadata('parAtividadeId', '4');
+    }
+
     // ===== POST(opportunity.generateopportunity):before — validação de compatibilidade do PAR =====
 
     private function fireGenerateOpportunityBeforeHook(Opportunity $model, ?string $parAcaoId): void
@@ -255,43 +264,50 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayHasKey('parAcaoId', $payload['data']);
     }
 
-    // ===== validateIntegrationJob (gate de integração CultBr), via insert:finish/update:finish =====
+    // ===== entity(Opportunity).validationErrors — trava do PAR sem parActions =====
 
-    function testNaoDisparaJobQuandoIsGeneratedFromModelEhFalso()
+    function testValidationBloqueiaSalvarParSemParActions()
     {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade sem parActions');
 
+        $federativeEntity = $this->persistFederativeEntity('55555555555555', 'Ente Cinco', [
+            ['metas' => [['acoes' => [['id' => '3', 'nome' => 'Ação Qualquer']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $errors = $opportunity->validationErrors;
+        $this->assertArrayHasKey('parAcaoId', $errors);
+        $this->assertStringContainsString('entre em contato com o suporte', $errors['parAcaoId'][0]);
+    }
+
+    function testValidationLiberaOParComParActionsEAcaoCompativel()
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade com parActions');
         $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        // isGeneratedFromModel deliberadamente não setado (simula o clone recém-gerado).
+        $opportunity->setMetadata('parActions', json_encode(['Ação Compatível']));
+        $opportunity->setMetadata('parExercicioId', '1');
+        $opportunity->setMetadata('parMetaId', '2');
+        $opportunity->setMetadata('parAcaoId', '42');
+        $opportunity->setMetadata('parAtividadeId', '4');
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
-        $this->assertNull($this->findJob($opportunity->id, 'create'));
-        $this->assertNull($this->findJob($opportunity->id, 'update'));
+        $federativeEntity = $this->persistFederativeEntity('66666666666666', 'Ente Seis', [
+            ['metas' => [['acoes' => [['id' => '42', 'nome' => 'Ação Compatível']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $errors = $opportunity->validationErrors;
+        $this->assertArrayNotHasKey('parAcaoId', $errors);
     }
 
-    function testNaoDisparaUpdateQuandoStatusContinuaDraftAposMarcarComoGerada()
-    {
-        $user = $this->userDirector->createUser();
-        $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab');
-        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // status permanece DRAFT (equivalente ao saveOpportunityPostGenerate, antes da publicação).
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
-
-        $this->assertNull($this->findJob($opportunity->id, 'update'));
-    }
+    // ===== validateIntegrationJob (gate de integração CultBr), via update:finish =====
 
     function testDisparaUpdateQuandoTudoCorretoESubsiteCoincide()
     {
@@ -303,9 +319,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // create já foi sincronizado: permite enfileirar update
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -316,63 +330,85 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
     }
 
     /**
-     * Quando a oportunidade ainda não foi enviada ao CultBr (cultBrCreateSynced ausente/false),
-     * o hook update:finish NÃO deve enfileirar o job de update mesmo com status ENABLED.
-     * O PUT chegaria antes do POST e resultaria em 404 na API.
+     * Sem os 4 dados do PAR preenchidos, o hook não deve enfileirar o job de update.
      */
-    function testNaoDisparaUpdateJobQuandoCreateAindaNaoFoiSincronizado()
+    function testNaoDisparaUpdateQuandoSemDadosDoPar()
     {
         $user = $this->userDirector->createUser();
         $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab Sync');
+        $subsite = $this->subsite($user, 'Subsite Pnab Par');
         $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
 
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        // cultBrCreateSynced deliberadamente NÃO setado (create não executou ainda)
+        // PAR deliberadamente ausente
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
         $this->assertNull(
             $this->findJob($opportunity->id, 'update'),
-            'Não deve enfileirar update se o create ainda não foi sincronizado'
+            'Oportunidade sem os dados do PAR não deve enfileirar job de update'
         );
     }
 
     /**
-     * Quando cultBrCreateSynced está explicitamente como false,
-     * o update:finish também não deve enfileirar o job de update.
+     * Sem gate de status: uma oportunidade em rascunho que passa os demais guards
+     * também enfileira o job de update (o envio ao CultBR ocorre em qualquer save).
      */
-    function testNaoDisparaUpdateJobQuandoCultBrCreateSyncedEhFalso()
+    function testDisparaUpdateEmRascunho()
     {
         $user = $this->userDirector->createUser();
         $opportunity = $this->opportunity($user);
-        $subsite = $this->subsite($user, 'Subsite Pnab False');
+        $subsite = $this->subsite($user, 'Subsite Pnab Rascunho');
         $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
 
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '0');
+        $this->setPar($opportunity);
+        $opportunity->status = Opportunity::STATUS_DRAFT;
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertNotNull(
+            $this->findJob($opportunity->id, 'update'),
+            'Rascunho elegível também deve enfileirar o job de update'
+        );
+    }
+
+    /**
+     * Com apenas parte dos 4 dados do PAR (3 de 4), o hook não deve enfileirar o job —
+     * a regra exige os 4.
+     */
+    function testNaoDisparaUpdateQuandoPARIncompleto()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+        $subsite = $this->subsite($user, 'Subsite Pnab Par Parcial');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $this->app->disableAccessControl();
+        $opportunity->subsite = $subsite;
+        $opportunity->setMetadata('federativeEntityId', 1);
+        $opportunity->setMetadata('parExercicioId', '1');
+        $opportunity->setMetadata('parMetaId', '2');
+        $opportunity->setMetadata('parAcaoId', '3');
+        // parAtividadeId deliberadamente ausente (3 de 4)
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
         $this->assertNull(
             $this->findJob($opportunity->id, 'update'),
-            'Não deve enfileirar update se cultBrCreateSynced é false'
+            'PAR incompleto (3 de 4) não deve enfileirar job de update'
         );
     }
 
     /**
-     * Regressão do achado: a guarda de subsite em validateIntegrationJob era inalcançável
-     * (a condição "!$isGeneratedFromModel" nela já era sempre falsa nesse ponto da função),
-     * então uma oportunidade gerada a partir de modelo em outro subsite disparava a integração
-     * mesmo assim. Depois do fix, deve bloquear.
+     * Oportunidade em subsite diferente do subsite do Pnab (ALDIRBLANC_SUBSITE_ID)
+     * não deve disparar o job de update.
      */
     function testNaoDisparaUpdateQuandoSubsiteDaOportunidadeNaoEhOSubsitePnab()
     {
@@ -385,7 +421,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsiteDaOportunidade;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -406,9 +442,8 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
+        $this->setPar($opportunity);
         // federativeEntityId deliberadamente ausente
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();
@@ -440,8 +475,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $child->shortDescription = 'fase';
         $child->subsite = $subsite;
         $child->setMetadata('federativeEntityId', 1);
-        $child->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $child->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $this->setPar($child);
         $child->status = Opportunity::STATUS_ENABLED;
         $child->save(true);
         $this->app->enableAccessControl();
@@ -467,8 +501,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->disableAccessControl();
         $opportunity->subsite = $subsite;
         $opportunity->setMetadata('federativeEntityId', 1);
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
-        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, '1');
+        $this->setPar($opportunity);
         $opportunity->status = Opportunity::STATUS_ENABLED;
         $opportunity->save(true);
         $this->app->enableAccessControl();

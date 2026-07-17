@@ -14,7 +14,6 @@ use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
-use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserService;
@@ -45,15 +44,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
         return parent::getRequestedEntity();
     }
-
-    /**
-     * Gravado em POST_saveOpportunityPostGenerate (fluxo «usar modelo» no tema Pnab).
-     * O tema Pnab consulta em getCultBrIntegrationBlockReason (gate comum a POST create e PUT publish no Cult).
-     */
-    public const OPPORTUNITY_META_IS_GENERATED_FROM_MODEL = 'isGeneratedFromModel';
-
-    /** Gravado em OportunidadeCultJob após POST create no Cult; o tema Pnab não re-enfileira create em rascunho enquanto isto estiver ativo. */
-    public const OPPORTUNITY_META_CULT_BR_CREATE_SYNCED = 'cultBrCreateSynced';
 
     /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
     public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
@@ -788,7 +778,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         try {
             $opportunity->shortDescription = $shortDescriptionFromRequest;
-            $opportunity->setMetadata(self::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, '1');
 
             if ($requestIncludesAnyParField) {
                 foreach ($parInstrumentMetadataKeys as $parFieldKey) {
@@ -814,24 +803,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $isCultBrCreateSynced = (bool) filter_var(
-            $opportunity->getMetadata(self::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED),
-            FILTER_VALIDATE_BOOLEAN
-        );
-        if (!$isCultBrCreateSynced && $this->isEligibleForCultBrCreateJob($opportunity)) {
-            try {
-                $this->enqueueOportunidadeCreateJob($opportunity);
-            } catch (\Throwable $enqueueFailure) {
-                // Os dados da oportunidade já foram persistidos com sucesso; o enfileiramento
-                // é fire-and-forget (mesma filosofia de retry do OportunidadeCultJob), então uma
-                // falha aqui não deve impedir a resposta de sucesso ao cliente.
-                $application->log->error(
-                    '[AldirBlanc] saveOpportunityPostGenerate: falha ao enfileirar job de create: '
-                    . $enqueueFailure->getMessage()
-                );
-            }
-        }
-
         $this->json(['success' => true, 'id' => $opportunity->id]);
     }
 
@@ -851,52 +822,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     protected function saveOpportunityAfterPostGenerate(Opportunity $opportunity): void
     {
         $opportunity->save(true);
-    }
-
-    /**
-     * Extraído como ponto de extensão para permitir testar o catch de enfileiramento de
-     * saveOpportunityPostGenerate sem depender de uma falha real do sistema de filas.
-     */
-    protected function enqueueOportunidadeCreateJob(Opportunity $opportunity): void
-    {
-        App::i()->enqueueOrReplaceJob(
-            OportunidadeCultJob::SLUG,
-            ['action' => 'create', 'opportunity' => $opportunity],
-            'now',
-        );
-    }
-
-    /**
-     * Verifica se a oportunidade está elegível para o job de create no CultBr.
-     * Espelha os guards de validateIntegrationJob (Theme.php) para evitar enfileirar
-     * oportunidades que falhariam na integração.
-     */
-    protected function isEligibleForCultBrCreateJob(Opportunity $opportunity): bool
-    {
-        $federativeEntityId = $opportunity->getMetadata('federativeEntityId');
-        if (empty($federativeEntityId)) {
-            return false;
-        }
-
-        $subsiteId = (int) $opportunity->subsite?->id;
-        if ($subsiteId < 1) {
-            return false;
-        }
-
-        $themePnabSubsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
-        if ($themePnabSubsiteId === 0 || $subsiteId !== $themePnabSubsiteId) {
-            return false;
-        }
-
-        if ($opportunity->parent !== null) {
-            return false;
-        }
-
-        if ((int) $opportunity->status === Opportunity::STATUS_PHASE) {
-            return false;
-        }
-
-        return true;
     }
 
     /*

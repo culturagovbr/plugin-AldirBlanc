@@ -13,9 +13,9 @@ use Tests\Traits\UserDirector;
 /**
  * Testes de integração do fluxo update de OportunidadeCultJob.
  *
- * Cobre: execução em modo development (sem chamada HTTP real), ausência de flag
- * após sucesso (update não persiste cultBrCreateSynced), mecanismo de retry em caso
- * de falha, e respeito ao limite de MAX_ATTEMPTS.
+ * Cobre: execução em modo development (sem chamada HTTP real), gravação de
+ * cultBrLastSyncedAt após sucesso, mecanismo de retry em caso de falha, respeito
+ * ao limite de MAX_ATTEMPTS, e dispatch de ação desconhecida.
  *
  * Pré-requisito de ambiente: PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT e
  * ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB devem estar configurados (ver docker-compose.yml
@@ -92,27 +92,6 @@ class OportunidadeCultJobUpdateTest extends TestCase
     }
 
     /**
-     * O job de update não persiste nenhum flag após sucesso — ao contrário do create,
-     * que grava cultBrCreateSynced. Verificar que nenhuma linha de flag de update
-     * é criada na opportunity_meta.
-     */
-    function testUpdateJobNaoGravaFlagCultBrCreateSyncedAposSucesso()
-    {
-        $user = $this->userDirector->createUser();
-        $opp = $this->createOpportunity($user);
-
-        $this->enqueueUpdateJob($opp);
-        $this->processJobs(number_of_jobs: 1);
-
-        // cultBrCreateSynced só deve ser gravado pelo create job — não pelo update.
-        $row = $this->app->em->getConnection()->fetchAssociative(
-            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
-            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED]
-        );
-        $this->assertFalse($row, 'Update job não deve gravar flag cultBrCreateSynced');
-    }
-
-    /**
      * Quando updateInCult() falha (oportunidade não encontrada no DQL), o job original
      * é processado com return true (deletado da fila) e um novo job de retry é enfileirado.
      */
@@ -160,29 +139,6 @@ class OportunidadeCultJobUpdateTest extends TestCase
             $this->findUpdateJob($oppId),
             'Não deve restar job na fila após esgotar MAX_ATTEMPTS'
         );
-    }
-
-    /**
-     * Quando a oportunidade não é encontrada pelo DQL (updateInCult lança Exception),
-     * o job falha mas não grava cultBrCreateSynced — esse flag é exclusivo do create job.
-     * Garante que o update job não introduz esse metadado como efeito colateral de falha.
-     */
-    function testUpdateJobOportunidadeNaoEncontradaNaoGravaFlagCultBrCreateSynced()
-    {
-        $user = $this->userDirector->createUser();
-        $opp = $this->createOpportunity($user);
-        $oppId = $opp->id;
-
-        $this->enqueueUpdateJob($opp);
-        $this->deleteOpportunityFromDb($oppId);
-
-        $this->processJobs(number_of_jobs: 1);
-
-        $row = $this->app->em->getConnection()->fetchAssociative(
-            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
-            ['id' => $oppId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED]
-        );
-        $this->assertFalse($row, 'Update job com falha não deve gravar flag cultBrCreateSynced');
     }
 
     function testUpdateJobGravaCultBrLastSyncedAtAposSucesso()
@@ -242,5 +198,37 @@ class OportunidadeCultJobUpdateTest extends TestCase
         );
         $this->assertCount(1, $rows, 'Deve existir exatamente uma linha de cultBrLastSyncedAt');
         $this->assertNotEquals($first['value'], $rows[0]['value'], 'Timestamp deve ser atualizado na segunda execução');
+    }
+
+    /**
+     * Ação desconhecida (ex.: 'create', removida do fluxo) não existe em ACTIONS:
+     * o job lança "Method not found" antes do try/catch, então não enfileira retry.
+     */
+    function testAcaoDesconhecidaLancaExcecaoSemRetry()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
+            'opportunity' => $opp,
+            'action'      => 'create',
+        ]);
+
+        $jobId = md5("oportunidade-cult:oportunidade-cult-create:{$opp->id}");
+        $jobEntity = $this->app->repo('Job')->findOneBy(['id' => $jobId]);
+        $this->assertNotNull($jobEntity, 'Job com ação desconhecida deve existir antes de executar');
+
+        try {
+            (new OportunidadeCultJob(OportunidadeCultJob::SLUG))->_execute($jobEntity);
+            $this->fail('Esperava Exception "Method not found" para ação desconhecida');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('Method not found: create', $e->getMessage());
+        }
+
+        // O retry (attempt+1) fica dentro do catch de _execute, que não é alcançado.
+        $this->assertNull(
+            $this->findUpdateJob($opp->id),
+            'Ação desconhecida não deve enfileirar job de update'
+        );
     }
 }

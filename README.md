@@ -43,8 +43,7 @@ Para uma análise detalhada do fluxo completo (casos de uso, sequência passo a 
 
 | Variável | Uso |
 |---|---|
-| `PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT` | Endpoint de criação (POST) de oportunidade (`OportunidadeCultClient::create()`) |
-| `PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT` | Endpoint de atualização (PUT) de oportunidade, `{id}` substituído (`OportunidadeCultClient::update()`) |
+| `PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT` | Endpoint de envio (PUT/upsert) de oportunidade, `{id}` substituído (`OportunidadeCultClient::update()`) |
 | `ALDIRBLANC_SUBSITE_ID` | Subsite onde a integração de oportunidades está habilitada (`Controller`, endpoint inbound, e `IntegrationTokenHelper`) |
 | `ALDIRBLANC_APPLICATION_NAME` | Nome da aplicação registrada para o token de integração inbound ("Meus Aplicativos") — usada por `IntegrationTokenHelper` |
 | `ALDIRBLANC_INTEGRATION_CACHE_TTL` | TTL de cache, usado em três pontos: cache da resposta do endpoint inbound (`Controller::API_integrationOpportunities`), cache do `IntegrationTokenHelper`, e TTL do cache de tentativas de retry do `OportunidadeCultJob` |
