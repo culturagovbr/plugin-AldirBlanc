@@ -29,7 +29,6 @@ class Plugin extends \MapasCulturais\Plugin
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
                 'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', 'par/sefic/acoes'),
-                'createOportunidadeEndpoint' => env('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT', null),
                 'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
             ], 
             // Token de integração para consumo do CultBR
@@ -153,19 +152,6 @@ class Plugin extends \MapasCulturais\Plugin
             'label' => i::__('PAR - Atividade'),
             'type' => 'string',
             'private' => false,
-        ]);
-
-        // Gravado em POST_saveOpportunityPostGenerate; validateIntegrationJob no tema Pnab consulta para subsite.
-        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_IS_GENERATED_FROM_MODEL, [
-            'label' => i::__('Oportunidade gerada a partir de modelo'),
-            'type' => 'string',
-            'private' => true,
-        ]);
-
-        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_CREATE_SYNCED, [
-            'label' => i::__('Create CultBR já enviado com sucesso'),
-            'type' => 'string',
-            'private' => true,
         ]);
 
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT, [

@@ -25,22 +25,6 @@ class OportunidadeCultClientTest extends TestCase
         return new OpportunityDto(id: 1);
     }
 
-    function testCreateLancaRuntimeExceptionQuandoEndpointNaoConfigurado()
-    {
-        $original = Plugin::getInstance()->config['client']['createOportunidadeEndpoint'];
-        $client = new OportunidadeCultClient(new OpportunityId(1));
-        $this->setPluginClientConfig('createOportunidadeEndpoint', null);
-
-        try {
-            $client->create($this->makePayload());
-            $this->fail('Esperava RuntimeException ao chamar create() sem endpoint configurado');
-        } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('PNAB_CULTBR_CREATE_OPORTUNIDADE_ENDPOINT', $e->getMessage());
-        } finally {
-            $this->setPluginClientConfig('createOportunidadeEndpoint', $original);
-        }
-    }
-
     function testUpdateLancaRuntimeExceptionQuandoEndpointNaoConfigurado()
     {
         $original = Plugin::getInstance()->config['client']['updateOportunidadeEndpoint'];

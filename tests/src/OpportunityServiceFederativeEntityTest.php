@@ -14,7 +14,7 @@ use Tests\Traits\UserDirector;
  * OpportunityService::findOpportunitiesByFederativeEntity — filtros de elegibilidade.
  *
  * Cobre: retorno de elegíveis, array vazio sem elegíveis, exclusão por ente diferente,
- * subsite diferente, isGeneratedFromModel ausente, status != ENABLED, parent != NULL,
+ * subsite diferente, status != ENABLED, parent != NULL,
  * status = STATUS_PHASE.
  */
 class OpportunityServiceFederativeEntityTest extends TestCase
@@ -69,7 +69,6 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $opp->status = Opportunity::STATUS_ENABLED;
         $opp->save(true);
         $opp->setMetadata('federativeEntityId', (string) $entity->id);
-        $opp->setMetadata('isGeneratedFromModel', '1');
         $opp->save(true);
         $this->app->enableAccessControl();
         return $opp;
@@ -144,33 +143,6 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $this->assertSame([], $result);
     }
 
-    function testNaoRetornaOportunidadeSemIsGeneratedFromModel()
-    {
-        $user = $this->userDirector->createUser();
-        $subsite = $this->subsite($user);
-        $entity = $this->federativeEntity('12345678901234', 'Ente Sem Model');
-
-        $this->login($user);
-        $this->app->disableAccessControl();
-        $opportunityClassName = $user->profile->opportunityClassName;
-        $opp = new $opportunityClassName();
-        $opp->owner = $user->profile;
-        $opp->ownerEntity = $user->profile;
-        $opp->name = 'Sem isGeneratedFromModel';
-        $opp->shortDescription = 'Sem isGeneratedFromModel';
-        $opp->subsite = $subsite;
-        $opp->status = Opportunity::STATUS_ENABLED;
-        $opp->save(true);
-        $opp->setMetadata('federativeEntityId', (string) $entity->id);
-        // isGeneratedFromModel deliberadamente ausente
-        $opp->save(true);
-        $this->app->enableAccessControl();
-
-        $result = $this->service->findOpportunitiesByFederativeEntity($entity->document, $subsite->id);
-
-        $this->assertSame([], $result);
-    }
-
     function testRetornaOportunidadeComStatusDraft()
     {
         $user = $this->userDirector->createUser();
@@ -189,7 +161,6 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $opp->status = Opportunity::STATUS_DRAFT;
         $opp->save(true);
         $opp->setMetadata('federativeEntityId', (string) $entity->id);
-        $opp->setMetadata('isGeneratedFromModel', '1');
         $opp->save(true);
         $this->app->enableAccessControl();
 
@@ -217,7 +188,6 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $opp->status = Opportunity::STATUS_PHASE;
         $opp->save(true);
         $opp->setMetadata('federativeEntityId', (string) $entity->id);
-        $opp->setMetadata('isGeneratedFromModel', '1');
         $opp->save(true);
         $this->app->enableAccessControl();
 
@@ -247,7 +217,6 @@ class OpportunityServiceFederativeEntityTest extends TestCase
         $child->parent = $parent;
         $child->save(true);
         $child->setMetadata('federativeEntityId', (string) $entity->id);
-        $child->setMetadata('isGeneratedFromModel', '1');
         $child->save(true);
         $this->app->enableAccessControl();
 
