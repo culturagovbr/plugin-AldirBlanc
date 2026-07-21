@@ -97,5 +97,14 @@ return [
         if (__table_exists('cultbr_request_log_attempt')) {
             __try("ALTER TABLE cultbr_request_log_attempt ADD COLUMN response_headers JSONB NULL");
         }
+    },
+
+    'add user_id column to cultbr_request_log' => function () {
+        if (__table_exists('cultbr_request_log')) {
+            // Nulo para envios sem autor (sync em lote, execuções por CLI).
+            __try("ALTER TABLE cultbr_request_log ADD COLUMN user_id INT NULL");
+            __try("CREATE INDEX IDX_cultbr_request_log_user_id ON cultbr_request_log (user_id)");
+            __try("ALTER TABLE cultbr_request_log ADD CONSTRAINT FK_cultbr_request_log_user FOREIGN KEY (user_id) REFERENCES usr(id) ON DELETE SET NULL");
+        }
     }
 ];

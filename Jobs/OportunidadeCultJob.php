@@ -80,7 +80,13 @@ class OportunidadeCultJob extends JobType
 		// Histórico da aba "Logs CultBr": o uuid nasce na primeira tentativa e viaja no payload
 		// do job, de modo que as retentativas entrem como tentativas do mesmo envio.
 		$logService = new CultBrRequestLogService();
-		$requestLog = $this->recordLog(fn() => $logService->startOrResume((int) $opportunity->id, $action, $job->requestUuid ?? null));
+		// $job->user é o usuário logado no save que enfileirou o job (App::enqueueJob).
+		$requestLog = $this->recordLog(fn() => $logService->startOrResume(
+			(int) $opportunity->id,
+			$action,
+			$job->requestUuid ?? null,
+			$job->user ?? null
+		));
 		if ($requestLog) {
 			$this->oportunidadeCultClient->setExchangeRecorder(
 				fn(array $exchange) => $this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [

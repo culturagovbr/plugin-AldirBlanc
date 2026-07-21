@@ -5,6 +5,7 @@ namespace AldirBlanc\Services;
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use MapasCulturais\App;
+use MapasCulturais\Entities\User;
 
 /**
  * Histórico de envios de oportunidade ao CultBR (aba "Logs CultBr").
@@ -17,9 +18,15 @@ class CultBrRequestLogService
 {
     /**
      * Recupera o envio pelo uuid (retentativa) ou cria um novo (primeira tentativa).
+     * O autor só é gravado na criação: na retentativa o job roda no worker, sem usuário logado,
+     * e quem disparou continua sendo quem salvou a oportunidade.
      */
-    public function startOrResume(int $opportunityId, string $action, ?string $requestUuid = null): CultBrRequestLog
-    {
+    public function startOrResume(
+        int $opportunityId,
+        string $action,
+        ?string $requestUuid = null,
+        ?User $user = null
+    ): CultBrRequestLog {
         $app = App::i();
 
         if ($requestUuid) {
@@ -34,6 +41,7 @@ class CultBrRequestLogService
         $log->opportunityId = $opportunityId;
         $log->action = $action;
         $log->result = CultBrRequestLog::RESULT_PENDING;
+        $log->user = $user;
         $log->createTimestamp = new \DateTime();
 
         $app->em->persist($log);
@@ -149,10 +157,22 @@ class CultBrRequestLogService
             'opportunityId' => $log->opportunityId,
             'action' => $log->action,
             'status' => $log->result,
+            'user' => $this->userToArray($log),
             'createdAt' => $log->createTimestamp ? $log->createTimestamp->format(\DateTime::ATOM) : null,
             'updatedAt' => $log->updateTimestamp ? $log->updateTimestamp->format(\DateTime::ATOM) : null,
             'attempts' => $attempts,
         ];
+    }
+
+    /**
+     * Autor do envio para a aba: só o id. Nulo quando não houve usuário (sync em lote, CLI).
+     * O e-mail não é exposto — é dado pessoal e o id já identifica quem disparou.
+     */
+    private function userToArray(CultBrRequestLog $log): ?array
+    {
+        $user = $log->user;
+
+        return $user ? ['id' => (int) $user->id] : null;
     }
 
     /**

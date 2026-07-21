@@ -15,6 +15,7 @@ use Doctrine\ORM\Mapping as ORM;
  * @property int $opportunityId
  * @property string $action Ação do job (hoje só `update`)
  * @property string $result self::RESULT_*
+ * @property \MapasCulturais\Entities\User|null $user Quem salvou a oportunidade que originou o envio
  * @property \DateTime $createTimestamp
  * @property \DateTime|null $updateTimestamp
  * @property \AldirBlanc\Entities\CultBrRequestLogAttempt[] $attempts
@@ -73,6 +74,19 @@ class CultBrRequestLog extends \MapasCulturais\Entity
      * @ORM\Column(name="status", type="string", length=16, nullable=false)
      */
     protected $result = self::RESULT_PENDING;
+
+    /**
+     * Autor do envio: o usuário logado no save que enfileirou o job (App::enqueueJob preenche
+     * Job::$user). Nulo quando não há autor — sync em lote e execuções por CLI.
+     *
+     * @var \MapasCulturais\Entities\User|null
+     *
+     * @ORM\ManyToOne(targetEntity="MapasCulturais\Entities\User")
+     * @ORM\JoinColumns({
+     *   @ORM\JoinColumn(name="user_id", referencedColumnName="id", nullable=true, onDelete="SET NULL")
+     * })
+     */
+    protected $user;
 
     /**
      * @var \DateTime
