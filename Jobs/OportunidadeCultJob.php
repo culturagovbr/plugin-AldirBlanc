@@ -7,6 +7,8 @@ use AldirBlanc\Plugin;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
+use AldirBlanc\Entities\CultBrRequestLog;
+use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
@@ -75,6 +77,19 @@ class OportunidadeCultJob extends JobType
 			throw new \Exception("Method not found: {$action}");
 		}
 
+		// Histórico da aba "Logs CultBr": o uuid nasce na primeira tentativa e viaja no payload
+		// do job, de modo que as retentativas entrem como tentativas do mesmo envio.
+		$logService = new CultBrRequestLogService();
+		$requestLog = $this->recordLog(fn() => $logService->startOrResume((int) $opportunity->id, $action, $job->requestUuid ?? null));
+		if ($requestLog) {
+			$this->oportunidadeCultClient->setExchangeRecorder(
+				fn(array $exchange) => $this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
+					'attempt'     => $attempt,
+					'maxAttempts' => self::MAX_ATTEMPTS,
+				]))
+			);
+		}
+
 		try {
 			$this->{$method}($opportunity);
 
@@ -83,7 +98,6 @@ class OportunidadeCultJob extends JobType
 			}
 
 			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$action} para oportunidade: {$opportunity->id}");
-			return true;
 		} catch (\Throwable $e) {
 			$app->log->error("OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}");
 
@@ -93,9 +107,35 @@ class OportunidadeCultJob extends JobType
 					'opportunity' => $opportunity,
 					'action'      => $action,
 					'attempt'     => $attempt + 1,
+					'requestUuid' => $requestLog?->requestUuid,
 				], $delay);
+			} elseif ($requestLog) {
+				// Sem retentativa restante: o envio se encerra em falha.
+				$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
 			}
 			return true;
+		}
+
+		// Fora do try: uma falha ao gravar o log não pode cair no catch acima e
+		// reenfileirar um PUT que já foi aceito pelo CultBR.
+		if ($requestLog) {
+			$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_SUCCESS));
+		}
+
+		return true;
+	}
+
+	/**
+	 * Executa uma gravação do histórico sem deixar que ela interfira no envio: o log é
+	 * acessório e sua falha (tabela ausente, banco indisponível) não pode alterar o fluxo.
+	 */
+	private function recordLog(callable $operation)
+	{
+		try {
+			return $operation();
+		} catch (\Throwable $e) {
+			App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
+			return null;
 		}
 	}
 
