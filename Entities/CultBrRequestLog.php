@@ -35,6 +35,12 @@ class CultBrRequestLog extends \MapasCulturais\Entity
     const RESULT_ERROR = 'error';
 
     /**
+     * Substituído por um envio mais novo antes de terminar: enqueueOrReplaceJob usa id
+     * determinístico sem o número da tentativa, então o retry pendente é descartado.
+     */
+    const RESULT_ABANDONED = 'abandoned';
+
+    /**
      * @var integer
      *
      * @ORM\Column(name="id", type="integer", nullable=false)

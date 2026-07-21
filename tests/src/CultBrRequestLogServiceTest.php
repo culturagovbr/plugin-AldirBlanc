@@ -181,6 +181,28 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertNotNull($log->updateTimestamp);
     }
 
+    /**
+     * O job de retry é descartado quando um novo save enfileira o mesmo id: sem fechar o envio
+     * anterior, ele apareceria "em andamento" para sempre na aba.
+     */
+    function testNovoEnvioAbandonaOsPendentesDaMesmaOportunidade()
+    {
+        $opportunityId = $this->opportunityId();
+        $service = $this->service();
+
+        $anterior = $service->startOrResume($opportunityId, 'update');
+        $this->assertEquals(CultBrRequestLog::RESULT_PENDING, $anterior->result);
+
+        $novo = $service->startOrResume($opportunityId, 'update');
+
+        // O abandono é um UPDATE atômico (não passa pelo UnitOfWork), então o objeto em
+        // memória precisa ser recarregado para refletir o banco.
+        $this->app->em->refresh($anterior);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_ABANDONED, $anterior->result);
+        $this->assertEquals(CultBrRequestLog::RESULT_PENDING, $novo->result, 'O envio novo não pode se abandonar');
+    }
+
     /** Formato que a aba consome: envios mais recentes primeiro, tentativas aninhadas. */
     function testFindByOpportunityDevolveEnviosComTentativasAninhadas()
     {

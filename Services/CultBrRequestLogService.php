@@ -50,7 +50,38 @@ class CultBrRequestLogService
         $app->em->persist($log);
         $app->em->flush();
 
+        // Depois de gravar o novo: se o insert falhasse antes, ficaríamos sem o envio antigo
+        // e sem o novo.
+        $this->abandonPendingLogs($opportunityId, $action, (int) $log->id);
+
         return $log;
+    }
+
+    /**
+     * Fecha envios anteriores que ficaram pendentes: enqueueOrReplaceJob descarta o job de
+     * retry quando um novo save enfileira o mesmo id, e sem isso o envio antigo apareceria
+     * "em andamento" para sempre.
+     */
+    private function abandonPendingLogs(int $opportunityId, string $action, int $currentLogId): void
+    {
+        // UPDATE condicional em vez de ler-alterar-gravar: dois workers concorrentes leriam o
+        // mesmo conjunto pendente, e o flush do UnitOfWork descarregaria tudo o que estivesse
+        // em memória, não só estes registros.
+        App::i()->em->createQuery(
+            'UPDATE ' . CultBrRequestLog::class . ' l
+                SET l.result = :abandoned, l.updateTimestamp = :now
+              WHERE l.opportunityId = :opportunityId
+                AND l.action = :action
+                AND l.result = :pending
+                AND l.id <> :currentLogId'
+        )->execute([
+            'abandoned' => CultBrRequestLog::RESULT_ABANDONED,
+            'now' => new \DateTime(),
+            'opportunityId' => $opportunityId,
+            'action' => $action,
+            'pending' => CultBrRequestLog::RESULT_PENDING,
+            'currentLogId' => $currentLogId,
+        ]);
     }
 
     /**
