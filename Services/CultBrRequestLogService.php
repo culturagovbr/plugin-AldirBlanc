@@ -153,7 +153,12 @@ class CultBrRequestLogService
             $skip
         );
 
-        return array_map(fn(CultBrRequestLog $log) => $this->toArray($log), $logs);
+        $attemptsByLog = $this->findAttemptsGroupedByLog($logs);
+
+        return array_map(
+            fn(CultBrRequestLog $log) => $this->toArray($log, $attemptsByLog[$log->id] ?? []),
+            $logs
+        );
     }
 
     public function countByOpportunity(int $opportunityId): int
@@ -167,19 +172,40 @@ class CultBrRequestLogService
     }
 
     /**
-     * Formato consumido pela aba "Logs CultBr".
+     * Tentativas de todos os envios da página numa consulta só, indexadas pelo id do envio.
+     * Consulta direta em vez de $log->attempts: a coleção inversa não enxerga a tentativa
+     * gravada na mesma sessão (o job grava e lê no mesmo request).
+     *
+     * @param \AldirBlanc\Entities\CultBrRequestLog[] $logs
      */
-    public function toArray(CultBrRequestLog $log): array
+    private function findAttemptsGroupedByLog(array $logs): array
     {
-        // Consulta direta em vez de $log->attempts: a coleção inversa não enxerga a tentativa
-        // gravada na mesma sessão (o job grava e lê no mesmo request).
+        if (!$logs) {
+            return [];
+        }
+
         $rows = App::i()->repo(CultBrRequestLogAttempt::class)->findBy(
-            ['log' => $log],
+            ['log' => $logs],
             ['attempt' => 'ASC']
         );
 
-        $attempts = [];
+        $grouped = [];
         foreach ($rows as $attempt) {
+            $grouped[$attempt->log->id][] = $attempt;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Formato consumido pela aba "Logs CultBr".
+     *
+     * @param \AldirBlanc\Entities\CultBrRequestLogAttempt[] $attemptEntities
+     */
+    private function toArray(CultBrRequestLog $log, array $attemptEntities): array
+    {
+        $attempts = [];
+        foreach ($attemptEntities as $attempt) {
             $attempts[] = [
                 'attempt' => $attempt->attempt,
                 'maxAttempts' => $attempt->maxAttempts,
