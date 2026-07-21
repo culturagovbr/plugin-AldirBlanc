@@ -155,7 +155,7 @@ abstract class AbstractClient
                 'method' => 'PUT',
                 'endpoint' => $this->endpoint ?? '',
                 'payload' => $data,
-                'status' => 'simulated',
+                'status' => CultBrRequestLogAttempt::RESULT_SIMULATED,
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
             ]);
@@ -205,7 +205,7 @@ abstract class AbstractClient
                 'responseHeaders' => $this->responseHeaders(),
                 'httpStatus' => $this->curl->http_status_code ?? null,
                 'error' => $this->exchangeErrorMessage($e),
-                'status' => 'error',
+                'status' => CultBrRequestLogAttempt::RESULT_ERROR,
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
             ]);
