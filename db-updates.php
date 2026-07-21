@@ -99,6 +99,17 @@ return [
         }
     },
 
+    'add listing index to cultbr_request_log' => function () {
+        if (__table_exists('cultbr_request_log')) {
+            // A listagem da aba filtra por oportunidade e ordena por data: o índice isolado de
+            // create_timestamp não serve a essa consulta, e o de opportunity_id passa a ser
+            // prefixo do composto — os dois viram custo de escrita sem uso.
+            __try("DROP INDEX IF EXISTS IDX_cultbr_request_log_create_timestamp");
+            __try("CREATE INDEX IDX_cultbr_request_log_opportunity_created ON cultbr_request_log (opportunity_id, create_timestamp DESC)");
+            __try("DROP INDEX IF EXISTS IDX_cultbr_request_log_opportunity_id");
+        }
+    },
+
     'add user_id column to cultbr_request_log' => function () {
         if (__table_exists('cultbr_request_log')) {
             // Nulo para envios sem autor (sync em lote, execuções por CLI).
