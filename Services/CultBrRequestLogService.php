@@ -89,9 +89,16 @@ class CultBrRequestLogService
 
     /**
      * Fecha o envio. Enquanto restarem retentativas, o status segue `pending`.
+     *
+     * Só transiciona a partir de `pending`: um worker que termine depois de o envio ter sido
+     * abandonado por um save mais novo não pode ressuscitá-lo como sucesso.
      */
     public function finish(CultBrRequestLog $log, string $result): void
     {
+        if ($log->result !== CultBrRequestLog::RESULT_PENDING) {
+            return;
+        }
+
         $app = App::i();
 
         $log->result = $result;
