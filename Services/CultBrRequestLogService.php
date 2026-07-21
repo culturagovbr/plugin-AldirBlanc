@@ -154,9 +154,14 @@ class CultBrRequestLogService
         );
 
         $attemptsByLog = $this->findAttemptsGroupedByLog($logs);
+        $userIdByLog = $this->findUserIdsByLog($logs);
 
         return array_map(
-            fn(CultBrRequestLog $log) => $this->toArray($log, $attemptsByLog[$log->id] ?? []),
+            fn(CultBrRequestLog $log) => $this->toArray(
+                $log,
+                $attemptsByLog[$log->id] ?? [],
+                $userIdByLog[$log->id] ?? null
+            ),
             $logs
         );
     }
@@ -198,11 +203,37 @@ class CultBrRequestLogService
     }
 
     /**
+     * Id do autor de cada envio da página, sem hidratar o User: acessar $log->user carregaria
+     * o proxy e faria uma consulta por usuário distinto da listagem.
+     *
+     * @param \AldirBlanc\Entities\CultBrRequestLog[] $logs
+     */
+    private function findUserIdsByLog(array $logs): array
+    {
+        if (!$logs) {
+            return [];
+        }
+
+        $rows = App::i()->em->createQuery(
+            'SELECT l.id AS logId, IDENTITY(l.user) AS userId
+               FROM ' . CultBrRequestLog::class . ' l
+              WHERE l.id IN (:ids)'
+        )->execute(['ids' => array_map(fn(CultBrRequestLog $log) => $log->id, $logs)]);
+
+        $userIdByLog = [];
+        foreach ($rows as $row) {
+            $userIdByLog[$row['logId']] = $row['userId'] !== null ? (int) $row['userId'] : null;
+        }
+
+        return $userIdByLog;
+    }
+
+    /**
      * Formato consumido pela aba "Logs CultBr".
      *
      * @param \AldirBlanc\Entities\CultBrRequestLogAttempt[] $attemptEntities
      */
-    private function toArray(CultBrRequestLog $log, array $attemptEntities): array
+    private function toArray(CultBrRequestLog $log, array $attemptEntities, ?int $userId): array
     {
         $attempts = [];
         foreach ($attemptEntities as $attempt) {
@@ -227,22 +258,12 @@ class CultBrRequestLogService
             'opportunityId' => $log->opportunityId,
             'action' => $log->action,
             'status' => $log->result,
-            'user' => $this->userToArray($log),
+            // Só o id: o e-mail é dado pessoal e o id já identifica quem disparou.
+            'user' => $userId ? ['id' => $userId] : null,
             'createdAt' => $log->createTimestamp ? $log->createTimestamp->format(\DateTime::ATOM) : null,
             'updatedAt' => $log->updateTimestamp ? $log->updateTimestamp->format(\DateTime::ATOM) : null,
             'attempts' => $attempts,
         ];
-    }
-
-    /**
-     * Autor do envio para a aba: só o id. Nulo quando não houve usuário (sync em lote, CLI).
-     * O e-mail não é exposto — é dado pessoal e o id já identifica quem disparou.
-     */
-    private function userToArray(CultBrRequestLog $log): ?array
-    {
-        $user = $log->user;
-
-        return $user ? ['id' => (int) $user->id] : null;
     }
 
     /**
