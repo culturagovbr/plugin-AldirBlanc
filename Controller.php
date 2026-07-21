@@ -12,6 +12,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
@@ -107,6 +108,47 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json([
             'federativeEntityId' => $sessionEntityId,
             'exercicios' => FederativeEntityService::getParExerciciosForSessionSelectedEntity(),
+        ]);
+    }
+
+    /**
+     * Histórico de envios da oportunidade ao CultBR (aba "Logs CultBr").
+     * Restrito a admin: o payload traz dados internos da integração.
+     *
+     * GET /aldirblanc/opportunityCultLogs?opportunityId=123&skip=0&limit=20
+     */
+    function GET_opportunityCultLogs()
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::isAdmin()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $opportunityId = isset($this->data['opportunityId']) ? (int) $this->data['opportunityId'] : 0;
+        if ($opportunityId < 1) {
+            $this->errorJson(i::__('Informe a oportunidade.'), 400);
+            return;
+        }
+
+        $app = App::i();
+        if ($app->repo('Opportunity')->find($opportunityId) === null) {
+            $this->errorJson(i::__('Oportunidade não encontrada.'), 404);
+            return;
+        }
+
+        $skip = isset($this->data['skip']) ? max(0, (int) $this->data['skip']) : 0;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : 20;
+        $limit = max(1, min($limit, 100));
+
+        $logService = new CultBrRequestLogService();
+
+        $this->json([
+            'data' => $logService->findByOpportunity($opportunityId, $skip, $limit),
+            'total' => $logService->countByOpportunity($opportunityId),
+            'skip' => $skip,
+            'limit' => $limit,
         ]);
     }
 
