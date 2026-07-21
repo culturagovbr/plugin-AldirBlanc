@@ -98,6 +98,17 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertEquals('Erro na API', $attempt->errorMessage);
     }
 
+    /** Sem desfecho no exchange não se assume sucesso: o registro nasce como falha. */
+    function testRecordAttemptSemStatusRegistraFalha()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+
+        $attempt = $service->recordAttempt($log, ['attempt' => 1, 'maxAttempts' => 3]);
+
+        $this->assertEquals(CultBrRequestLogAttempt::RESULT_ERROR, $attempt->result);
+    }
+
     function testFinishAtualizaResultadoDoEnvio()
     {
         $service = $this->service();

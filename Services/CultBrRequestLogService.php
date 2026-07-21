@@ -71,7 +71,8 @@ class CultBrRequestLogService
             ? $exchange['responseHeaders']
             : null;
         $attempt->errorMessage = $exchange['error'] ?? null;
-        $attempt->result = (string) ($exchange['status'] ?? CultBrRequestLogAttempt::RESULT_SUCCESS);
+        // Desfecho ausente é falha: sem informação, não se assume que o envio deu certo.
+        $attempt->result = (string) ($exchange['status'] ?? CultBrRequestLogAttempt::RESULT_ERROR);
         $attempt->sentAt = $exchange['sentAt'] ?? new \DateTime();
         $attempt->durationMs = isset($exchange['durationMs']) ? (int) $exchange['durationMs'] : null;
 
