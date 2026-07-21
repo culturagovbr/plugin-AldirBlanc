@@ -49,6 +49,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
     public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
 
+    /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
+    private const CULT_LOGS_DEFAULT_LIMIT = 20;
+    private const CULT_LOGS_MAX_LIMIT = 100;
+
     function __construct() {}
 
     /**
@@ -115,9 +119,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
      * Histórico de envios da oportunidade ao CultBR (aba "Logs CultBr").
      * Restrito a admin: o payload traz dados internos da integração.
      *
-     * GET /aldirblanc/opportunityCultLogs?opportunityId=123&skip=0&limit=20
+     * A API do core monta a URL em segmentos, não em query string:
+     * GET /aldirblanc/opportunityCultLogs/opportunityId:123/skip:0/limit:20/
      */
-    function GET_opportunityCultLogs()
+    public function GET_opportunityCultLogs(): void
     {
         $this->requireAuthentication();
 
@@ -139,8 +144,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $skip = isset($this->data['skip']) ? max(0, (int) $this->data['skip']) : 0;
-        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : 20;
-        $limit = max(1, min($limit, 100));
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : self::CULT_LOGS_DEFAULT_LIMIT;
+        $limit = max(1, min($limit, self::CULT_LOGS_MAX_LIMIT));
 
         $logService = new CultBrRequestLogService();
 
