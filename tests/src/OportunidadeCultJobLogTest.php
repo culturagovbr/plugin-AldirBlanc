@@ -9,6 +9,7 @@ use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\TestableOportunidadeCultJob;
 use Tests\Traits\UserDirector;
 
 /**
@@ -132,6 +133,21 @@ class OportunidadeCultJobLogTest extends TestCase
 
         $rows = $this->logs($oppId);
         $this->assertEquals($user->id, $rows[0]['user']['id'] ?? null, 'Retentativa não pode perder o autor');
+    }
+
+    /**
+     * 404 do CultBR é recusa, não sucesso: o parseResponse aceita a resposta sem lançar, e o
+     * endpoint é upsert (não devolve 404 por id inexistente), então sem essa checagem o job
+     * carimbaria cultBrLastSyncedAt para um envio que o servidor recusou.
+     */
+    function testRespostaRecusadaPeloCultBrNaoMarcaOportunidadeComoSincronizada()
+    {
+        $job = new TestableOportunidadeCultJob(OportunidadeCultJob::SLUG);
+
+        $this->assertTrue($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_REJECTED));
+        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SUCCESS));
+        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SIMULATED));
+        $this->assertFalse($job->callApiRejectedSend(null), 'Sem tentativa registrada, não há recusa a inferir');
     }
 
     /** Esgotadas as 3 tentativas, o envio fecha como falha — hoje o job engole a exceção. */

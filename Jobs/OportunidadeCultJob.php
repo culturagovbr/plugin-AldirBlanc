@@ -8,6 +8,7 @@ use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
 use AldirBlanc\Entities\CultBrRequestLog;
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
@@ -87,17 +88,36 @@ class OportunidadeCultJob extends JobType
 			$job->requestUuid ?? null,
 			$job->user ?? null
 		));
-		if ($requestLog) {
-			$this->oportunidadeCultClient->setExchangeRecorder(
-				fn(array $exchange) => $this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
-					'attempt'     => $attempt,
-					'maxAttempts' => self::MAX_ATTEMPTS,
-				]))
-			);
-		}
+		// Desfecho da última tentativa: o parseResponse aceita um 404 "não encontrado" sem lançar,
+		// então é aqui que o job descobre que a API recusou o envio.
+		$lastAttemptResult = null;
+		$this->oportunidadeCultClient->setExchangeRecorder(
+			function (array $exchange) use ($logService, $requestLog, $attempt, &$lastAttemptResult) {
+				$lastAttemptResult = $exchange['status'] ?? null;
+
+				if ($requestLog) {
+					$this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
+						'attempt'     => $attempt,
+						'maxAttempts' => self::MAX_ATTEMPTS,
+					]));
+				}
+			}
+		);
 
 		try {
 			$this->{$method}($opportunity);
+
+			// Envio recusado (404): o update não chegou ao CultBR. Marcar como sincronizada
+			// esconderia a divergência entre os dois lados.
+			if ($this->apiRejectedSend($lastAttemptResult)) {
+				$app->log->error("OportunidadeCultJob não sincronizou: o CultBR recusou o envio da oportunidade: {$opportunity->id}");
+
+				if ($requestLog) {
+					$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
+				}
+
+				return true;
+			}
 
 			if ($action === 'update') {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
@@ -129,6 +149,17 @@ class OportunidadeCultJob extends JobType
 		}
 
 		return true;
+	}
+
+	/**
+	 * A API recusou o envio mesmo sem erro no fluxo? É o caso do 404, que o
+	 * AbstractClient::parseResponse aceita sem lançar exceção. Como o endpoint é upsert (cria
+	 * quando o id é novo), esse 404 é falta de permissão sobre o edital — repetir o PUT não
+	 * muda isso, por isso não há retentativa.
+	 */
+	protected function apiRejectedSend(?string $lastAttemptResult): bool
+	{
+		return $lastAttemptResult === CultBrRequestLogAttempt::RESULT_REJECTED;
 	}
 
 	/**
