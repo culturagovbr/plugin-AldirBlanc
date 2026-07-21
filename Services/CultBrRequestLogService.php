@@ -16,6 +16,9 @@ use MapasCulturais\Entities\User;
  */
 class CultBrRequestLogService
 {
+    /** Teto do corpo de resposta gravado, em bytes. */
+    private const MAX_RESPONSE_LENGTH = 65536;
+
     /**
      * Recupera o envio pelo uuid (retentativa) ou cria um novo (primeira tentativa).
      * O autor só é gravado na criação: na retentativa o job roda no worker, sem usuário logado,
@@ -66,9 +69,11 @@ class CultBrRequestLogService
         $attempt->httpMethod = (string) ($exchange['method'] ?? 'PUT');
         $attempt->httpStatus = isset($exchange['httpStatus']) ? (int) $exchange['httpStatus'] : null;
         $attempt->payload = $this->asJsonColumn($exchange['payload'] ?? null);
-        $attempt->response = $this->asJsonColumn($exchange['response'] ?? null);
+        $attempt->response = $this->asJsonColumn($this->truncateResponse($exchange['response'] ?? null));
+        // Também saneados: um header em latin-1 (comum em página de erro de proxy) quebraria a
+        // serialização da coluna JSONB e fecharia o EntityManager no flush.
         $attempt->responseHeaders = isset($exchange['responseHeaders']) && is_array($exchange['responseHeaders'])
-            ? $exchange['responseHeaders']
+            ? array_map(fn($header) => $this->toValidUtf8((string) $header), $exchange['responseHeaders'])
             : null;
         $attempt->errorMessage = $exchange['error'] ?? null;
         // Desfecho ausente é falha: sem informação, não se assume que o envio deu certo.
@@ -177,9 +182,30 @@ class CultBrRequestLogService
     }
 
     /**
+     * Corta respostas gigantes (página de erro HTML, dump de stack) antes de gravar: sem teto,
+     * cada tentativa levaria o corpo inteiro para o banco. O payload, que é gerado por nós,
+     * não passa por aqui.
+     */
+    private function truncateResponse(mixed $response): mixed
+    {
+        if (!is_string($response) || strlen($response) <= self::MAX_RESPONSE_LENGTH) {
+            return $response;
+        }
+
+        // mb_strcut e não substr: cortar no meio de um caractere multibyte (qualquer acento
+        // das mensagens em português) produz UTF-8 inválido, o json_encode falha e a resposta
+        // seria gravada vazia — perdendo justamente o log de um erro grande.
+        return json_encode([
+            'raw' => mb_strcut($response, 0, self::MAX_RESPONSE_LENGTH, 'UTF-8'),
+            '_truncated' => true,
+            '_originalLength' => strlen($response),
+        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    /**
      * A coluna é JSONB: array passa direto, string de resposta não-JSON vai como {"raw": "..."}.
      */
-    private function asJsonColumn($value): ?array
+    private function asJsonColumn(mixed $value): ?array
     {
         if ($value === null || $value === '') {
             return null;
@@ -189,10 +215,22 @@ class CultBrRequestLogService
         }
         if (is_string($value)) {
             $decoded = json_decode($value, true);
-            return is_array($decoded) ? $decoded : ['raw' => $value];
+            // A coluna é JSONB: bytes inválidos quebrariam a serialização do Doctrine na hora
+            // de gravar, então o texto cru é saneado antes.
+            return is_array($decoded) ? $decoded : ['raw' => $this->toValidUtf8($value)];
         }
 
-        return ['raw' => (string) $value];
+        return ['raw' => $this->toValidUtf8((string) $value)];
+    }
+
+    /** Troca bytes inválidos por U+FFFD: a resposta pode não vir em UTF-8. */
+    private function toValidUtf8(string $value): string
+    {
+        if (mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
     }
 
     /**

@@ -109,6 +109,67 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertEquals(CultBrRequestLogAttempt::RESULT_ERROR, $attempt->result);
     }
 
+    /** Resposta gigante (página de erro, dump) é cortada antes de ir para o banco. */
+    function testRecordAttemptTruncaRespostaAcimaDoTeto()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        $respostaGigante = str_repeat('a', 70000);
+
+        $attempt = $service->recordAttempt($log, [
+            'attempt' => 1,
+            'maxAttempts' => 3,
+            'response' => $respostaGigante,
+            'status' => CultBrRequestLogAttempt::RESULT_ERROR,
+        ]);
+
+        $this->assertTrue($attempt->response['_truncated'] ?? false, 'Resposta deve ser marcada como truncada');
+        $this->assertEquals(70000, $attempt->response['_originalLength']);
+        $this->assertLessThan(strlen($respostaGigante), strlen($attempt->response['raw']));
+    }
+
+    /**
+     * O corte é em bytes: se cair no meio de um acento — e as mensagens do CultBR são em
+     * português — um substr cru produziria UTF-8 inválido, o json_encode falharia e a resposta
+     * seria gravada vazia, justamente no log de um erro grande.
+     */
+    function testRecordAttemptTruncaSemQuebrarCaractereMultibyte()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        // "ç" ocupa 2 bytes e começa exatamente no último byte do limite.
+        $respostaGigante = str_repeat('a', 65535) . 'ção' . str_repeat('b', 100);
+
+        $attempt = $service->recordAttempt($log, [
+            'attempt' => 1,
+            'maxAttempts' => 3,
+            'response' => $respostaGigante,
+            'status' => CultBrRequestLogAttempt::RESULT_ERROR,
+        ]);
+
+        // Igualdade exata: com substr o último byte viraria U+FFFD (ou a resposta se perderia),
+        // e a asserção de "não vazio" sozinha não distinguiria os dois casos.
+        $this->assertSame(str_repeat('a', 65535), $attempt->response['raw']);
+        $this->assertTrue(mb_check_encoding($attempt->response['raw'], 'UTF-8'));
+    }
+
+    /** Resposta fora de UTF-8 (binário, latin1) não pode quebrar a gravação na coluna JSONB. */
+    function testRecordAttemptGravaRespostaComBytesInvalidos()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+
+        $attempt = $service->recordAttempt($log, [
+            'attempt' => 1,
+            'maxAttempts' => 3,
+            'response' => "erro na integra\xE7\xE3o",
+            'status' => CultBrRequestLogAttempt::RESULT_ERROR,
+        ]);
+
+        $this->assertNotEmpty($attempt->response['raw'] ?? '');
+        $this->assertTrue(mb_check_encoding($attempt->response['raw'], 'UTF-8'));
+    }
+
     function testFinishAtualizaResultadoDoEnvio()
     {
         $service = $this->service();
