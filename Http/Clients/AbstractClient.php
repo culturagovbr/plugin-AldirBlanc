@@ -153,7 +153,9 @@ abstract class AbstractClient
         if ($this->isDevelopmentMode()) {
             $this->recordExchange([
                 'method' => 'PUT',
-                'endpoint' => $this->endpoint ?? '',
+                // isset e não prepareUrl() direto: as propriedades são tipadas e podem não estar
+                // inicializadas numa subclasse, e o erro aqui derrubaria o envio, não só o log.
+                'endpoint' => isset($this->endpoint, $this->document) ? $this->prepareUrl() : ($this->endpoint ?? ''),
                 'payload' => $data,
                 'status' => CultBrRequestLogAttempt::RESULT_SIMULATED,
                 'sentAt' => $sentAt,
