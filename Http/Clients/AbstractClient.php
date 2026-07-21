@@ -2,6 +2,7 @@
 
 namespace AldirBlanc\Http\Clients;
 
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use Curl\Curl;
@@ -21,6 +22,16 @@ abstract class AbstractClient
     private string $token;
 
     private Curl $curl;
+
+    /**
+     * Callback opcional que recebe request + resposta de cada PUT (payload, status HTTP, corpo,
+     * duração). Usado pelo OportunidadeCultJob para gravar o histórico da aba "Logs CultBr" —
+     * é aqui, e não no job, porque handleError() relança uma exceção genérica e o chamador
+     * perde status e corpo do erro.
+     *
+     * @var callable|null
+     */
+    private $exchangeRecorder = null;
 
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_ERROR_MIN = 400;
@@ -52,6 +63,29 @@ abstract class AbstractClient
     private function isDevelopmentMode(): bool
     {
         return $this->mode === 'development';
+    }
+
+    /**
+     * Registra quem deve receber o par request/resposta dos PUTs deste client.
+     * Sem recorder definido, o comportamento é exatamente o de antes.
+     */
+    public function setExchangeRecorder(?callable $recorder): void
+    {
+        $this->exchangeRecorder = $recorder;
+    }
+
+    private function recordExchange(array $exchange): void
+    {
+        if ($this->exchangeRecorder === null) {
+            return;
+        }
+
+        try {
+            ($this->exchangeRecorder)($exchange);
+        } catch (\Throwable $e) {
+            // Log é acessório: falha ao gravar não pode derrubar o envio ao CultBR.
+            App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
+        }
     }
 
     public final function get()
@@ -113,7 +147,20 @@ abstract class AbstractClient
 
     public final function put(array $data)
     {
+        $sentAt = new \DateTime();
+        $startedAt = microtime(true);
+
         if ($this->isDevelopmentMode()) {
+            $this->recordExchange([
+                'method' => 'PUT',
+                // isset e não prepareUrl() direto: as propriedades são tipadas e podem não estar
+                // inicializadas numa subclasse, e o erro aqui derrubaria o envio, não só o log.
+                'endpoint' => isset($this->endpoint, $this->document) ? $this->prepareUrl() : ($this->endpoint ?? ''),
+                'payload' => $data,
+                'status' => CultBrRequestLogAttempt::RESULT_SIMULATED,
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
             return $data;
         }
 
@@ -135,12 +182,89 @@ abstract class AbstractClient
                 $this->curl->error_message,
                 $this->curl->error_code ?? 0,
             );
+
+            $this->recordExchange([
+                'method' => 'PUT',
+                'endpoint' => $fullUrl,
+                'payload' => $data,
+                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'responseHeaders' => $this->responseHeaders(),
+                'httpStatus' => $this->curl->http_status_code ?? null,
+                'status' => $this->exchangeResultForAcceptedResponse((int) ($this->curl->http_status_code ?? 0)),
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
+
             return $parsed;
         } catch (\Exception $e) {
+            $rawResponse = $this->curl->response ?? null;
+
+            $this->recordExchange([
+                'method' => 'PUT',
+                'endpoint' => $fullUrl,
+                'payload' => $data,
+                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'responseHeaders' => $this->responseHeaders(),
+                'httpStatus' => $this->curl->http_status_code ?? null,
+                'error' => $this->exchangeErrorMessage($e),
+                'status' => CultBrRequestLogAttempt::RESULT_ERROR,
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
+
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
         } finally {
             $this->closeCurl();
         }
+    }
+
+    private function elapsedMs(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
+    }
+
+    /**
+     * Cabeçalhos da resposta como lista de linhas (a lib entrega string ou array).
+     * Registrados no log para que a resposta continue auditável quando o corpo não é JSON,
+     * está vazio ou vem em formato inesperado.
+     */
+    private function responseHeaders(): ?array
+    {
+        $headers = $this->curl->response_headers ?? null;
+
+        if (is_array($headers)) {
+            return array_values($headers);
+        }
+        if (is_string($headers) && $headers !== '') {
+            return preg_split('/\r\n|\n/', trim($headers), -1, PREG_SPLIT_NO_EMPTY) ?: null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Desfecho de uma resposta que o parseResponse aceitou sem lançar. O ramo de 404 existe
+     * para os GETs (ausência de dados); num PUT de upsert ele é recusa de acesso. Nos dois
+     * casos, registrar como sucesso criaria um log contraditório (sucesso com HTTP 404).
+     */
+    protected function exchangeResultForAcceptedResponse(int $httpStatus): string
+    {
+        // Estritamente 404: é o único status de erro que o parseResponse aceita sem exceção.
+        // Um `>= 400` genérico rotularia como recusa qualquer erro que passasse a ser aceito.
+        return $httpStatus === self::HTTP_NOT_FOUND
+            ? CultBrRequestLogAttempt::RESULT_REJECTED
+            : CultBrRequestLogAttempt::RESULT_SUCCESS;
+    }
+
+    /**
+     * Mensagem do erro do curl (timeout, DNS, TLS) quando houver; senão, a da exceção.
+     * Sem isso, uma falha de transporte chegaria ao log como exceção genérica.
+     */
+    private function exchangeErrorMessage(\Throwable $e): string
+    {
+        $curlError = trim((string) ($this->curl->error_message ?? ''));
+
+        return $curlError !== '' ? $curlError : $e->getMessage();
     }
 
     /**

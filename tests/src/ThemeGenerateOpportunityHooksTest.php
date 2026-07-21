@@ -280,7 +280,29 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $errors = $opportunity->validationErrors;
         $this->assertArrayHasKey('parAcaoId', $errors);
-        $this->assertStringContainsString('entre em contato com o suporte', $errors['parAcaoId'][0]);
+        // A mensagem trata do vínculo com o modelo (não do preenchimento dos campos) e manda
+        // procurar o suporte, porque o gestor não resolve isso sozinho.
+        $this->assertStringContainsStringIgnoringCase('entre em contato com o suporte', $errors['parAcaoId'][0]);
+        $this->assertStringContainsStringIgnoringCase('ação do PAR do modelo', $errors['parAcaoId'][0]);
+    }
+
+    /**
+     * Admin salva o PAR em qualquer situação. Como a trava olha o papel de gestor, um usuário
+     * que acumule os dois papéis seria bloqueado se a checagem de admin não viesse antes.
+     */
+    function testValidationNaoBloqueiaAdminQueTambemEhGestor()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN, Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($admin->profile);
+        $opportunity = $this->opportunity($admin, 'Oportunidade sem parActions (admin)');
+
+        $federativeEntity = $this->persistFederativeEntity('77777777777777', 'Ente Sete', [
+            ['metas' => [['acoes' => [['id' => '3', 'nome' => 'Ação Qualquer']]]]],
+        ]);
+        $this->login($admin);
+        $this->selectEntityInSession($federativeEntity);
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
     }
 
     function testValidationLiberaOParComParActionsEAcaoCompativel()

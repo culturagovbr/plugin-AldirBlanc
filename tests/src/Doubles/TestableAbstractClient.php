@@ -18,6 +18,11 @@ class TestableAbstractClient extends AbstractClient
     {
     }
 
+    public function callExchangeResultForAcceptedResponse(int $httpStatus): string
+    {
+        return $this->exchangeResultForAcceptedResponse($httpStatus);
+    }
+
     public function callParseResponse(
         mixed $response,
         int $httpCode = 0,

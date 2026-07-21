@@ -7,6 +7,9 @@ use AldirBlanc\Plugin;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
+use AldirBlanc\Entities\CultBrRequestLog;
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
@@ -75,15 +78,52 @@ class OportunidadeCultJob extends JobType
 			throw new \Exception("Method not found: {$action}");
 		}
 
+		// Histórico da aba "Logs CultBr": o uuid nasce na primeira tentativa e viaja no payload
+		// do job, de modo que as retentativas entrem como tentativas do mesmo envio.
+		$logService = new CultBrRequestLogService();
+		// $job->user é o usuário logado no save que enfileirou o job (App::enqueueJob).
+		$requestLog = $this->recordLog(fn() => $logService->startOrResume(
+			(int) $opportunity->id,
+			$action,
+			$job->requestUuid ?? null,
+			$job->user ?? null
+		));
+		// Desfecho da última tentativa: o parseResponse aceita um 404 "não encontrado" sem lançar,
+		// então é aqui que o job descobre que a API recusou o envio.
+		$lastAttemptResult = null;
+		$this->oportunidadeCultClient->setExchangeRecorder(
+			function (array $exchange) use ($logService, $requestLog, $attempt, &$lastAttemptResult) {
+				$lastAttemptResult = $exchange['status'] ?? null;
+
+				if ($requestLog) {
+					$this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
+						'attempt'     => $attempt,
+						'maxAttempts' => self::MAX_ATTEMPTS,
+					]));
+				}
+			}
+		);
+
 		try {
 			$this->{$method}($opportunity);
+
+			// Envio recusado (404): o update não chegou ao CultBR. Marcar como sincronizada
+			// esconderia a divergência entre os dois lados.
+			if ($this->apiRejectedSend($lastAttemptResult)) {
+				$app->log->error("OportunidadeCultJob não sincronizou: o CultBR recusou o envio da oportunidade: {$opportunity->id}");
+
+				if ($requestLog) {
+					$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
+				}
+
+				return true;
+			}
 
 			if ($action === 'update') {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 			}
 
 			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$action} para oportunidade: {$opportunity->id}");
-			return true;
 		} catch (\Throwable $e) {
 			$app->log->error("OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}");
 
@@ -93,9 +133,46 @@ class OportunidadeCultJob extends JobType
 					'opportunity' => $opportunity,
 					'action'      => $action,
 					'attempt'     => $attempt + 1,
+					'requestUuid' => $requestLog?->requestUuid,
 				], $delay);
+			} elseif ($requestLog) {
+				// Sem retentativa restante: o envio se encerra em falha.
+				$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
 			}
 			return true;
+		}
+
+		// Fora do try: uma falha ao gravar o log não pode cair no catch acima e
+		// reenfileirar um PUT que já foi aceito pelo CultBR.
+		if ($requestLog) {
+			$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_SUCCESS));
+		}
+
+		return true;
+	}
+
+	/**
+	 * A API recusou o envio mesmo sem erro no fluxo? É o caso do 404, que o
+	 * AbstractClient::parseResponse aceita sem lançar exceção. Como o endpoint é upsert (cria
+	 * quando o id é novo), esse 404 é falta de permissão sobre o edital — repetir o PUT não
+	 * muda isso, por isso não há retentativa.
+	 */
+	protected function apiRejectedSend(?string $lastAttemptResult): bool
+	{
+		return $lastAttemptResult === CultBrRequestLogAttempt::RESULT_REJECTED;
+	}
+
+	/**
+	 * Executa uma gravação do histórico sem deixar que ela interfira no envio: o log é
+	 * acessório e sua falha (tabela ausente, banco indisponível) não pode alterar o fluxo.
+	 */
+	private function recordLog(callable $operation)
+	{
+		try {
+			return $operation();
+		} catch (\Throwable $e) {
+			App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
+			return null;
 		}
 	}
 
