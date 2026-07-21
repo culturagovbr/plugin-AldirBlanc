@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
 
@@ -272,5 +273,45 @@ class AbstractClientParseResponseTest extends TestCase
         $response = ['a' => 1, 'b' => 2];
 
         $this->assertSame($response, $this->client()->callParseResponse($response, 200));
+    }
+    /**
+     * 404 com `detail` de "não encontrado" é aceito pelo parseResponse como ausência de dados.
+     * No histórico da aba isso não pode virar sucesso — seria um registro contraditório
+     * (sucesso com HTTP 404).
+     */
+    function testRespostaAceitaComHttpDeErroNaoEhRegistradaComoSucesso()
+    {
+        $client = $this->client();
+
+        $this->assertSame([], $client->callParseResponse(json_encode(['detail' => 'Oportunidade não encontrada']), 404));
+        $this->assertSame(
+            CultBrRequestLogAttempt::RESULT_REJECTED,
+            $client->callExchangeResultForAcceptedResponse(404)
+        );
+    }
+
+    function testRespostaAceitaComHttpDeSucessoEhRegistradaComoSucesso()
+    {
+        $this->assertSame(
+            CultBrRequestLogAttempt::RESULT_SUCCESS,
+            $this->client()->callExchangeResultForAcceptedResponse(200)
+        );
+    }
+
+    /**
+     * Só o 404 é recusa. Se um dia o parseResponse passar a aceitar outro status de erro,
+     * ele não pode entrar no histórico rotulado como recusa do CultBR.
+     */
+    function testOutrosStatusDeErroNaoSaoClassificadosComoRecusa()
+    {
+        $client = $this->client();
+
+        foreach ([400, 409, 422, 500, 502] as $httpStatus) {
+            $this->assertNotSame(
+                CultBrRequestLogAttempt::RESULT_REJECTED,
+                $client->callExchangeResultForAcceptedResponse($httpStatus),
+                "HTTP {$httpStatus} não pode ser classificado como recusa"
+            );
+        }
     }
 }

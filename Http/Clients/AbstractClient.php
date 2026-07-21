@@ -2,6 +2,7 @@
 
 namespace AldirBlanc\Http\Clients;
 
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use Curl\Curl;
@@ -187,7 +188,7 @@ abstract class AbstractClient
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
                 'responseHeaders' => $this->responseHeaders(),
                 'httpStatus' => $this->curl->http_status_code ?? null,
-                'status' => 'success',
+                'status' => $this->exchangeResultForAcceptedResponse((int) ($this->curl->http_status_code ?? 0)),
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
             ]);
@@ -237,6 +238,20 @@ abstract class AbstractClient
         }
 
         return null;
+    }
+
+    /**
+     * Desfecho de uma resposta que o parseResponse aceitou sem lançar. O ramo de 404 existe
+     * para os GETs (ausência de dados); num PUT de upsert ele é recusa de acesso. Nos dois
+     * casos, registrar como sucesso criaria um log contraditório (sucesso com HTTP 404).
+     */
+    protected function exchangeResultForAcceptedResponse(int $httpStatus): string
+    {
+        // Estritamente 404: é o único status de erro que o parseResponse aceita sem exceção.
+        // Um `>= 400` genérico rotularia como recusa qualquer erro que passasse a ser aceito.
+        return $httpStatus === self::HTTP_NOT_FOUND
+            ? CultBrRequestLogAttempt::RESULT_REJECTED
+            : CultBrRequestLogAttempt::RESULT_SUCCESS;
     }
 
     /**

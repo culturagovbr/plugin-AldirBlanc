@@ -36,6 +36,14 @@ class CultBrRequestLogAttempt extends \MapasCulturais\Entity
     /** Erro de rede, HTTP >= 400 ou corpo recusado pelo parseResponse. */
     const RESULT_ERROR = 'error';
 
+    /**
+     * A API respondeu 404 e o parseResponse aceitou a resposta sem lançar. No PUT de
+     * oportunidade isso não significa "não existe" — o endpoint é upsert e cria o registro
+     * quando o id é novo (verificado contra a API de homologação). Sobra a outra metade da
+     * mensagem do CultBR, "ou sem permissão de acesso": é recusa, e o envio não chegou.
+     */
+    const RESULT_REJECTED = 'rejected';
+
     /** Modo development: o client devolve fixture sem chamada real (AbstractClient::put). */
     const RESULT_SIMULATED = 'simulated';
 
