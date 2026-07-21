@@ -22,6 +22,16 @@ abstract class AbstractClient
 
     private Curl $curl;
 
+    /**
+     * Callback opcional que recebe request + resposta de cada PUT (payload, status HTTP, corpo,
+     * duração). Usado pelo OportunidadeCultJob para gravar o histórico da aba "Logs CultBr" —
+     * é aqui, e não no job, porque handleError() relança uma exceção genérica e o chamador
+     * perde status e corpo do erro.
+     *
+     * @var callable|null
+     */
+    private $exchangeRecorder = null;
+
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_ERROR_MIN = 400;
     private const HTTP_NOT_FOUND = 404;
@@ -52,6 +62,29 @@ abstract class AbstractClient
     private function isDevelopmentMode(): bool
     {
         return $this->mode === 'development';
+    }
+
+    /**
+     * Registra quem deve receber o par request/resposta dos PUTs deste client.
+     * Sem recorder definido, o comportamento é exatamente o de antes.
+     */
+    public function setExchangeRecorder(?callable $recorder): void
+    {
+        $this->exchangeRecorder = $recorder;
+    }
+
+    private function recordExchange(array $exchange): void
+    {
+        if ($this->exchangeRecorder === null) {
+            return;
+        }
+
+        try {
+            ($this->exchangeRecorder)($exchange);
+        } catch (\Throwable $e) {
+            // Log é acessório: falha ao gravar não pode derrubar o envio ao CultBR.
+            App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
+        }
     }
 
     public final function get()
@@ -113,7 +146,18 @@ abstract class AbstractClient
 
     public final function put(array $data)
     {
+        $sentAt = new \DateTime();
+        $startedAt = microtime(true);
+
         if ($this->isDevelopmentMode()) {
+            $this->recordExchange([
+                'method' => 'PUT',
+                'endpoint' => $this->endpoint ?? '',
+                'payload' => $data,
+                'status' => 'simulated',
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
             return $data;
         }
 
@@ -135,12 +179,43 @@ abstract class AbstractClient
                 $this->curl->error_message,
                 $this->curl->error_code ?? 0,
             );
+
+            $this->recordExchange([
+                'method' => 'PUT',
+                'endpoint' => $fullUrl,
+                'payload' => $data,
+                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'httpStatus' => $this->curl->http_status_code ?? null,
+                'status' => 'success',
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
+
             return $parsed;
         } catch (\Exception $e) {
+            $rawResponse = $this->curl->response ?? null;
+
+            $this->recordExchange([
+                'method' => 'PUT',
+                'endpoint' => $fullUrl,
+                'payload' => $data,
+                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'httpStatus' => $this->curl->http_status_code ?? null,
+                'error' => $e->getMessage(),
+                'status' => 'error',
+                'sentAt' => $sentAt,
+                'durationMs' => $this->elapsedMs($startedAt),
+            ]);
+
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
         } finally {
             $this->closeCurl();
         }
+    }
+
+    private function elapsedMs(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
     }
 
     /**
