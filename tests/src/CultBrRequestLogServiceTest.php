@@ -203,6 +203,20 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertEquals(CultBrRequestLog::RESULT_PENDING, $novo->result, 'O envio novo não pode se abandonar');
     }
 
+    /** updateTimestamp é preenchido pelo Entity do core; só vira updatedAt depois do finish. */
+    function testUpdatedAtSoAparecerDepoisDeFinalizarOEnvio()
+    {
+        $opportunityId = $this->opportunityId();
+        $service = $this->service();
+        $log = $service->startOrResume($opportunityId, 'update');
+
+        $this->assertNull($service->findByOpportunity($opportunityId)[0]['updatedAt']);
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertNotNull($service->findByOpportunity($opportunityId)[0]['updatedAt']);
+    }
+
     /** Formato que a aba consome: envios mais recentes primeiro, tentativas aninhadas. */
     function testFindByOpportunityDevolveEnviosComTentativasAninhadas()
     {

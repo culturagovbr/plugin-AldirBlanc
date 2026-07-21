@@ -256,9 +256,21 @@ class CultBrRequestLogService
             // Só o id: o e-mail é dado pessoal e o id já identifica quem disparou.
             'user' => $userId ? ['id' => $userId] : null,
             'createdAt' => $log->createTimestamp ? $log->createTimestamp->format(\DateTime::ATOM) : null,
-            'updatedAt' => $log->updateTimestamp ? $log->updateTimestamp->format(\DateTime::ATOM) : null,
+            // Só depois de finish(): Entity::__construct do core já preenche updateTimestamp,
+            // e expor isso num envio pendente daria a entender que ele foi atualizado.
+            'updatedAt' => $this->finishedAt($log),
             'attempts' => $attempts,
         ];
+    }
+
+    /** Momento em que o envio deixou de estar pendente; nulo enquanto está em curso. */
+    private function finishedAt(CultBrRequestLog $log): ?string
+    {
+        if ($log->result === CultBrRequestLog::RESULT_PENDING || !$log->updateTimestamp) {
+            return null;
+        }
+
+        return $log->updateTimestamp->format(\DateTime::ATOM);
     }
 
     /**
