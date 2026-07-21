@@ -18,7 +18,10 @@ class CultBrRequestLogServiceTest extends TestCase
         return new CultBrRequestLogService();
     }
 
-    /** Id fictício: o serviço não valida existência da oportunidade (quem valida é o endpoint). */
+    /**
+     * Id fictício: não há FK para `opportunity` (o log precisa sobreviver ao job mesmo se a
+     * oportunidade sumir) e o serviço não valida existência — quem valida é o endpoint.
+     */
     private function opportunityId(): int
     {
         return random_int(900000, 999999);

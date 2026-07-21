@@ -48,6 +48,12 @@ return [
         __try("DELETE FROM agent_meta WHERE key = 'isNotGestorCultBr'");
     },
 
+    /**
+     * `opportunity_id` sem FK de propósito: o log é acessório e não pode interferir no envio.
+     * Com a constraint, um job que rode depois da exclusão da oportunidade falharia ao gravar,
+     * e no Postgres o erro de constraint aborta a transação inteira — quebrando justamente o
+     * fluxo que o log deveria apenas observar. O custo aceito é a linha órfã.
+     */
     'create cultbr_request_log table' => function () {
         if (!__table_exists('cultbr_request_log')) {
             __try("CREATE SEQUENCE cultbr_request_log_id_seq INCREMENT BY 1 MINVALUE 1 START 1");
