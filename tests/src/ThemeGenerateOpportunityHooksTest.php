@@ -280,7 +280,10 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $errors = $opportunity->validationErrors;
         $this->assertArrayHasKey('parAcaoId', $errors);
-        $this->assertStringContainsString('entre em contato com o suporte', $errors['parAcaoId'][0]);
+        // A mensagem trata do vínculo com o modelo (não do preenchimento dos campos) e manda
+        // procurar o suporte, porque o gestor não resolve isso sozinho.
+        $this->assertStringContainsStringIgnoringCase('entre em contato com o suporte', $errors['parAcaoId'][0]);
+        $this->assertStringContainsStringIgnoringCase('ação do PAR do modelo', $errors['parAcaoId'][0]);
     }
 
     function testValidationLiberaOParComParActionsEAcaoCompativel()
