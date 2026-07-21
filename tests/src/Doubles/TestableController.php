@@ -122,6 +122,11 @@ class TestableController extends Controller
         };
     }
 
+    public function callGetOpportunityCultLogs(): void
+    {
+        $this->GET_opportunityCultLogs();
+    }
+
     public function callGetIntegrationOpportunities(): void
     {
         $ref = new \ReflectionMethod($this, '_getIntegrationOpportunities');
