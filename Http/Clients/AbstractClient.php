@@ -203,7 +203,7 @@ abstract class AbstractClient
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
                 'responseHeaders' => $this->responseHeaders(),
                 'httpStatus' => $this->curl->http_status_code ?? null,
-                'error' => $e->getMessage(),
+                'error' => $this->exchangeErrorMessage($e),
                 'status' => 'error',
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
@@ -237,6 +237,17 @@ abstract class AbstractClient
         }
 
         return null;
+    }
+
+    /**
+     * Mensagem do erro do curl (timeout, DNS, TLS) quando houver; senão, a da exceção.
+     * Sem isso, uma falha de transporte chegaria ao log como exceção genérica.
+     */
+    private function exchangeErrorMessage(\Throwable $e): string
+    {
+        $curlError = trim((string) ($this->curl->error_message ?? ''));
+
+        return $curlError !== '' ? $curlError : $e->getMessage();
     }
 
     /**
