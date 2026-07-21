@@ -274,6 +274,7 @@ class AbstractClientParseResponseTest extends TestCase
 
         $this->assertSame($response, $this->client()->callParseResponse($response, 200));
     }
+
     /**
      * 404 com `detail` de "não encontrado" é aceito pelo parseResponse como ausência de dados.
      * No histórico da aba isso não pode virar sucesso — seria um registro contraditório
