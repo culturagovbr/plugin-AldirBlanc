@@ -91,5 +91,11 @@ return [
             __try("CREATE INDEX IDX_cultbr_request_log_attempt_log_id ON cultbr_request_log_attempt (log_id)");
             __try("ALTER TABLE cultbr_request_log_attempt ADD CONSTRAINT FK_cultbr_request_log_attempt_log FOREIGN KEY (log_id) REFERENCES cultbr_request_log(id) ON DELETE CASCADE");
         }
+    },
+
+    'add response_headers column to cultbr_request_log_attempt' => function () {
+        if (__table_exists('cultbr_request_log_attempt')) {
+            __try("ALTER TABLE cultbr_request_log_attempt ADD COLUMN response_headers JSONB NULL");
+        }
     }
 ];

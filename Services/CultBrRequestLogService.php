@@ -59,6 +59,9 @@ class CultBrRequestLogService
         $attempt->httpStatus = isset($exchange['httpStatus']) ? (int) $exchange['httpStatus'] : null;
         $attempt->payload = $this->asJsonColumn($exchange['payload'] ?? null);
         $attempt->response = $this->asJsonColumn($exchange['response'] ?? null);
+        $attempt->responseHeaders = isset($exchange['responseHeaders']) && is_array($exchange['responseHeaders'])
+            ? $exchange['responseHeaders']
+            : null;
         $attempt->errorMessage = $exchange['error'] ?? null;
         $attempt->result = (string) ($exchange['status'] ?? CultBrRequestLogAttempt::RESULT_SUCCESS);
         $attempt->sentAt = $exchange['sentAt'] ?? new \DateTime();
@@ -134,6 +137,7 @@ class CultBrRequestLogService
                 'httpStatus' => $attempt->httpStatus,
                 'payload' => $attempt->payload,
                 'response' => $attempt->response,
+                'responseHeaders' => $attempt->responseHeaders,
                 'errorMessage' => $attempt->errorMessage,
                 'sentAt' => $attempt->sentAt ? $attempt->sentAt->format(\DateTime::ATOM) : null,
                 'durationMs' => $attempt->durationMs,

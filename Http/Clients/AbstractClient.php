@@ -185,6 +185,7 @@ abstract class AbstractClient
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'responseHeaders' => $this->responseHeaders(),
                 'httpStatus' => $this->curl->http_status_code ?? null,
                 'status' => 'success',
                 'sentAt' => $sentAt,
@@ -200,6 +201,7 @@ abstract class AbstractClient
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'responseHeaders' => $this->responseHeaders(),
                 'httpStatus' => $this->curl->http_status_code ?? null,
                 'error' => $e->getMessage(),
                 'status' => 'error',
@@ -216,6 +218,25 @@ abstract class AbstractClient
     private function elapsedMs(float $startedAt): int
     {
         return (int) round((microtime(true) - $startedAt) * 1000);
+    }
+
+    /**
+     * Cabeçalhos da resposta como lista de linhas (a lib entrega string ou array).
+     * Registrados no log para que a resposta continue auditável quando o corpo não é JSON,
+     * está vazio ou vem em formato inesperado.
+     */
+    private function responseHeaders(): ?array
+    {
+        $headers = $this->curl->response_headers ?? null;
+
+        if (is_array($headers)) {
+            return array_values($headers);
+        }
+        if (is_string($headers) && $headers !== '') {
+            return preg_split('/\r\n|\n/', trim($headers), -1, PREG_SPLIT_NO_EMPTY) ?: null;
+        }
+
+        return null;
     }
 
     /**

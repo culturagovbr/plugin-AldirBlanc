@@ -19,6 +19,7 @@ use Doctrine\ORM\Mapping as ORM;
  * @property int|null $httpStatus Nulo quando a request nem chegou a receber resposta
  * @property array|null $payload Corpo enviado ao CultBR
  * @property array|null $response Corpo devolvido pelo CultBR
+ * @property array|null $responseHeaders Cabeçalhos da resposta, como recebidos
  * @property string|null $errorMessage
  * @property string $result self::RESULT_*
  * @property \DateTime $sentAt
@@ -106,6 +107,14 @@ class CultBrRequestLogAttempt extends \MapasCulturais\Entity
      * @ORM\Column(name="response", type="json", nullable=true)
      */
     protected $response;
+
+    /**
+     * @var array|null Linhas de cabeçalho da resposta (status line, content-type, …). Registrado
+     * para que a resposta seja auditável mesmo quando o corpo não é JSON — ou está vazio.
+     *
+     * @ORM\Column(name="response_headers", type="json", nullable=true)
+     */
+    protected $responseHeaders;
 
     /**
      * @var string|null
