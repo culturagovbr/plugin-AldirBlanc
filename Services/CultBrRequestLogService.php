@@ -168,12 +168,7 @@ class CultBrRequestLogService
 
     public function countByOpportunity(int $opportunityId): int
     {
-        $app = App::i();
-
-        return (int) $app->em->getConnection()->fetchOne(
-            'SELECT count(*) FROM cultbr_request_log WHERE opportunity_id = :id',
-            ['id' => $opportunityId]
-        );
+        return App::i()->repo(CultBrRequestLog::class)->count(['opportunityId' => $opportunityId]);
     }
 
     /**
