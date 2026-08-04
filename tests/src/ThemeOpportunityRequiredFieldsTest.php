@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Enum\Role;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
@@ -106,4 +107,36 @@ class ThemeOpportunityRequiredFieldsTest extends TestCase
         $this->assertCamposLiberados($opportunity);
     }
 
+    /** Fases filhas só respondem pelos campos próprios da fase; os do edital ficam na raiz. */
+    function testNaoExigeEmFaseFilha()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+
+        $this->app->disableAccessControl();
+        $phase = $this->newOpportunity($user, 'Fase de coleta');
+        $phase->parent = $opportunity;
+        $phase->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertCamposLiberados($phase);
+    }
+
+    /** Mesma isenção dos demais campos obrigatórios do tema (@see UserAccessService::isSaasSuperAdmin). */
+    function testNaoExigeDeSaasSuperAdmin()
+    {
+        $user = $this->userDirector->createUser([Role::SAAS_SUPER_ADMIN]);
+        $opportunity = $this->opportunity($user);
+
+        $this->assertCamposLiberados($opportunity);
+    }
+
+    /** Na criação a fase 1 ainda não existe na tela, e o edital é salvo sem esses campos. */
+    function testNaoExigeNaCriacao()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->assertCamposLiberados($this->newOpportunity($user, 'Edital novo'));
+    }
 }
