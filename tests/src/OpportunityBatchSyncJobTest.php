@@ -11,6 +11,7 @@ use MapasCulturais\Entities\Subsite;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableController;
+use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
 /**
@@ -23,6 +24,13 @@ use Tests\Traits\UserDirector;
 class OpportunityBatchSyncJobTest extends TestCase
 {
     use UserDirector;
+    use IsolatesJobQueue;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->clearJobQueue();
+    }
 
     private function createSubsite(User $user): Subsite
     {

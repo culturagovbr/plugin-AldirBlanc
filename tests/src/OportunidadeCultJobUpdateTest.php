@@ -8,6 +8,7 @@ use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
 /**
@@ -25,6 +26,13 @@ use Tests\Traits\UserDirector;
 class OportunidadeCultJobUpdateTest extends TestCase
 {
     use UserDirector;
+    use IsolatesJobQueue;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->clearJobQueue();
+    }
 
     private function createOpportunity(User $user): Opportunity
     {
