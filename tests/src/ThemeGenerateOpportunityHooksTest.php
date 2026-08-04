@@ -282,6 +282,26 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
     }
 
+    /** Caso relatado em produção (10244, 8058): PAR preenchido e sem parActions travava o gestor. */
+    function testValidationNaoBloqueiaSemParActionsComParPreenchido()
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade com PAR e sem parActions');
+        $this->app->disableAccessControl();
+        $this->setPar($opportunity);
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $federativeEntity = $this->persistFederativeEntity('88888888888888', 'Ente Oito', [
+            ['metas' => [['acoes' => [['id' => '3', 'nome' => 'Ação Qualquer']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
     /**
      * Admin salva o PAR em qualquer situação. Como a trava olha o papel de gestor, um usuário
      * que acumule os dois papéis seria bloqueado se a checagem de admin não viesse antes.
