@@ -264,9 +264,10 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayHasKey('parAcaoId', $payload['data']);
     }
 
-    // ===== entity(Opportunity).validationErrors — trava do PAR sem parActions =====
+    // ===== entity(Opportunity).validationErrors — validação do PAR sem parActions =====
 
-    function testValidationBloqueiaSalvarParSemParActions()
+    /** Sem parActions não há o que validar, e o gestor não tem como preenchê-la. */
+    function testValidationNaoBloqueiaSalvarSemParActions()
     {
         $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
         $this->fillRequiredProfileFields($gestor->profile);
@@ -278,12 +279,27 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->login($gestor);
         $this->selectEntityInSession($federativeEntity);
 
-        $errors = $opportunity->validationErrors;
-        $this->assertArrayHasKey('parAcaoId', $errors);
-        // A mensagem trata do vínculo com o modelo (não do preenchimento dos campos) e manda
-        // procurar o suporte, porque o gestor não resolve isso sozinho.
-        $this->assertStringContainsStringIgnoringCase('entre em contato com o suporte', $errors['parAcaoId'][0]);
-        $this->assertStringContainsStringIgnoringCase('ação do PAR do modelo', $errors['parAcaoId'][0]);
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    /** Caso relatado em produção (10244, 8058): PAR preenchido e sem parActions travava o gestor. */
+    function testValidationNaoBloqueiaSemParActionsComParPreenchido()
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Oportunidade com PAR e sem parActions');
+        $this->app->disableAccessControl();
+        $this->setPar($opportunity);
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $federativeEntity = $this->persistFederativeEntity('88888888888888', 'Ente Oito', [
+            ['metas' => [['acoes' => [['id' => '3', 'nome' => 'Ação Qualquer']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
     }
 
     /**
