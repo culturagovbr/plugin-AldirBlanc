@@ -776,6 +776,39 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('32692.70', OpportunityDto::fromArray($payload)->toArray()['valor_total_edital']);
     }
 
+    /**
+     * As categorias vão cruas ao CultBr: o valor sai numérico, como foi gravado, sem passar
+     * pela normalização decimal. É o que permite conferir o valor total contra a soma delas.
+     */
+    function testMapOpportunityToIntegrationPayloadCategoriasEditalSaemSemNormalizacao()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82]];
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame(81817.82, $payload['categorias_edital'][0]['value']);
+        $this->assertIsNotString($payload['categorias_edital'][0]['value']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadSemCategoriasRetornaListaVazia()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertSame([], $payload['categorias_edital']);
+    }
+
     function testValorDestinadoDasCotasSobreviveDoMetadadoAoDtoEnviadoAoCultBr()
     {
         $opp = $this->createOpportunity();
@@ -827,6 +860,29 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('9992.87', $enviado['recursos_outras_fontes']['emendas_parlamentares']);
         $this->assertSame('24611.60', $enviado['recursos_outras_fontes']['remanescentes_ciclo_1']);
         $this->assertSame('1862.19', $enviado['recursos_outras_fontes']['outras_fontes'][0]['valor']);
+    }
+
+    function testCategoriasEditalSobrevivemDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [
+            ['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82],
+            ['label' => 'Categoria B', 'limit' => 1, 'value' => 18881.03],
+        ];
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame(81817.82, $enviado['categorias_edital'][0]['value']);
+        $this->assertSame(18881.03, $enviado['categorias_edital'][1]['value']);
     }
 
     /** Os formatos que um valor monetário assume, com o resultado esperado depois de normalizado. */
