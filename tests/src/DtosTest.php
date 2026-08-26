@@ -192,6 +192,50 @@ class DtosTest extends TestCase
         $this->assertSame($categorias, $dto->toArray()['categorias_edital']);
     }
 
+    function testOpportunityDtoPreservaValorDestinadoDasCotasNoRoundTrip()
+    {
+        $cotas = [
+            ['label' => 'Pessoas negras', 'vagas' => 2, 'valor_destinado' => '32727.12', 'nao_aplicavel' => false],
+            ['label' => 'Pessoas indígenas', 'vagas' => 1, 'valor_destinado' => '16363.50', 'nao_aplicavel' => false],
+        ];
+
+        $dto = OpportunityDto::fromArray(['id' => 1, 'reserva_vagas_cotas' => $cotas]);
+
+        $this->assertSame($cotas, $dto->toArray()['reserva_vagas_cotas']);
+    }
+
+    function testOpportunityDtoComReservaVagasCotasNaoArrayResultaEmNull()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'reserva_vagas_cotas' => 'nao e array']);
+
+        $this->assertNull($dto->toArray()['reserva_vagas_cotas']);
+    }
+
+    function testOpportunityDtoPreservaRecursosOutrasFontesNoRoundTrip()
+    {
+        $recursos = [
+            'houve_utilizacao' => 'sim',
+            'recursos_proprios' => '47011.05',
+            'convenios_parcerias' => '11573.28',
+            'emendas_parlamentares' => '9992.87',
+            'remanescentes_ciclo_1' => '24611.60',
+            'outras_fontes' => [['nome_fonte' => 'Fonte A', 'valor' => '1862.19']],
+        ];
+
+        $dto = OpportunityDto::fromArray(['id' => 1, 'recursos_outras_fontes' => $recursos]);
+
+        $this->assertSame($recursos, $dto->toArray()['recursos_outras_fontes']);
+    }
+
+    function testOpportunityDtoPreservaOZeroFinalDosValoresMonetariosAninhados()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'reserva_vagas_cotas' => [
+            ['label' => 'Cota', 'vagas' => 1, 'valor_destinado' => '16363.50', 'nao_aplicavel' => false],
+        ]]);
+
+        $this->assertSame('16363.50', $dto->toArray()['reserva_vagas_cotas'][0]['valor_destinado']);
+    }
+
     function testParActionFromArrayRoundTripPreservaValueLabelRaw()
     {
         $data = ['nome_acao' => '1.1 Fomento Cultural', 'id_par_acao_meta_acao' => 1, 'valor_acao' => '100000.00'];

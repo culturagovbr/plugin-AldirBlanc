@@ -776,6 +776,59 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('32692.70', OpportunityDto::fromArray($payload)->toArray()['valor_total_edital']);
     }
 
+    function testValorDestinadoDasCotasSobreviveDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('reservaVagasCotas', json_encode([
+            ['label' => 'Pessoas negras', 'vagas' => 2, 'valorDestinado' => 32727.12, 'naoAplicavel' => false],
+            ['label' => 'Pessoas indígenas', 'vagas' => 1, 'valorDestinado' => 16363.5, 'naoAplicavel' => false],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('32727.12', $enviado['reserva_vagas_cotas'][0]['valor_destinado']);
+        $this->assertSame('16363.50', $enviado['reserva_vagas_cotas'][1]['valor_destinado']);
+    }
+
+    function testRecursosOutrasFontesSobrevivemDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('recursosOutrasFontes', json_encode([
+            'houveUtilizacao' => 'sim',
+            'recursosProprios' => 47011.05,
+            'conveniosParcerias' => 11573.28,
+            'emendasParlamentares' => 9992.87,
+            'remanescentesCiclo1' => 24611.6,
+            'outrasFontes' => [['nomeFonte' => 'Fonte A', 'valor' => 1862.19]],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('47011.05', $enviado['recursos_outras_fontes']['recursos_proprios']);
+        $this->assertSame('11573.28', $enviado['recursos_outras_fontes']['convenios_parcerias']);
+        $this->assertSame('9992.87', $enviado['recursos_outras_fontes']['emendas_parlamentares']);
+        $this->assertSame('24611.60', $enviado['recursos_outras_fontes']['remanescentes_ciclo_1']);
+        $this->assertSame('1862.19', $enviado['recursos_outras_fontes']['outras_fontes'][0]['valor']);
+    }
+
     /** Os formatos que um valor monetário assume, com o resultado esperado depois de normalizado. */
     private function formatosDeValorMonetario(): array
     {
