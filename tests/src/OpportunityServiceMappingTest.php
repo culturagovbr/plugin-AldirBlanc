@@ -885,6 +885,31 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame(18881.03, $enviado['categorias_edital'][1]['value']);
     }
 
+    /**
+     * O DTO enumera os campos um a um: um campo novo no payload seria ignorado e nunca
+     * chegaria ao CultBr, sem erro nem log. Este teste é o que denuncia esse descompasso.
+     */
+    function testTodoCampoDoPayloadSobreviveAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame(
+            [],
+            array_diff(array_keys($payload), array_keys($enviado)),
+            'campo do payload que o DTO descarta e nunca chega ao CultBr'
+        );
+        $this->assertSame(
+            [],
+            array_diff(array_keys($enviado), array_keys($payload)),
+            'campo que o DTO envia sem existir no payload'
+        );
+    }
+
     /** Os formatos que um valor monetário assume, com o resultado esperado depois de normalizado. */
     private function formatosDeValorMonetario(): array
     {
