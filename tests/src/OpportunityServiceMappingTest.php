@@ -289,6 +289,86 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertNull($result['outras_fontes']);
     }
 
+    function testMapRecursosOutrasFontesValoresEmFloatPreservamCasas()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'recursosProprios' => 47011.05,
+            'conveniosParcerias' => 11573.28,
+            'emendasParlamentares' => 9992.87,
+            'remanescentesCiclo1' => 24611.6,
+        ]);
+
+        $this->assertSame('47011.05', $result['recursos_proprios']);
+        $this->assertSame('11573.28', $result['convenios_parcerias']);
+        $this->assertSame('9992.87', $result['emendas_parlamentares']);
+        $this->assertSame('24611.60', $result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesValoresEmStringDecimalPreservamValor()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'recursosProprios' => '47011.05',
+            'conveniosParcerias' => '11573.28',
+            'emendasParlamentares' => '9992.87',
+            'remanescentesCiclo1' => '24611.6',
+        ]);
+
+        $this->assertSame('47011.05', $result['recursos_proprios']);
+        $this->assertSame('11573.28', $result['convenios_parcerias']);
+        $this->assertSame('9992.87', $result['emendas_parlamentares']);
+        $this->assertSame('24611.60', $result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesValoresAusentesPermanecemNull()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes(['houveUtilizacao' => 'nao']);
+
+        $this->assertNull($result['recursos_proprios']);
+        $this->assertNull($result['convenios_parcerias']);
+        $this->assertNull($result['emendas_parlamentares']);
+        $this->assertNull($result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesOutrasFontesValorEmFloatPreservaCasas()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'outrasFontes' => [['nomeFonte' => 'Fonte A', 'valor' => 1862.19]],
+        ]);
+
+        $this->assertSame('1862.19', $result['outras_fontes'][0]['valor']);
+    }
+
+    function testMapRecursosOutrasFontesOutrasFontesSemValorRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'outrasFontes' => [['nomeFonte' => 'Fonte sem valor']],
+        ]);
+
+        $this->assertSame('0.00', $result['outras_fontes'][0]['valor']);
+    }
+
+    function testMapRecursosOutrasFontesCobremOsFormatosDeValorMonetario()
+    {
+        $casos = $this->formatosDeValorMonetario();
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $result = $this->service->publicMapRecursosOutrasFontes([
+                'recursosProprios' => $entrada,
+                'conveniosParcerias' => $entrada,
+                'emendasParlamentares' => $entrada,
+                'remanescentesCiclo1' => $entrada,
+                'outrasFontes' => [['nomeFonte' => 'Fonte', 'valor' => $entrada]],
+            ]);
+
+            $rotulo = sprintf('valor %s', var_export($entrada, true));
+            $this->assertSame($esperado, $result['recursos_proprios'], $rotulo);
+            $this->assertSame($esperado, $result['convenios_parcerias'], $rotulo);
+            $this->assertSame($esperado, $result['emendas_parlamentares'], $rotulo);
+            $this->assertSame($esperado, $result['remanescentes_ciclo_1'], $rotulo);
+            $this->assertSame($esperado, $result['outras_fontes'][0]['valor'], $rotulo);
+        }
+    }
+
     // ======================= mapReservaVagasCotas =======================
 
     function testMapReservaVagasCotasNullRetornaNul()
@@ -318,6 +398,58 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('Cota Negros', $result[1]['label']);
         $this->assertTrue($result[1]['nao_aplicavel']);
         $this->assertSame('500.00', $result[1]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoEmFloatPreservaCasas()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 32727.12]]);
+
+        $this->assertSame('32727.12', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoEmStringDecimalPreservaValor()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => '32727.12']]);
+
+        $this->assertSame('32727.12', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoDeUmaCasaCompletaComZero()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 16363.5]]);
+
+        $this->assertSame('16363.50', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoZeroRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 0]]);
+
+        $this->assertSame('0.00', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasSemValorDestinadoRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['label' => 'Cota sem valor', 'vagas' => 2]]);
+
+        $this->assertSame('0.00', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoNaoNumericoRetornaNul()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 'sem valor']]);
+
+        $this->assertNull($result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoCobreOsFormatosDeValorMonetario()
+    {
+        $casos = $this->formatosDeValorMonetario();
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => $entrada]]);
+            $this->assertSame($esperado, $result[0]['valor_destinado'], sprintf('valor %s', var_export($entrada, true)));
+        }
     }
 
     // ======================= mapTiposFormasInscricao =======================
@@ -642,6 +774,26 @@ class OpportunityServiceMappingTest extends TestCase
         );
 
         $this->assertSame('32692.70', OpportunityDto::fromArray($payload)->toArray()['valor_total_edital']);
+    }
+
+    /** Os formatos que um valor monetário assume, com o resultado esperado depois de normalizado. */
+    private function formatosDeValorMonetario(): array
+    {
+        return [
+            ['250', '250.00'], ['1000000', '1000000.00'], ['0', '0.00'],
+            ['100698.85', '100698.85'], ['32692.7', '32692.70'], ['0.01', '0.01'],
+            ['275892.41', '275892.41'], ['100698.856', '100698.86'],
+            ['0.999', '1.00'], ['0.005', '0.01'], ['00100.50', '100.50'],
+            ['1.234,56', '1234.56'], ['1.000.000,00', '1000000.00'], ['500,00', '500.00'],
+            ['1.234', '1234.00'], ['1.000.000', '1000000.00'], ['7.005', '7005.00'],
+            ['1,234.56', '1234.56'], ['100,698.85', '100698.85'],
+            ['-500.00', '-500.00'], ['-1.234', '-1234.00'], ['-1.234,56', '-1234.56'],
+            ['  100698.85  ', '100698.85'], ['  1.234  ', '1234.00'], [',50', '0.50'],
+            [32727.12, '32727.12'], [16363.5, '16363.50'], [0.01, '0.01'],
+            [1000, '1000.00'], [0, '0.00'], [-500, '-500.00'],
+            ['', null], ['   ', null],
+            ['abc', null], ['R$ 100,00', null], ['1.234.5', null], ['12,34,56', null],
+        ];
     }
 
     /** Grava totalResource numa oportunidade nova e devolve o valor_total_edital do payload. */
