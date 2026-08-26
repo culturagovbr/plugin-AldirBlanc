@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParAction;
 use Tests\Abstract\TestCase;
@@ -136,6 +137,59 @@ class DtosTest extends TestCase
         $dto = new OpportunityId('42');
 
         $this->assertSame(42, $dto->id);
+    }
+
+    function testOpportunityDtoPreservaValorTotalEditalNoRoundTrip()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'valor_total_edital' => '100698.85']);
+
+        $this->assertSame('100698.85', $dto->valor_total_edital);
+        $this->assertSame('100698.85', $dto->toArray()['valor_total_edital']);
+    }
+
+    function testOpportunityDtoPreservaOZeroFinalDoValorTotalEdital()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'valor_total_edital' => '32692.70']);
+
+        $this->assertSame('32692.70', $dto->toArray()['valor_total_edital']);
+    }
+
+    function testOpportunityDtoPreservaCentavoIsoladoNoValorTotalEdital()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'valor_total_edital' => '0.01']);
+
+        $this->assertSame('0.01', $dto->toArray()['valor_total_edital']);
+    }
+
+    function testOpportunityDtoSemValorTotalEditalResultaEmNull()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1]);
+
+        $this->assertNull($dto->toArray()['valor_total_edital']);
+    }
+
+    function testOpportunityDtoComValorTotalEditalNullResultaEmNull()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'valor_total_edital' => null]);
+
+        $this->assertNull($dto->toArray()['valor_total_edital']);
+    }
+
+    /** O DTO só repassa: quem garante as duas casas é o mapeamento, e float aqui já chega tarde demais. */
+    function testOpportunityDtoRecebendoFloatPerdeAFormatacaoDeDuasCasas()
+    {
+        $dto = OpportunityDto::fromArray(['id' => 1, 'valor_total_edital' => 32692.70]);
+
+        $this->assertSame('32692.7', $dto->toArray()['valor_total_edital']);
+    }
+
+    function testOpportunityDtoPreservaCategoriasEditalNoRoundTrip()
+    {
+        $categorias = [['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82]];
+
+        $dto = OpportunityDto::fromArray(['id' => 1, 'categorias_edital' => $categorias]);
+
+        $this->assertSame($categorias, $dto->toArray()['categorias_edital']);
     }
 
     function testParActionFromArrayRoundTripPreservaValueLabelRaw()

@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Enum\MultiselectField;
 use AldirBlanc\Enum\SpecialOption;
@@ -599,6 +600,48 @@ class OpportunityServiceMappingTest extends TestCase
 
         $this->assertSame('100698.85', $payload['valor_total_edital']);
         $this->assertEqualsWithDelta($soma, (float) $payload['valor_total_edital'], 0.001);
+    }
+
+    /**
+     * Fecha o caminho que o job percorre até o CultBr: metadado, mapeamento e DTO.
+     * O payload correto não basta — é o toArray() do DTO que vira corpo do PUT.
+     */
+    function testValorTotalSobreviveDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', '100698.85');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('100698.85', $enviado['valor_total_edital']);
+    }
+
+    function testValorTotalDeUmaCasaSobreviveAoDtoComOZeroFinal()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', '32692.7');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame('32692.70', OpportunityDto::fromArray($payload)->toArray()['valor_total_edital']);
     }
 
     /** Grava totalResource numa oportunidade nova e devolve o valor_total_edital do payload. */
