@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Enum\MultiselectField;
 use AldirBlanc\Enum\SpecialOption;
@@ -49,7 +50,7 @@ class OpportunityServiceMappingTest extends TestCase
 
     function testNormalizeDecimalValueFormatoBrasileiro()
     {
-        // Formato BR: '.' = separador de milhar, ',' = decimal → '1.234,56' → '1234.56'
+        // Com vírgula decimal, o '.' é separador de milhar → '1.234,56' → '1234.56'
         $this->assertSame('1234.56', $this->service->publicNormalizeDecimalValue('1.234,56'));
     }
 
@@ -71,6 +72,148 @@ class OpportunityServiceMappingTest extends TestCase
     function testNormalizeDecimalValueZeroRetornaZeroFormatado()
     {
         $this->assertSame('0.00', $this->service->publicNormalizeDecimalValue(0));
+    }
+
+    function testNormalizeDecimalValueSomenteEspacosRetornaNul()
+    {
+        $this->assertNull($this->service->publicNormalizeDecimalValue('   '));
+    }
+
+    function testNormalizeDecimalValueStringZeroRetornaZeroFormatado()
+    {
+        $this->assertSame('0.00', $this->service->publicNormalizeDecimalValue('0'));
+    }
+
+    function testNormalizeDecimalValueFloatPreservaCasas()
+    {
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue(100698.85));
+    }
+
+    function testNormalizeDecimalValueStringDecimalPreservaValor()
+    {
+        // Metadado float lido de coluna text chega nesta forma.
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue('100698.85'));
+    }
+
+    function testNormalizeDecimalValueStringDecimalDeValorAlto()
+    {
+        $this->assertSame('275892.41', $this->service->publicNormalizeDecimalValue('275892.41'));
+    }
+
+    function testNormalizeDecimalValueStringDecimalDeUmaCasaCompletaComZero()
+    {
+        $this->assertSame('32692.70', $this->service->publicNormalizeDecimalValue('32692.7'));
+    }
+
+    function testNormalizeDecimalValueCentavoIsoladoNaoViraReal()
+    {
+        $this->assertSame('0.01', $this->service->publicNormalizeDecimalValue('0.01'));
+    }
+
+    function testNormalizeDecimalValueTresCasasArredonda()
+    {
+        $this->assertSame('100698.86', $this->service->publicNormalizeDecimalValue('100698.856'));
+    }
+
+    function testNormalizeDecimalValueMilharMultiploComCentavos()
+    {
+        $this->assertSame('1000000.00', $this->service->publicNormalizeDecimalValue('1.000.000,00'));
+    }
+
+    function testNormalizeDecimalValueMilharSemVirgula()
+    {
+        // Sem vírgula, grupos de 3 dígitos são milhar: '1.234' é mil duzentos e trinta e quatro
+        $this->assertSame('1234.00', $this->service->publicNormalizeDecimalValue('1.234'));
+    }
+
+    function testNormalizeDecimalValueMilharMultiploSemVirgula()
+    {
+        $this->assertSame('1000000.00', $this->service->publicNormalizeDecimalValue('1.000.000'));
+    }
+
+    function testNormalizeDecimalValueIgnoraEspacosNasBordas()
+    {
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue('  100698.85  '));
+    }
+
+    function testNormalizeDecimalValueMilharComEspacosNasBordas()
+    {
+        $this->assertSame('1234.00', $this->service->publicNormalizeDecimalValue('  1.234  '));
+    }
+
+    function testNormalizeDecimalValueNegativoPassaAdiante()
+    {
+        $this->assertSame('-500.00', $this->service->publicNormalizeDecimalValue('-500.00'));
+    }
+
+    function testNormalizeDecimalValueComSimboloMonetarioRetornaNul()
+    {
+        $this->assertNull($this->service->publicNormalizeDecimalValue('R$ 100,00'));
+    }
+
+    function testNormalizeDecimalValueCobreOsFormatosDeValorMonetario()
+    {
+        $casos = [
+            // inteiro e decimal com ponto
+            ['250', '250.00'], ['100698.85', '100698.85'], ['32692.7', '32692.70'], ['0.01', '0.01'],
+            ['275892.41', '275892.41'], ['653880.7', '653880.70'], ['1862.19', '1862.19'],
+            ['206049.8', '206049.80'], ['0', '0.00'], ['1000000', '1000000.00'], ['47011.05', '47011.05'],
+            ['11573.28', '11573.28'], ['9992.87', '9992.87'], ['24611.6', '24611.60'],
+            ['195090.56', '195090.56'],
+
+            // brasileiro: vírgula decimal, ponto de milhar
+            ['1.234,56', '1234.56'], ['1.000.000,00', '1000000.00'], ['100.698,85', '100698.85'],
+            ['500,00', '500.00'], ['0,01', '0.01'], ['12,5', '12.50'], ['1.234.567,89', '1234567.89'],
+            ['999,99', '999.99'], ['1.500,75', '1500.75'], ['25.000,00', '25000.00'],
+            ['999.999,99', '999999.99'], ['123,456', '123.46'],
+
+            // só separador de milhar
+            ['1.234', '1234.00'], ['1.000.000', '1000000.00'], ['100.698', '100698.00'],
+            ['12.500', '12500.00'], ['999.999', '999999.00'], ['1.000', '1000.00'], ['10.000', '10000.00'],
+            ['100.000', '100000.00'], ['1.005', '1005.00'], ['7.005', '7005.00'],
+
+            // negativos
+            ['-500.00', '-500.00'], ['-1.234', '-1234.00'], ['-1.234,56', '-1234.56'], ['-0.01', '-0.01'],
+            ['-1000', '-1000.00'], ['-100698.85', '-100698.85'], ['-1.000.000,00', '-1000000.00'],
+            ['-0,50', '-0.50'], ['-1,234.56', '-1234.56'], ['-32692.7', '-32692.70'],
+
+            // zero à esquerda nunca é milhar
+            ['0.005', '0.01'], ['0.004', '0.00'], ['0.999', '1.00'], ['0.001', '0.00'], ['0.500', '0.50'],
+            ['00100.50', '100.50'],
+
+            // espaços nas bordas
+            ['  100698.85  ', '100698.85'], ['  1.234  ', '1234.00'], ['  1.234,56  ', '1234.56'],
+            ['   ', null], [' 250 ', '250.00'], ['  0,01  ', '0.01'], ['  1,234.56  ', '1234.56'],
+
+            // arredondamento na terceira casa
+            ['100698.856', '100698.86'], ['100698.854', '100698.85'], ['99.999,995', '100000.00'],
+            ['1.9999', '2.00'], ['0.1', '0.10'], ['12.3456', '12.35'], ['0.0', '0.00'],
+
+            // não são valor monetário
+            ['abc', null], ['R$ 100,00', null], ['', null], [null, null], ['1.234.5', null],
+            ['12,34,56', null], ['R$1.000,00', null], ['100,00 reais', null], ['--500', null],
+            ['1..234', null], ['1,,234', null], ['-', null],
+
+            // americano: vírgula de milhar, ponto decimal
+            ['1,234.56', '1234.56'], ['100,698.85', '100698.85'], ['1,000,000.00', '1000000.00'],
+            ['12,500.50', '12500.50'], ['999,999.99', '999999.99'], ['1,234,567.89', '1234567.89'],
+
+            // bordas
+            [',50', '0.50'], ['.5', '0.50'], ['+500.00', '500.00'], ['0.10', '0.10'], ['0,10', '0.10'],
+            ['1', '1.00'], ['0,001', '0.00'],
+
+            // já numéricos na origem
+            [1000, '1000.00'], [0, '0.00'], [100698.85, '100698.85'], [0.01, '0.01'], [-500, '-500.00'],
+            [32692.7, '32692.70'], [1000000, '1000000.00'], [-0.01, '-0.01'],
+        ];
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $this->assertSame(
+                $esperado,
+                $this->service->publicNormalizeDecimalValue($entrada),
+                sprintf('valor %s', var_export($entrada, true))
+            );
+        }
     }
 
     // ======================= normalizeDateValue =======================
@@ -146,6 +289,86 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertNull($result['outras_fontes']);
     }
 
+    function testMapRecursosOutrasFontesValoresEmFloatPreservamCasas()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'recursosProprios' => 47011.05,
+            'conveniosParcerias' => 11573.28,
+            'emendasParlamentares' => 9992.87,
+            'remanescentesCiclo1' => 24611.6,
+        ]);
+
+        $this->assertSame('47011.05', $result['recursos_proprios']);
+        $this->assertSame('11573.28', $result['convenios_parcerias']);
+        $this->assertSame('9992.87', $result['emendas_parlamentares']);
+        $this->assertSame('24611.60', $result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesValoresEmStringDecimalPreservamValor()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'recursosProprios' => '47011.05',
+            'conveniosParcerias' => '11573.28',
+            'emendasParlamentares' => '9992.87',
+            'remanescentesCiclo1' => '24611.6',
+        ]);
+
+        $this->assertSame('47011.05', $result['recursos_proprios']);
+        $this->assertSame('11573.28', $result['convenios_parcerias']);
+        $this->assertSame('9992.87', $result['emendas_parlamentares']);
+        $this->assertSame('24611.60', $result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesValoresAusentesPermanecemNull()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes(['houveUtilizacao' => 'nao']);
+
+        $this->assertNull($result['recursos_proprios']);
+        $this->assertNull($result['convenios_parcerias']);
+        $this->assertNull($result['emendas_parlamentares']);
+        $this->assertNull($result['remanescentes_ciclo_1']);
+    }
+
+    function testMapRecursosOutrasFontesOutrasFontesValorEmFloatPreservaCasas()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'outrasFontes' => [['nomeFonte' => 'Fonte A', 'valor' => 1862.19]],
+        ]);
+
+        $this->assertSame('1862.19', $result['outras_fontes'][0]['valor']);
+    }
+
+    function testMapRecursosOutrasFontesOutrasFontesSemValorRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapRecursosOutrasFontes([
+            'outrasFontes' => [['nomeFonte' => 'Fonte sem valor']],
+        ]);
+
+        $this->assertSame('0.00', $result['outras_fontes'][0]['valor']);
+    }
+
+    function testMapRecursosOutrasFontesCobremOsFormatosDeValorMonetario()
+    {
+        $casos = $this->formatosDeValorMonetario();
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $result = $this->service->publicMapRecursosOutrasFontes([
+                'recursosProprios' => $entrada,
+                'conveniosParcerias' => $entrada,
+                'emendasParlamentares' => $entrada,
+                'remanescentesCiclo1' => $entrada,
+                'outrasFontes' => [['nomeFonte' => 'Fonte', 'valor' => $entrada]],
+            ]);
+
+            $rotulo = sprintf('valor %s', var_export($entrada, true));
+            $this->assertSame($esperado, $result['recursos_proprios'], $rotulo);
+            $this->assertSame($esperado, $result['convenios_parcerias'], $rotulo);
+            $this->assertSame($esperado, $result['emendas_parlamentares'], $rotulo);
+            $this->assertSame($esperado, $result['remanescentes_ciclo_1'], $rotulo);
+            $this->assertSame($esperado, $result['outras_fontes'][0]['valor'], $rotulo);
+        }
+    }
+
     // ======================= mapReservaVagasCotas =======================
 
     function testMapReservaVagasCotasNullRetornaNul()
@@ -175,6 +398,58 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('Cota Negros', $result[1]['label']);
         $this->assertTrue($result[1]['nao_aplicavel']);
         $this->assertSame('500.00', $result[1]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoEmFloatPreservaCasas()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 32727.12]]);
+
+        $this->assertSame('32727.12', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoEmStringDecimalPreservaValor()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => '32727.12']]);
+
+        $this->assertSame('32727.12', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoDeUmaCasaCompletaComZero()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 16363.5]]);
+
+        $this->assertSame('16363.50', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoZeroRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 0]]);
+
+        $this->assertSame('0.00', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasSemValorDestinadoRetornaZeroFormatado()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['label' => 'Cota sem valor', 'vagas' => 2]]);
+
+        $this->assertSame('0.00', $result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoNaoNumericoRetornaNul()
+    {
+        $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => 'sem valor']]);
+
+        $this->assertNull($result[0]['valor_destinado']);
+    }
+
+    function testMapReservaVagasCotasValorDestinadoCobreOsFormatosDeValorMonetario()
+    {
+        $casos = $this->formatosDeValorMonetario();
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $result = $this->service->publicMapReservaVagasCotas([['valorDestinado' => $entrada]]);
+            $this->assertSame($esperado, $result[0]['valor_destinado'], sprintf('valor %s', var_export($entrada, true)));
+        }
     }
 
     // ======================= mapTiposFormasInscricao =======================
@@ -390,6 +665,288 @@ class OpportunityServiceMappingTest extends TestCase
     }
 
     // ======================= getEnteFederadoByOpportunity (DB-backed) =======================
+
+    /**
+     * Percorre o caminho completo do valor total: metadado gravado, releitura do banco e payload.
+     * O helper isolado passar não garante isto — o valor ainda atravessa o getter e o mapeamento.
+     */
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalInteiro()
+    {
+        $this->assertSame('250.00', $this->payloadValorTotalPara('250'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalComUmaCasaDecimal()
+    {
+        $this->assertSame('32692.70', $this->payloadValorTotalPara('32692.7'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalComDuasCasasDecimais()
+    {
+        $this->assertSame('100698.85', $this->payloadValorTotalPara('100698.85'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadSemValorTotalRetornaNul()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertNull($payload['valor_total_edital']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadValorTotalVazioRetornaNul()
+    {
+        $this->assertNull($this->payloadValorTotalPara(''));
+    }
+
+    function testMapOpportunityToIntegrationPayloadValorTotalEmFormatoBrasileiro()
+    {
+        $this->assertSame('100698.85', $this->payloadValorTotalPara('100.698,85'));
+    }
+
+    /**
+     * O valor total precisa continuar batendo com a soma das categorias depois de normalizado.
+     * É a relação que denuncia adulteração do valor: as categorias vão cruas para o payload.
+     */
+    function testMapOpportunityToIntegrationPayloadValorTotalBateComSomaDasCategorias()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [
+            ['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82],
+            ['label' => 'Categoria B', 'limit' => 1, 'value' => 18881.03],
+        ];
+        $opp->setMetadata('totalResource', '100698.85');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $soma = array_sum(array_column($payload['categorias_edital'], 'value'));
+
+        $this->assertSame('100698.85', $payload['valor_total_edital']);
+        $this->assertEqualsWithDelta($soma, (float) $payload['valor_total_edital'], 0.001);
+    }
+
+    /**
+     * Fecha o caminho que o job percorre até o CultBr: metadado, mapeamento e DTO.
+     * O payload correto não basta — é o toArray() do DTO que vira corpo do PUT.
+     */
+    function testValorTotalSobreviveDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', '100698.85');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('100698.85', $enviado['valor_total_edital']);
+    }
+
+    function testValorTotalDeUmaCasaSobreviveAoDtoComOZeroFinal()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', '32692.7');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame('32692.70', OpportunityDto::fromArray($payload)->toArray()['valor_total_edital']);
+    }
+
+    /**
+     * As categorias vão cruas ao CultBr: o valor sai numérico, como foi gravado, sem passar
+     * pela normalização decimal. É o que permite conferir o valor total contra a soma delas.
+     */
+    function testMapOpportunityToIntegrationPayloadCategoriasEditalSaemSemNormalizacao()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82]];
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame(81817.82, $payload['categorias_edital'][0]['value']);
+        $this->assertIsNotString($payload['categorias_edital'][0]['value']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadSemCategoriasRetornaListaVazia()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertSame([], $payload['categorias_edital']);
+    }
+
+    function testValorDestinadoDasCotasSobreviveDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('reservaVagasCotas', json_encode([
+            ['label' => 'Pessoas negras', 'vagas' => 2, 'valorDestinado' => 32727.12, 'naoAplicavel' => false],
+            ['label' => 'Pessoas indígenas', 'vagas' => 1, 'valorDestinado' => 16363.5, 'naoAplicavel' => false],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('32727.12', $enviado['reserva_vagas_cotas'][0]['valor_destinado']);
+        $this->assertSame('16363.50', $enviado['reserva_vagas_cotas'][1]['valor_destinado']);
+    }
+
+    function testRecursosOutrasFontesSobrevivemDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('recursosOutrasFontes', json_encode([
+            'houveUtilizacao' => 'sim',
+            'recursosProprios' => 47011.05,
+            'conveniosParcerias' => 11573.28,
+            'emendasParlamentares' => 9992.87,
+            'remanescentesCiclo1' => 24611.6,
+            'outrasFontes' => [['nomeFonte' => 'Fonte A', 'valor' => 1862.19]],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame('47011.05', $enviado['recursos_outras_fontes']['recursos_proprios']);
+        $this->assertSame('11573.28', $enviado['recursos_outras_fontes']['convenios_parcerias']);
+        $this->assertSame('9992.87', $enviado['recursos_outras_fontes']['emendas_parlamentares']);
+        $this->assertSame('24611.60', $enviado['recursos_outras_fontes']['remanescentes_ciclo_1']);
+        $this->assertSame('1862.19', $enviado['recursos_outras_fontes']['outras_fontes'][0]['valor']);
+    }
+
+    function testCategoriasEditalSobrevivemDoMetadadoAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [
+            ['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82],
+            ['label' => 'Categoria B', 'limit' => 1, 'value' => 18881.03],
+        ];
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame(81817.82, $enviado['categorias_edital'][0]['value']);
+        $this->assertSame(18881.03, $enviado['categorias_edital'][1]['value']);
+    }
+
+    /**
+     * O DTO enumera os campos um a um: um campo novo no payload seria ignorado e nunca
+     * chegaria ao CultBr, sem erro nem log. Este teste é o que denuncia esse descompasso.
+     */
+    function testTodoCampoDoPayloadSobreviveAoDtoEnviadoAoCultBr()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $enviado = OpportunityDto::fromArray($payload)->toArray();
+
+        $this->assertSame(
+            [],
+            array_diff(array_keys($payload), array_keys($enviado)),
+            'campo do payload que o DTO descarta e nunca chega ao CultBr'
+        );
+        $this->assertSame(
+            [],
+            array_diff(array_keys($enviado), array_keys($payload)),
+            'campo que o DTO envia sem existir no payload'
+        );
+    }
+
+    /** Os formatos que um valor monetário assume, com o resultado esperado depois de normalizado. */
+    private function formatosDeValorMonetario(): array
+    {
+        return [
+            ['250', '250.00'], ['1000000', '1000000.00'], ['0', '0.00'],
+            ['100698.85', '100698.85'], ['32692.7', '32692.70'], ['0.01', '0.01'],
+            ['275892.41', '275892.41'], ['100698.856', '100698.86'],
+            ['0.999', '1.00'], ['0.005', '0.01'], ['00100.50', '100.50'],
+            ['1.234,56', '1234.56'], ['1.000.000,00', '1000000.00'], ['500,00', '500.00'],
+            ['1.234', '1234.00'], ['1.000.000', '1000000.00'], ['7.005', '7005.00'],
+            ['1,234.56', '1234.56'], ['100,698.85', '100698.85'],
+            ['-500.00', '-500.00'], ['-1.234', '-1234.00'], ['-1.234,56', '-1234.56'],
+            ['  100698.85  ', '100698.85'], ['  1.234  ', '1234.00'], [',50', '0.50'],
+            [32727.12, '32727.12'], [16363.5, '16363.50'], [0.01, '0.01'],
+            [1000, '1000.00'], [0, '0.00'], [-500, '-500.00'],
+            ['', null], ['   ', null],
+            ['abc', null], ['R$ 100,00', null], ['1.234.5', null], ['12,34,56', null],
+        ];
+    }
+
+    /** Grava totalResource numa oportunidade nova e devolve o valor_total_edital do payload. */
+    private function payloadValorTotalPara(string $totalResource): ?string
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', $totalResource);
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+
+        return $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        )['valor_total_edital'];
+    }
 
     private function createOpportunity(): Opportunity
     {
