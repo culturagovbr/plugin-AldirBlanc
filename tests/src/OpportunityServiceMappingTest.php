@@ -533,6 +533,92 @@ class OpportunityServiceMappingTest extends TestCase
 
     // ======================= getEnteFederadoByOpportunity (DB-backed) =======================
 
+    /**
+     * Percorre o caminho completo do valor total: metadado gravado, releitura do banco e payload.
+     * O helper isolado passar não garante isto — o valor ainda atravessa o getter e o mapeamento.
+     */
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalInteiro()
+    {
+        $this->assertSame('250.00', $this->payloadValorTotalPara('250'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalComUmaCasaDecimal()
+    {
+        $this->assertSame('32692.70', $this->payloadValorTotalPara('32692.7'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadPreservaValorTotalComDuasCasasDecimais()
+    {
+        $this->assertSame('100698.85', $this->payloadValorTotalPara('100698.85'));
+    }
+
+    function testMapOpportunityToIntegrationPayloadSemValorTotalRetornaNul()
+    {
+        $opp = $this->createOpportunity();
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertNull($payload['valor_total_edital']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadValorTotalVazioRetornaNul()
+    {
+        $this->assertNull($this->payloadValorTotalPara(''));
+    }
+
+    function testMapOpportunityToIntegrationPayloadValorTotalEmFormatoBrasileiro()
+    {
+        $this->assertSame('100698.85', $this->payloadValorTotalPara('100.698,85'));
+    }
+
+    /**
+     * O valor total precisa continuar batendo com a soma das categorias depois de normalizado.
+     * É a relação que denuncia adulteração do valor: as categorias vão cruas para o payload.
+     */
+    function testMapOpportunityToIntegrationPayloadValorTotalBateComSomaDasCategorias()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [
+            ['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82],
+            ['label' => 'Categoria B', 'limit' => 1, 'value' => 18881.03],
+        ];
+        $opp->setMetadata('totalResource', '100698.85');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $soma = array_sum(array_column($payload['categorias_edital'], 'value'));
+
+        $this->assertSame('100698.85', $payload['valor_total_edital']);
+        $this->assertEqualsWithDelta($soma, (float) $payload['valor_total_edital'], 0.001);
+    }
+
+    /** Grava totalResource numa oportunidade nova e devolve o valor_total_edital do payload. */
+    private function payloadValorTotalPara(string $totalResource): ?string
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('totalResource', $totalResource);
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+
+        return $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        )['valor_total_edital'];
+    }
+
     private function createOpportunity(): Opportunity
     {
         $user = $this->userDirector->createUser();
