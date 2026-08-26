@@ -49,7 +49,7 @@ class OpportunityServiceMappingTest extends TestCase
 
     function testNormalizeDecimalValueFormatoBrasileiro()
     {
-        // Formato BR: '.' = separador de milhar, ',' = decimal → '1.234,56' → '1234.56'
+        // Com vírgula decimal, o '.' é separador de milhar → '1.234,56' → '1234.56'
         $this->assertSame('1234.56', $this->service->publicNormalizeDecimalValue('1.234,56'));
     }
 
@@ -71,6 +71,148 @@ class OpportunityServiceMappingTest extends TestCase
     function testNormalizeDecimalValueZeroRetornaZeroFormatado()
     {
         $this->assertSame('0.00', $this->service->publicNormalizeDecimalValue(0));
+    }
+
+    function testNormalizeDecimalValueSomenteEspacosRetornaNul()
+    {
+        $this->assertNull($this->service->publicNormalizeDecimalValue('   '));
+    }
+
+    function testNormalizeDecimalValueStringZeroRetornaZeroFormatado()
+    {
+        $this->assertSame('0.00', $this->service->publicNormalizeDecimalValue('0'));
+    }
+
+    function testNormalizeDecimalValueFloatPreservaCasas()
+    {
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue(100698.85));
+    }
+
+    function testNormalizeDecimalValueStringDecimalPreservaValor()
+    {
+        // Metadado float lido de coluna text chega nesta forma.
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue('100698.85'));
+    }
+
+    function testNormalizeDecimalValueStringDecimalDeValorAlto()
+    {
+        $this->assertSame('275892.41', $this->service->publicNormalizeDecimalValue('275892.41'));
+    }
+
+    function testNormalizeDecimalValueStringDecimalDeUmaCasaCompletaComZero()
+    {
+        $this->assertSame('32692.70', $this->service->publicNormalizeDecimalValue('32692.7'));
+    }
+
+    function testNormalizeDecimalValueCentavoIsoladoNaoViraReal()
+    {
+        $this->assertSame('0.01', $this->service->publicNormalizeDecimalValue('0.01'));
+    }
+
+    function testNormalizeDecimalValueTresCasasArredonda()
+    {
+        $this->assertSame('100698.86', $this->service->publicNormalizeDecimalValue('100698.856'));
+    }
+
+    function testNormalizeDecimalValueMilharMultiploComCentavos()
+    {
+        $this->assertSame('1000000.00', $this->service->publicNormalizeDecimalValue('1.000.000,00'));
+    }
+
+    function testNormalizeDecimalValueMilharSemVirgula()
+    {
+        // Sem vírgula, grupos de 3 dígitos são milhar: '1.234' é mil duzentos e trinta e quatro
+        $this->assertSame('1234.00', $this->service->publicNormalizeDecimalValue('1.234'));
+    }
+
+    function testNormalizeDecimalValueMilharMultiploSemVirgula()
+    {
+        $this->assertSame('1000000.00', $this->service->publicNormalizeDecimalValue('1.000.000'));
+    }
+
+    function testNormalizeDecimalValueIgnoraEspacosNasBordas()
+    {
+        $this->assertSame('100698.85', $this->service->publicNormalizeDecimalValue('  100698.85  '));
+    }
+
+    function testNormalizeDecimalValueMilharComEspacosNasBordas()
+    {
+        $this->assertSame('1234.00', $this->service->publicNormalizeDecimalValue('  1.234  '));
+    }
+
+    function testNormalizeDecimalValueNegativoPassaAdiante()
+    {
+        $this->assertSame('-500.00', $this->service->publicNormalizeDecimalValue('-500.00'));
+    }
+
+    function testNormalizeDecimalValueComSimboloMonetarioRetornaNul()
+    {
+        $this->assertNull($this->service->publicNormalizeDecimalValue('R$ 100,00'));
+    }
+
+    function testNormalizeDecimalValueCobreOsFormatosDeValorMonetario()
+    {
+        $casos = [
+            // inteiro e decimal com ponto
+            ['250', '250.00'], ['100698.85', '100698.85'], ['32692.7', '32692.70'], ['0.01', '0.01'],
+            ['275892.41', '275892.41'], ['653880.7', '653880.70'], ['1862.19', '1862.19'],
+            ['206049.8', '206049.80'], ['0', '0.00'], ['1000000', '1000000.00'], ['47011.05', '47011.05'],
+            ['11573.28', '11573.28'], ['9992.87', '9992.87'], ['24611.6', '24611.60'],
+            ['195090.56', '195090.56'],
+
+            // brasileiro: vírgula decimal, ponto de milhar
+            ['1.234,56', '1234.56'], ['1.000.000,00', '1000000.00'], ['100.698,85', '100698.85'],
+            ['500,00', '500.00'], ['0,01', '0.01'], ['12,5', '12.50'], ['1.234.567,89', '1234567.89'],
+            ['999,99', '999.99'], ['1.500,75', '1500.75'], ['25.000,00', '25000.00'],
+            ['999.999,99', '999999.99'], ['123,456', '123.46'],
+
+            // só separador de milhar
+            ['1.234', '1234.00'], ['1.000.000', '1000000.00'], ['100.698', '100698.00'],
+            ['12.500', '12500.00'], ['999.999', '999999.00'], ['1.000', '1000.00'], ['10.000', '10000.00'],
+            ['100.000', '100000.00'], ['1.005', '1005.00'], ['7.005', '7005.00'],
+
+            // negativos
+            ['-500.00', '-500.00'], ['-1.234', '-1234.00'], ['-1.234,56', '-1234.56'], ['-0.01', '-0.01'],
+            ['-1000', '-1000.00'], ['-100698.85', '-100698.85'], ['-1.000.000,00', '-1000000.00'],
+            ['-0,50', '-0.50'], ['-1,234.56', '-1234.56'], ['-32692.7', '-32692.70'],
+
+            // zero à esquerda nunca é milhar
+            ['0.005', '0.01'], ['0.004', '0.00'], ['0.999', '1.00'], ['0.001', '0.00'], ['0.500', '0.50'],
+            ['00100.50', '100.50'],
+
+            // espaços nas bordas
+            ['  100698.85  ', '100698.85'], ['  1.234  ', '1234.00'], ['  1.234,56  ', '1234.56'],
+            ['   ', null], [' 250 ', '250.00'], ['  0,01  ', '0.01'], ['  1,234.56  ', '1234.56'],
+
+            // arredondamento na terceira casa
+            ['100698.856', '100698.86'], ['100698.854', '100698.85'], ['99.999,995', '100000.00'],
+            ['1.9999', '2.00'], ['0.1', '0.10'], ['12.3456', '12.35'], ['0.0', '0.00'],
+
+            // não são valor monetário
+            ['abc', null], ['R$ 100,00', null], ['', null], [null, null], ['1.234.5', null],
+            ['12,34,56', null], ['R$1.000,00', null], ['100,00 reais', null], ['--500', null],
+            ['1..234', null], ['1,,234', null], ['-', null],
+
+            // americano: vírgula de milhar, ponto decimal
+            ['1,234.56', '1234.56'], ['100,698.85', '100698.85'], ['1,000,000.00', '1000000.00'],
+            ['12,500.50', '12500.50'], ['999,999.99', '999999.99'], ['1,234,567.89', '1234567.89'],
+
+            // bordas
+            [',50', '0.50'], ['.5', '0.50'], ['+500.00', '500.00'], ['0.10', '0.10'], ['0,10', '0.10'],
+            ['1', '1.00'], ['0,001', '0.00'],
+
+            // já numéricos na origem
+            [1000, '1000.00'], [0, '0.00'], [100698.85, '100698.85'], [0.01, '0.01'], [-500, '-500.00'],
+            [32692.7, '32692.70'], [1000000, '1000000.00'], [-0.01, '-0.01'],
+        ];
+
+        foreach ($casos as [$entrada, $esperado]) {
+            $this->assertSame(
+                $esperado,
+                $this->service->publicNormalizeDecimalValue($entrada),
+                sprintf('valor %s', var_export($entrada, true))
+            );
+        }
     }
 
     // ======================= normalizeDateValue =======================
