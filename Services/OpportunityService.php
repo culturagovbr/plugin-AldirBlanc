@@ -542,7 +542,7 @@ class OpportunityService
         }
 
         if (is_string($value)) {
-            $value = str_replace(['.', ','], ['', '.'], $value);
+            $value = $this->normalizeThousandSeparators(trim($value));
         }
 
         if (!is_numeric($value)) {
@@ -550,6 +550,23 @@ class OpportunityService
         }
 
         return number_format((float) $value, 2, '.', '');
+    }
+
+    /** Decimal é o último separador; ponto sozinho só é milhar em grupos de 3 sem zero inicial. */
+    protected function normalizeThousandSeparators(string $value): string
+    {
+        $comma = strrpos($value, ',');
+        $dot = strrpos($value, '.');
+
+        if ($comma !== false) {
+            return $dot === false || $comma > $dot
+                ? str_replace(['.', ','], ['', '.'], $value)
+                : str_replace(',', '', $value);
+        }
+
+        return preg_match('/^-?[1-9]\d{0,2}(\.\d{3})+$/', $value)
+            ? str_replace('.', '', $value)
+            : $value;
     }
 
     protected function normalizeDateValue($value): ?string

@@ -228,6 +228,164 @@ class ControllerFederativeEntityOpportunitiesTest extends TestCase
         $this->assertSame('12345678901234', $item['ente_federado']['document']);
     }
 
+    // ===== Valores monetários =====
+
+    function testPayloadContemValorTotalCorretoEmCadaItem()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Com Valor');
+        $opp = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Com Valor');
+        $this->gravaValorTotal($opp, '100698.85');
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $payload = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+
+        $this->assertSame('100698.85', $payload['data'][0]['valor_total_edital']);
+    }
+
+    function testPayloadCompletaComZeroOValorTotalDeUmaCasaDecimal()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Uma Casa');
+        $opp = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Uma Casa');
+        $this->gravaValorTotal($opp, '32692.7');
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $payload = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+
+        $this->assertSame('32692.70', $payload['data'][0]['valor_total_edital']);
+    }
+
+    function testPayloadSemValorTotalRetornaNul()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Sem Valor');
+        $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Sem Valor');
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $payload = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+
+        $this->assertNull($payload['data'][0]['valor_total_edital']);
+    }
+
+    /** O payload atravessa o cache entre uma chamada e outra; o valor não pode mudar no caminho. */
+    function testValorTotalServidoDoCacheEIgualAoDaPrimeiraConsulta()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Cache Valor');
+        $opp = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Cache Valor');
+        $this->gravaValorTotal($opp, '100698.85');
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $primeira = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+        $segunda = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+
+        $this->assertSame('100698.85', $primeira['data'][0]['valor_total_edital']);
+        $this->assertSame($primeira['data'][0]['valor_total_edital'], $segunda['data'][0]['valor_total_edital']);
+    }
+
+    function testPayloadContemOsDemaisValoresMonetariosDoEdital()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Monetario');
+        $opp = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Monetaria');
+
+        $this->app->disableAccessControl();
+        $opp->registrationRanges = [['label' => 'Categoria A', 'limit' => 5, 'value' => 81817.82]];
+        $opp->setMetadata('reservaVagasCotas', json_encode([
+            ['label' => 'Cota duas casas', 'vagas' => 2, 'valorDestinado' => 32727.12, 'naoAplicavel' => false],
+            ['label' => 'Cota uma casa', 'vagas' => 1, 'valorDestinado' => 16363.5, 'naoAplicavel' => false],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $item = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities())['data'][0];
+
+        $this->assertSame(81817.82, $item['categorias_edital'][0]['value']);
+        $this->assertSame('32727.12', $item['reserva_vagas_cotas'][0]['valor_destinado']);
+        $this->assertSame('16363.50', $item['reserva_vagas_cotas'][1]['valor_destinado']);
+    }
+
+    function testPayloadContemOsRecursosDeOutrasFontesDoEdital()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Outras Fontes');
+        $opp = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Outras Fontes');
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('recursosOutrasFontes', json_encode([
+            'houveUtilizacao' => 'sim',
+            'recursosProprios' => 47011.05,
+            'conveniosParcerias' => 11573.28,
+            'emendasParlamentares' => 9992.87,
+            'remanescentesCiclo1' => 24611.6,
+            'outrasFontes' => [
+                ['nomeFonte' => 'Fonte A', 'valor' => 1862.19],
+                ['nomeFonte' => 'Fonte B', 'valor' => 5849.1],
+            ],
+        ]));
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $recursos = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities())['data'][0]['recursos_outras_fontes'];
+
+        $this->assertSame('47011.05', $recursos['recursos_proprios']);
+        $this->assertSame('11573.28', $recursos['convenios_parcerias']);
+        $this->assertSame('9992.87', $recursos['emendas_parlamentares']);
+        $this->assertSame('24611.60', $recursos['remanescentes_ciclo_1']);
+        $this->assertSame('1862.19', $recursos['outras_fontes'][0]['valor']);
+        $this->assertSame('5849.10', $recursos['outras_fontes'][1]['valor']);
+    }
+
+    /** O endpoint devolve uma lista: cada edital precisa sair com o próprio valor, sem contaminar o vizinho. */
+    function testCadaItemDaListaCarregaOProprioValorTotal()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12345678901234', 'Ente Dois Editais');
+        $opp1 = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Valor Um');
+        $opp2 = $this->eligibleOpportunity($user, $subsite, $entity, 'Opp Valor Dois');
+        $this->gravaValorTotal($opp1, '100698.85');
+        $this->gravaValorTotal($opp2, '32692.7');
+
+        $this->setRequest('GET', $entity->document);
+        $controller = $this->controller($subsite->id);
+
+        $data = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities())['data'];
+        $valores = array_column($data, 'valor_total_edital', 'id');
+
+        $this->assertSame('100698.85', $valores[$opp1->id]);
+        $this->assertSame('32692.70', $valores[$opp2->id]);
+    }
+
+    private function gravaValorTotal(Opportunity $opportunity, string $valor): void
+    {
+        $this->app->disableAccessControl();
+        $opportunity->setMetadata('totalResource', $valor);
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+    }
+
     // ===== Cache =====
 
     function testCachePopuladoAposConsulta()
