@@ -105,12 +105,12 @@ class OpportunityServiceSyncableFiltersTest extends TestCase
         $this->app->em->flush();
     }
 
-    /** Ids que a API devolve para os filtros de elegibilidade, dentre os ids indicados. */
-    private function filteredIds(array $opportunities): array
+    /** Ids que a API devolve para os filtros indicados (por padrão, os de elegibilidade). */
+    private function filteredIds(array $opportunities, ?array $filters = null): array
     {
         $ids = array_map(fn(Opportunity $opportunity) => $opportunity->id, $opportunities);
 
-        $params = $this->service()->syncableApiQueryFilters() + [
+        $params = ($filters ?? $this->service()->syncableApiQueryFilters()) + [
             'id' => 'IN(' . implode(',', $ids) . ')',
             '@select' => 'id',
         ];
@@ -232,6 +232,64 @@ class OpportunityServiceSyncableFiltersTest extends TestCase
         $this->assertNotContains((int) $complementar->id, $filtrados);
         $this->assertNotContains((int) $semPar->id, $filtrados);
         $this->assertNotContains((int) $semEnte->id, $filtrados);
+    }
+
+    function testRecorteDaListagemMostraElegiveisEInelegiveis()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->subsite($owner, 'Subsite Pnab Listagem');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $elegivel = $this->opportunity($owner, $subsite);
+        $semPar = $this->opportunity($owner, $subsite, ['par' => []]);
+        $semEnte = $this->opportunity($owner, $subsite, ['federativeEntityId' => false]);
+
+        $filtrados = $this->filteredIds(
+            [$elegivel, $semPar, $semEnte],
+            $this->service()->listingApiQueryFilters()
+        );
+
+        $this->assertContains((int) $elegivel->id, $filtrados);
+        $this->assertContains((int) $semPar->id, $filtrados, 'O modo "todas" mostra a inelegível, com o motivo no card');
+        $this->assertContains((int) $semEnte->id, $filtrados);
+    }
+
+    function testRecorteDaListagemSegueExcluindoFaseComplementarERascunho()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->subsite($owner, 'Subsite Pnab Listagem Exclusoes');
+        $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
+
+        $publicada = $this->opportunity($owner, $subsite);
+        $fase = $this->opportunity($owner, $subsite, ['status' => Opportunity::STATUS_PHASE]);
+        $complementar = $this->opportunity($owner, $subsite, ['parent' => $publicada]);
+        $rascunho = $this->opportunity($owner, $subsite, ['status' => Opportunity::STATUS_DRAFT]);
+
+        $filtrados = $this->filteredIds(
+            [$publicada, $fase, $complementar, $rascunho],
+            $this->service()->listingApiQueryFilters()
+        );
+
+        $this->assertContains((int) $publicada->id, $filtrados);
+        $this->assertNotContains((int) $fase->id, $filtrados);
+        $this->assertNotContains((int) $complementar->id, $filtrados);
+        $this->assertNotContains((int) $rascunho->id, $filtrados);
+    }
+
+    function testSincronizaveisSaoORecorteDaListagemMaisAElegibilidade()
+    {
+        $listagem = $this->service()->listingApiQueryFilters();
+        $sincronizaveis = $this->service()->syncableApiQueryFilters();
+
+        foreach ($listagem as $chave => $valor) {
+            $this->assertSame($valor, $sincronizaveis[$chave] ?? null, "O filtro {$chave} precisa valer nos dois modos");
+        }
+
+        $this->assertSame(
+            ['federativeEntityId', 'parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId'],
+            array_values(array_diff(array_keys($sincronizaveis), array_keys($listagem))),
+            'A diferença entre os dois modos é exatamente a elegibilidade'
+        );
     }
 
     /**
