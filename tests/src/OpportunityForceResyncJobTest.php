@@ -86,6 +86,14 @@ class OpportunityForceResyncJobTest extends TestCase
         $this->app->enqueueOrReplaceJob(OpportunityForceResyncJob::SLUG, ['opportunityIds' => $ids]);
     }
 
+    private function findResyncJob(array $ids, int $userId): ?Job
+    {
+        sort($ids);
+        $slug = OpportunityForceResyncJob::SLUG;
+        $id = md5("{$slug}:{$slug}:{$userId}:" . implode(',', $ids));
+
+        return $this->app->repo('Job')->findOneBy(['id' => $id]);
+    }
 
     private function findSyncJob(int $opportunityId): ?Job
     {
@@ -143,6 +151,62 @@ class OpportunityForceResyncJobTest extends TestCase
 
 
 
+    function testMesmaSelecaoEmOutraOrdemNaoDuplicaODisparo()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $uma = $this->opportunity($owner, $subsite);
+        $outra = $this->opportunity($owner, $subsite);
 
+        $this->clearJobQueue();
 
+        $this->login($owner);
+        $this->enqueueResync([$uma->id, $outra->id]);
+        $this->enqueueResync([$outra->id, 0, $uma->id, -1, $uma->id]);
+
+        $this->assertCount(
+            1,
+            $this->app->repo('Job')->findBy(['type' => OpportunityForceResyncJob::SLUG]),
+            'A mesma seleção, em outra ordem ou com id repetido e inválido, é o mesmo disparo'
+        );
+    }
+
+    function testDisparosDeUsuariosDiferentesCoexistemNaFila()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        $this->login($owner);
+        $this->enqueueResync([$opportunity->id]);
+
+        $this->login($this->userDirector->createUser());
+        $this->enqueueResync([$opportunity->id]);
+
+        $this->assertCount(
+            2,
+            $this->app->repo('Job')->findBy(['type' => OpportunityForceResyncJob::SLUG]),
+            'Dois administradores reenviando a mesma seleção são dois disparos'
+        );
+    }
+
+    function testDisparosComSelecoesDiferentesCoexistemNaFila()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $uma = $this->opportunity($owner, $subsite);
+        $outra = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        $this->login($owner);
+        $this->enqueueResync([$uma->id]);
+        $this->enqueueResync([$outra->id]);
+
+        $userId = (int) $owner->id;
+        $this->assertNotNull($this->findResyncJob([(int) $uma->id], $userId), 'O primeiro disparo continua na fila');
+        $this->assertNotNull($this->findResyncJob([(int) $outra->id], $userId), 'O segundo disparo não pode substituir o primeiro');
+    }
 }
