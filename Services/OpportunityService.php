@@ -6,6 +6,7 @@ use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Enum\MultiselectField;
 use AldirBlanc\Enum\OpportunityStatus;
 use AldirBlanc\Enum\SpecialOption;
+use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Enum\TipoProponenteEnum;
 use MapasCulturais\App;
 use MapasCulturais\Entity;
@@ -25,9 +26,67 @@ class OpportunityService
         'territorio' => 'Edital não se direciona a territórios específicos',
     ];
 
+    /** Metadados do PAR que precisam estar preenchidos para a oportunidade ser enviada. */
+    private const PAR_METADATA_KEYS = ['parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId'];
+
+    /** A oportunidade pode ser enviada ao CultBR? */
+    public function isEligibleForSync(Opportunity $opportunity): bool
+    {
+        return $this->syncIneligibilityReason($opportunity) === null;
+    }
+
+    /** Qual condição impede o envio ao CultBR, ou null quando a oportunidade pode ser enviada. */
+    public function syncIneligibilityReason(Opportunity $opportunity): ?SyncIneligibilityReason
+    {
+        if ($this->metadataIsBlank($opportunity, 'federativeEntityId')) {
+            return SyncIneligibilityReason::NO_FEDERATIVE_ENTITY;
+        }
+
+        $subsiteId = (int) $opportunity->subsite?->id;
+        if ($subsiteId < 1) {
+            return SyncIneligibilityReason::NO_SUBSITE;
+        }
+
+        $integrationSubsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if ($integrationSubsiteId === 0) {
+            return SyncIneligibilityReason::SUBSITE_NOT_CONFIGURED;
+        }
+
+        if ($subsiteId !== $integrationSubsiteId) {
+            return SyncIneligibilityReason::OTHER_SUBSITE;
+        }
+
+        if ((int) $opportunity->status === Opportunity::STATUS_PHASE) {
+            return SyncIneligibilityReason::IS_PHASE;
+        }
+
+        if ($opportunity->parent) {
+            return SyncIneligibilityReason::HAS_PARENT;
+        }
+
+        foreach (self::PAR_METADATA_KEYS as $key) {
+            if ($this->metadataIsBlank($opportunity, $key)) {
+                return SyncIneligibilityReason::INCOMPLETE_PAR;
+            }
+        }
+
+        return null;
+    }
+
+    /** No worker o tema pode não estar carregado, e aí getMetadata() não enxerga o metadado. */
+    private function metadataIsBlank(Opportunity $opportunity, string $key): bool
+    {
+        $value = $opportunity->getMetadata($key) ?? $this->getRawMetadataValue($opportunity, $key);
+
+        return trim((string) $value) === '';
+    }
+
     /**
      * Retorna oportunidades elegíveis para o batch sync do CultBR:
      * raiz (sem parent), com os 4 dados do PAR preenchidos, no subsite e dona pelo agente indicado.
+     *
+     * Regra própria do sync do gestor — filtra por dono e não checa ente federado nem status,
+     * ao contrário de isEligibleForSync.
      *
      * @return Opportunity[]
      */
