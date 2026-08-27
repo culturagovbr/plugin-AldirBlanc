@@ -29,6 +29,9 @@ class OpportunityService
     /** Metadados do PAR que precisam estar preenchidos para a oportunidade ser enviada. */
     private const PAR_METADATA_KEYS = ['parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId'];
 
+    /** Metadado preenchido para a API: existe, não é nulo e não está em branco. */
+    private const FILLED_METADATA_FILTER = 'AND(!NULL(),!EQ())';
+
     /** A oportunidade pode ser enviada ao CultBR? */
     public function isEligibleForSync(Opportunity $opportunity): bool
     {
@@ -71,6 +74,26 @@ class OpportunityService
         }
 
         return null;
+    }
+
+    /**
+     * Filtros da API do core para listar as oportunidades publicadas que podem ser enviadas.
+     * O subsite fica de fora — a API aplica o filtro do subsite atual sozinha; o status vai como
+     * GTE(1) porque o hook API.find(opportunity).params do tema descarta negação em status.
+     */
+    public function syncableApiQueryFilters(): array
+    {
+        $filters = [
+            'status' => 'GTE(' . Opportunity::STATUS_ENABLED . ')',
+            'parent' => 'NULL()',
+            'federativeEntityId' => self::FILLED_METADATA_FILTER,
+        ];
+
+        foreach (self::PAR_METADATA_KEYS as $key) {
+            $filters[$key] = self::FILLED_METADATA_FILTER;
+        }
+
+        return $filters;
     }
 
     /** No worker o tema pode não estar carregado, e aí getMetadata() não enxerga o metadado. */
