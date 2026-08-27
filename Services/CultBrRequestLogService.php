@@ -166,6 +166,33 @@ class CultBrRequestLogService
         );
     }
 
+    /**
+     * Último envio de cada oportunidade, indexado pelo id da oportunidade.
+     *
+     * @param int[] $opportunityIds
+     * @return array<int, CultBrRequestLog>
+     */
+    public function findLastByOpportunities(array $opportunityIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $opportunityIds), fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+
+        // createTimestamp tem precisão de segundo; sem o id, o desempate seria arbitrário.
+        $logs = App::i()->repo(CultBrRequestLog::class)->findBy(
+            ['opportunityId' => $ids],
+            ['createTimestamp' => 'DESC', 'id' => 'DESC']
+        );
+
+        $last = [];
+        foreach ($logs as $log) {
+            $last[(int) $log->opportunityId] ??= $log;
+        }
+
+        return $last;
+    }
+
     public function countByOpportunity(int $opportunityId): int
     {
         return App::i()->repo(CultBrRequestLog::class)->count(['opportunityId' => $opportunityId]);
