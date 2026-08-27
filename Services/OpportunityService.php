@@ -80,17 +80,23 @@ class OpportunityService
     }
 
     /**
-     * Filtros da API do core para listar as oportunidades publicadas que podem ser enviadas.
+     * Recorte da tela de sincronização, elegíveis ou não: publicadas e raiz.
      * O subsite fica de fora — a API aplica o filtro do subsite atual sozinha; o status vai como
      * GTE(1) porque o hook API.find(opportunity).params do tema descarta negação em status.
      */
-    public function syncableApiQueryFilters(): array
+    public function listingApiQueryFilters(): array
     {
-        $filters = [
+        return [
             'status' => 'GTE(' . Opportunity::STATUS_ENABLED . ')',
             'parent' => 'NULL()',
-            'federativeEntityId' => self::FILLED_METADATA_FILTER,
         ];
+    }
+
+    /** Filtros da API do core para listar as oportunidades publicadas que podem ser enviadas. */
+    public function syncableApiQueryFilters(): array
+    {
+        $filters = $this->listingApiQueryFilters();
+        $filters['federativeEntityId'] = self::FILLED_METADATA_FILTER;
 
         foreach (self::PAR_METADATA_KEYS as $key) {
             $filters[$key] = self::FILLED_METADATA_FILTER;
