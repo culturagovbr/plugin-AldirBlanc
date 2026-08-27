@@ -6,6 +6,7 @@ use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Enum\MultiselectField;
 use AldirBlanc\Enum\OpportunityStatus;
 use AldirBlanc\Enum\SpecialOption;
+use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Enum\TipoProponenteEnum;
 use MapasCulturais\App;
 use MapasCulturais\Entity;
@@ -25,9 +26,133 @@ class OpportunityService
         'territorio' => 'Edital não se direciona a territórios específicos',
     ];
 
+    /** Metadados do PAR que precisam estar preenchidos para a oportunidade ser enviada. */
+    private const PAR_METADATA_KEYS = ['parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId'];
+
+    /** Metadado preenchido para a API: existe, não é nulo e não está em branco. */
+    private const FILLED_METADATA_FILTER = 'AND(!NULL(),!EQ())';
+
+    /** Oportunidades por consulta ao checar elegibilidade em lote. */
+    protected const ELIGIBILITY_BATCH_SIZE = 100;
+
+    /** A oportunidade pode ser enviada ao CultBR? */
+    public function isEligibleForSync(Opportunity $opportunity): bool
+    {
+        return $this->syncIneligibilityReason($opportunity) === null;
+    }
+
+    /** Qual condição impede o envio ao CultBR, ou null quando a oportunidade pode ser enviada. */
+    public function syncIneligibilityReason(Opportunity $opportunity): ?SyncIneligibilityReason
+    {
+        if ($this->metadataIsBlank($opportunity, 'federativeEntityId')) {
+            return SyncIneligibilityReason::NO_FEDERATIVE_ENTITY;
+        }
+
+        $subsiteId = (int) $opportunity->subsite?->id;
+        if ($subsiteId < 1) {
+            return SyncIneligibilityReason::NO_SUBSITE;
+        }
+
+        $integrationSubsiteId = (int) env('ALDIRBLANC_SUBSITE_ID', 0);
+        if ($integrationSubsiteId === 0) {
+            return SyncIneligibilityReason::SUBSITE_NOT_CONFIGURED;
+        }
+
+        if ($subsiteId !== $integrationSubsiteId) {
+            return SyncIneligibilityReason::OTHER_SUBSITE;
+        }
+
+        if ((int) $opportunity->status === Opportunity::STATUS_PHASE) {
+            return SyncIneligibilityReason::IS_PHASE;
+        }
+
+        if ($opportunity->parent) {
+            return SyncIneligibilityReason::HAS_PARENT;
+        }
+
+        foreach (self::PAR_METADATA_KEYS as $key) {
+            if ($this->metadataIsBlank($opportunity, $key)) {
+                return SyncIneligibilityReason::INCOMPLETE_PAR;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Recorte da tela de sincronização, elegíveis ou não: publicadas e raiz.
+     * O subsite fica de fora — a API aplica o filtro do subsite atual sozinha; o status vai como
+     * GTE(1) porque o hook API.find(opportunity).params do tema descarta negação em status.
+     */
+    public function listingApiQueryFilters(): array
+    {
+        return [
+            'status' => 'GTE(' . Opportunity::STATUS_ENABLED . ')',
+            'parent' => 'NULL()',
+        ];
+    }
+
+    /** Filtros da API do core para listar as oportunidades publicadas que podem ser enviadas. */
+    public function syncableApiQueryFilters(): array
+    {
+        $filters = $this->listingApiQueryFilters();
+        $filters['federativeEntityId'] = self::FILLED_METADATA_FILTER;
+
+        foreach (self::PAR_METADATA_KEYS as $key) {
+            $filters[$key] = self::FILLED_METADATA_FILTER;
+        }
+
+        return $filters;
+    }
+
+    /**
+     * Carrega, indexado por id, o que a regra de elegibilidade lê — sem os arquivos, que ela não usa.
+     *
+     * @param int[] $ids
+     * @return array<int, Opportunity>
+     */
+    public function findOpportunitiesForEligibilityCheck(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+
+        // emc é um-para-um inversa: sem o fetch-join sai uma consulta por oportunidade.
+        $query = App::i()->em->createQuery(
+            'SELECT o, om, s, p, emc
+               FROM MapasCulturais\\Entities\\Opportunity o
+               LEFT JOIN o.__metadata om
+               LEFT JOIN o.subsite s
+               LEFT JOIN o.parent p
+               LEFT JOIN o.evaluationMethodConfiguration emc
+              WHERE o.id IN (:ids)'
+        );
+
+        $opportunities = [];
+        foreach (array_chunk($ids, static::ELIGIBILITY_BATCH_SIZE) as $chunk) {
+            foreach ($query->setParameter('ids', $chunk)->getResult() as $opportunity) {
+                $opportunities[(int) $opportunity->id] = $opportunity;
+            }
+        }
+
+        return $opportunities;
+    }
+
+    /** No worker o tema pode não estar carregado, e aí getMetadata() não enxerga o metadado. */
+    private function metadataIsBlank(Opportunity $opportunity, string $key): bool
+    {
+        $value = $opportunity->getMetadata($key) ?? $this->getRawMetadataValue($opportunity, $key);
+
+        return trim((string) $value) === '';
+    }
+
     /**
      * Retorna oportunidades elegíveis para o batch sync do CultBR:
      * raiz (sem parent), com os 4 dados do PAR preenchidos, no subsite e dona pelo agente indicado.
+     *
+     * Regra própria do sync do gestor — filtra por dono e não checa ente federado nem status,
+     * ao contrário de isEligibleForSync.
      *
      * @return Opportunity[]
      */

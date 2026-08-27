@@ -8,6 +8,7 @@ use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
+use AldirBlanc\Jobs\OpportunityForceResyncJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -162,6 +163,7 @@ class Plugin extends \MapasCulturais\Plugin
 
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
+        $app->registerJobType(new OpportunityForceResyncJob(OpportunityForceResyncJob::SLUG));
     }
 
     /**

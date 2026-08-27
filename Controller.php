@@ -16,6 +16,7 @@ use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
+use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
@@ -52,6 +53,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
     private const CULT_LOGS_MAX_LIMIT = 100;
+
+    /** Teto de oportunidades por requisição, no disparo e na consulta de status. */
+    public const MAX_OPPORTUNITIES_PER_REQUEST = 500;
 
     function __construct() {}
 
@@ -155,6 +159,117 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'skip' => $skip,
             'limit' => $limit,
         ]);
+    }
+
+    /** Enfileira o reenvio ao CultBR da seleção: POST /aldirblanc/forceResyncOpportunities */
+    public function POST_forceResyncOpportunities(): void
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::isSaasSuperAdmin()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $ids = $this->requestedOpportunityIds();
+
+        if ($ids === null) {
+            $this->errorJson(i::__('Seleção inválida.'), 400);
+            return;
+        }
+
+        if (!$ids) {
+            $this->errorJson(i::__('Selecione ao menos uma oportunidade.'), 400);
+            return;
+        }
+
+        if (count($ids) > self::MAX_OPPORTUNITIES_PER_REQUEST) {
+            $this->errorJson($this->tooManyOpportunitiesMessage(), 400);
+            return;
+        }
+
+        App::i()->enqueueOrReplaceJob(OpportunityForceResyncJob::SLUG, ['opportunityIds' => $ids]);
+
+        // Aceitas, não enviadas: o job revalida a elegibilidade e descarta o que não passa.
+        $this->json(['accepted' => count($ids)]);
+    }
+
+    /** Elegibilidade e último envio dos cards: GET /aldirblanc/opportunitiesSyncStatus/opportunityIds:1,2,3 */
+    public function GET_opportunitiesSyncStatus(): void
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::isSaasSuperAdmin()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $ids = $this->requestedOpportunityIds();
+
+        if ($ids === null) {
+            $this->errorJson(i::__('Seleção inválida.'), 400);
+            return;
+        }
+
+        if (count($ids) > self::MAX_OPPORTUNITIES_PER_REQUEST) {
+            $this->errorJson($this->tooManyOpportunitiesMessage(), 400);
+            return;
+        }
+
+        $opportunityService = new OpportunityService();
+        $opportunities = $opportunityService->findOpportunitiesForEligibilityCheck($ids);
+        $lastLogs = (new CultBrRequestLogService())->findLastByOpportunities(array_keys($opportunities));
+
+        $status = [];
+        foreach ($opportunities as $id => $opportunity) {
+            $reason = $opportunityService->syncIneligibilityReason($opportunity);
+            $lastLog = $lastLogs[$id] ?? null;
+
+            $status[$id] = [
+                'syncable' => $reason === null,
+                'reason' => $reason ? i::__($reason->label()) : null,
+                'lastSync' => $lastLog ? [
+                    'result' => $lastLog->result,
+                    'date' => $lastLog->createTimestamp?->format(\DateTime::ATOM),
+                ] : null,
+            ];
+        }
+
+        $this->json($status);
+    }
+
+    private function tooManyOpportunitiesMessage(): string
+    {
+        return sprintf(i::__('Selecione no máximo %d oportunidades por vez.'), self::MAX_OPPORTUNITIES_PER_REQUEST);
+    }
+
+    /**
+     * Ids da seleção, ou null se a entrada não for uma lista de ids; o GET manda separado por vírgula.
+     *
+     * @return int[]|null
+     */
+    private function requestedOpportunityIds(): ?array
+    {
+        $raw = $this->data['opportunityIds'] ?? null;
+
+        if (is_string($raw)) {
+            $raw = $raw === '' ? [] : explode(',', $raw);
+        }
+
+        if (!is_array($raw)) {
+            return null;
+        }
+
+        $ids = [];
+        foreach ($raw as $value) {
+            $id = is_string($value) || is_int($value) ? filter_var(trim((string) $value), FILTER_VALIDATE_INT) : false;
+            if ($id === false || $id < 1) {
+                return null;
+            }
+            $ids[$id] = $id;
+        }
+
+        return array_values($ids);
     }
 
     /**
