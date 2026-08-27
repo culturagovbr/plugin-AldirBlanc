@@ -8,6 +8,7 @@ use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Subsite;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FailingOpportunityForceResyncJob;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
@@ -148,8 +149,40 @@ class OpportunityForceResyncJobTest extends TestCase
         $this->assertNull($this->findSyncJob($inexistente), 'Id inexistente não pode gerar envio');
     }
 
+    function testFalhaEmUmIdNaoImpedeOsDemaisNemDerrubaOJob()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $quebra = $this->opportunity($owner, $subsite);
+        $segue = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        $jobType = new FailingOpportunityForceResyncJob(OpportunityForceResyncJob::SLUG, (int) $quebra->id);
+        $job = new Job($jobType);
+        $job->opportunityIds = [(int) $quebra->id, (int) $segue->id];
+
+        $this->assertNotFalse($jobType->_execute($job), 'O job em lote não pode terminar em falha, sob pena de ficar preso na fila');
+        $this->assertNull($this->findSyncJob((int) $quebra->id), 'A oportunidade que falhou não tem envio enfileirado');
+        $this->assertNotNull($this->findSyncJob((int) $segue->id), 'A falha em uma oportunidade não pode impedir as demais');
+    }
 
 
+    function testFalhaAoCarregarOLoteNaoDerrubaOJob()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        $jobType = new FailingOpportunityForceResyncJob(OpportunityForceResyncJob::SLUG, failOnLoad: true);
+        $job = new Job($jobType);
+        $job->opportunityIds = [(int) $opportunity->id];
+
+        $this->assertNotFalse($jobType->_execute($job), 'Falha na carga não pode deixar o job preso na fila');
+        $this->assertNull($this->findSyncJob((int) $opportunity->id), 'Sem carga não há envio a enfileirar');
+    }
 
     function testMesmaSelecaoEmOutraOrdemNaoDuplicaODisparo()
     {
