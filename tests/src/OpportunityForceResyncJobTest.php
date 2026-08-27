@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Job;
@@ -193,6 +194,36 @@ class OpportunityForceResyncJobTest extends TestCase
         $this->assertSame((int) $autor->id, $logs[0]['user']['id'] ?? null, 'O histórico registra quem disparou o reenvio');
     }
 
+    function testReenvioSubstituiOEnvioPendenteDaOportunidade()
+    {
+        $owner = $this->userDirector->createUser();
+        $administrador = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        // Retentativa em curso, agendada para depois do lote — a ordem da fila é por horário de início.
+        $this->login($owner);
+        $this->app->enqueueOrReplaceJob(
+            OportunidadeCultJob::SLUG,
+            ['opportunity' => $opportunity, 'action' => 'update'],
+            '+1 hour'
+        );
+
+        $this->login($administrador);
+        $this->enqueueResync([$opportunity->id]);
+        $this->app->executeJob('2100-01-01 00:00');
+
+        $envio = $this->findSyncJob((int) $opportunity->id);
+
+        $this->assertNotNull($envio, 'A oportunidade continua com envio na fila');
+        $this->assertSame(
+            (int) $administrador->id,
+            (int) $envio->user->id,
+            'O reenvio substitui o envio pendente e passa a responder por quem o pediu'
+        );
+    }
 
     function testFalhaAoCarregarOLoteNaoDerrubaOJob()
     {
