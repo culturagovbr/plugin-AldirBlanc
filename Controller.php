@@ -55,7 +55,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     private const CULT_LOGS_MAX_LIMIT = 100;
 
     /** Teto de oportunidades por requisição, no disparo e na consulta de status. */
-    private const MAX_OPPORTUNITIES_PER_REQUEST = 500;
+    public const MAX_OPPORTUNITIES_PER_REQUEST = 500;
 
     function __construct() {}
 
