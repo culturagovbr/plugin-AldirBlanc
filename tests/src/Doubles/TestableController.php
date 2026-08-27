@@ -20,6 +20,11 @@ class TestableController extends Controller
     private ?\Throwable $controlPermissionException = null;
     private ?\Throwable $saveAfterPostGenerateException = null;
 
+    public function callForceResyncOpportunities(): void
+    {
+        $this->POST_forceResyncOpportunities();
+    }
+
     public function callSaveOpportunityPostGenerate(): void
     {
         $this->POST_saveOpportunityPostGenerate();
