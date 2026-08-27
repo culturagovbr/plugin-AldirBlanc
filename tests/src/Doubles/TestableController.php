@@ -25,6 +25,11 @@ class TestableController extends Controller
         $this->POST_forceResyncOpportunities();
     }
 
+    public function callOpportunitiesSyncStatus(): void
+    {
+        $this->GET_opportunitiesSyncStatus();
+    }
+
     public function callSaveOpportunityPostGenerate(): void
     {
         $this->POST_saveOpportunityPostGenerate();

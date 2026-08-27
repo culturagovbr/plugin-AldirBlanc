@@ -194,6 +194,49 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json(['accepted' => count($ids)]);
     }
 
+    /** Elegibilidade e último envio dos cards: GET /aldirblanc/opportunitiesSyncStatus/opportunityIds:1,2,3 */
+    public function GET_opportunitiesSyncStatus(): void
+    {
+        $this->requireAuthentication();
+
+        if (!UserAccessService::isSaasSuperAdmin()) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return;
+        }
+
+        $ids = $this->requestedOpportunityIds();
+
+        if ($ids === null) {
+            $this->errorJson(i::__('Seleção inválida.'), 400);
+            return;
+        }
+
+        if (count($ids) > self::MAX_OPPORTUNITIES_PER_REQUEST) {
+            $this->errorJson($this->tooManyOpportunitiesMessage(), 400);
+            return;
+        }
+
+        $opportunityService = new OpportunityService();
+        $opportunities = $opportunityService->findOpportunitiesForEligibilityCheck($ids);
+        $lastLogs = (new CultBrRequestLogService())->findLastByOpportunities(array_keys($opportunities));
+
+        $status = [];
+        foreach ($opportunities as $id => $opportunity) {
+            $reason = $opportunityService->syncIneligibilityReason($opportunity);
+            $lastLog = $lastLogs[$id] ?? null;
+
+            $status[$id] = [
+                'syncable' => $reason === null,
+                'reason' => $reason ? i::__($reason->label()) : null,
+                'lastSync' => $lastLog ? [
+                    'result' => $lastLog->result,
+                    'date' => $lastLog->createTimestamp?->format(\DateTime::ATOM),
+                ] : null,
+            ];
+        }
+
+        $this->json($status);
+    }
 
     private function tooManyOpportunitiesMessage(): string
     {
