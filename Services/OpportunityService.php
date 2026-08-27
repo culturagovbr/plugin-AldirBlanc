@@ -32,6 +32,9 @@ class OpportunityService
     /** Metadado preenchido para a API: existe, não é nulo e não está em branco. */
     private const FILLED_METADATA_FILTER = 'AND(!NULL(),!EQ())';
 
+    /** Oportunidades por consulta ao checar elegibilidade em lote. */
+    protected const ELIGIBILITY_BATCH_SIZE = 100;
+
     /** A oportunidade pode ser enviada ao CultBR? */
     public function isEligibleForSync(Opportunity $opportunity): bool
     {
@@ -94,6 +97,40 @@ class OpportunityService
         }
 
         return $filters;
+    }
+
+    /**
+     * Carrega, indexado por id, o que a regra de elegibilidade lê — sem os arquivos, que ela não usa.
+     *
+     * @param int[] $ids
+     * @return array<int, Opportunity>
+     */
+    public function findOpportunitiesForEligibilityCheck(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+
+        // emc é um-para-um inversa: sem o fetch-join sai uma consulta por oportunidade.
+        $query = App::i()->em->createQuery(
+            'SELECT o, om, s, p, emc
+               FROM MapasCulturais\\Entities\\Opportunity o
+               LEFT JOIN o.__metadata om
+               LEFT JOIN o.subsite s
+               LEFT JOIN o.parent p
+               LEFT JOIN o.evaluationMethodConfiguration emc
+              WHERE o.id IN (:ids)'
+        );
+
+        $opportunities = [];
+        foreach (array_chunk($ids, static::ELIGIBILITY_BATCH_SIZE) as $chunk) {
+            foreach ($query->setParameter('ids', $chunk)->getResult() as $opportunity) {
+                $opportunities[(int) $opportunity->id] = $opportunity;
+            }
+        }
+
+        return $opportunities;
     }
 
     /** No worker o tema pode não estar carregado, e aí getMetadata() não enxerga o metadado. */
