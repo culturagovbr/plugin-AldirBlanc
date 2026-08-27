@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
+use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Subsite;
@@ -34,6 +35,9 @@ class OpportunityForceResyncJobTest extends TestCase
     protected function tearDown(): void
     {
         unset($_ENV['ALDIRBLANC_SUBSITE_ID']);
+        // O job de envio troca o subsite atual e não desfaz; o rollback apaga a linha e o teste
+        // seguinte herdaria a referência morta.
+        $this->app->setCurrentSubsiteId(null);
         parent::tearDown();
     }
 
@@ -165,6 +169,28 @@ class OpportunityForceResyncJobTest extends TestCase
         $this->assertNotFalse($jobType->_execute($job), 'O job em lote não pode terminar em falha, sob pena de ficar preso na fila');
         $this->assertNull($this->findSyncJob((int) $quebra->id), 'A oportunidade que falhou não tem envio enfileirado');
         $this->assertNotNull($this->findSyncJob((int) $segue->id), 'A falha em uma oportunidade não pode impedir as demais');
+    }
+
+    function testAutorDoDisparoChegaAoHistoricoDoEnvio()
+    {
+        $owner = $this->userDirector->createUser();
+        $autor = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->clearJobQueue();
+
+        $this->login($autor);
+        $this->enqueueResync([$opportunity->id]);
+
+        // O laço de processJobs para quando o id md5 do job converte para 0; aqui cada um é explícito.
+        $this->app->executeJob('2100-01-01 00:00');
+        $this->app->executeJob('2100-01-01 00:00');
+
+        $logs = (new CultBrRequestLogService())->findByOpportunity((int) $opportunity->id);
+
+        $this->assertNotEmpty($logs, 'O envio precisa deixar registro no histórico');
+        $this->assertSame((int) $autor->id, $logs[0]['user']['id'] ?? null, 'O histórico registra quem disparou o reenvio');
     }
 
 
