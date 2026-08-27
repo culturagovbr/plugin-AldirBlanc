@@ -18,7 +18,7 @@ use Tests\Traits\UserDirector;
 /**
  * Hooks do Theme.php (Pnab) acionados durante "criar oportunidade a partir de modelo":
  * validação de compatibilidade do parAcaoId (POST(opportunity.generateopportunity):before)
- * e o gate de integração CultBr (validateIntegrationJob, via insert:finish/update:finish).
+ * e o gate de integração CultBr (isEligibleForSync, via insert:finish/update:finish).
  */
 class ThemeGenerateOpportunityHooksTest extends TestCase
 {
@@ -123,7 +123,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
 
-    /** Preenche os 4 dados do PAR exigidos por validateIntegrationJob. */
+    /** Preenche os 4 dados do PAR exigidos pela regra de elegibilidade. */
     private function setPar($entity): void
     {
         $entity->setMetadata('parExercicioId', '1');
@@ -345,7 +345,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayNotHasKey('parAcaoId', $errors);
     }
 
-    // ===== validateIntegrationJob (gate de integração CultBr), via update:finish =====
+    // ===== isEligibleForSync (gate de integração CultBr), via update:finish =====
 
     function testDisparaUpdateQuandoTudoCorretoESubsiteCoincide()
     {
