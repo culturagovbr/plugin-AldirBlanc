@@ -115,4 +115,45 @@ class OpportunityServiceFederativeEntityIdsTest extends TestCase
 
         $this->assertSame([$entity->id], $this->idsFor($user, $subsite));
     }
+
+    function testFaseContaOEnte()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('22222222222222', 'Ente Dois');
+        $raiz = $this->opportunity($user, $subsite, null);
+        $this->opportunity($user, $subsite, $entity, Opportunity::STATUS_PHASE, $raiz);
+
+        $this->assertSame([$entity->id], $this->idsFor($user, $subsite));
+    }
+
+    function testRascunhoContaOEnte()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('33333333333333', 'Ente Três');
+        $this->opportunity($user, $subsite, $entity, Opportunity::STATUS_DRAFT);
+
+        $this->assertSame([$entity->id], $this->idsFor($user, $subsite));
+    }
+
+    function testOportunidadeNaLixeiraNaoConta()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('55555555555555', 'Ente Cinco');
+        $this->opportunity($user, $subsite, $entity, Opportunity::STATUS_TRASH);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
+
+    function testOportunidadeArquivadaNaoConta()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('66666666666666', 'Ente Seis');
+        $this->opportunity($user, $subsite, $entity, Opportunity::STATUS_ARCHIVED);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
 }
