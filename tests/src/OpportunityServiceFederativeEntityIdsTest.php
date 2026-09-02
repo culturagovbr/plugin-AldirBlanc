@@ -156,4 +156,44 @@ class OpportunityServiceFederativeEntityIdsTest extends TestCase
 
         $this->assertSame([], $this->idsFor($user, $subsite));
     }
+
+    function testOportunidadeDeOutroSubsiteNaoConta()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $outroSubsite = $this->subsite($user);
+        $entity = $this->federativeEntity('44444444444444', 'Ente Quatro');
+        $this->opportunity($user, $outroSubsite, $entity);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
+
+    function testOportunidadeSemSubsiteNaoContaParaSubsiteValido()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('12121212121212', 'Ente Doze');
+        $this->opportunity($user, null, $entity);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
+
+    function testSubsiteInvalidoRetornaVazio()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('99999999999999', 'Ente Nove');
+        $this->opportunity($user, $subsite, $entity);
+
+        $this->assertSame([], $this->service->findFederativeEntityIdsWithOpportunities($user->profile, 0));
+    }
+
+    function testSubsiteInvalidoNaoAlcancaOportunidadeSemSubsite()
+    {
+        $user = $this->userDirector->createUser();
+        $entity = $this->federativeEntity('10101010101010', 'Ente Dez');
+        $this->opportunity($user, null, $entity);
+
+        $this->assertSame([], $this->service->findFederativeEntityIdsWithOpportunities($user->profile, 0));
+    }
 }
