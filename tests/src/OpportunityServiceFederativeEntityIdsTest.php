@@ -196,4 +196,24 @@ class OpportunityServiceFederativeEntityIdsTest extends TestCase
 
         $this->assertSame([], $this->service->findFederativeEntityIdsWithOpportunities($user->profile, 0));
     }
+
+    function testOportunidadeDeOutroUsuarioNaoConta()
+    {
+        $user = $this->userDirector->createUser();
+        $outroUser = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $entity = $this->federativeEntity('77777777777777', 'Ente Sete');
+        $this->opportunity($outroUser, $subsite, $entity);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
+
+    function testOportunidadeSemOMetadadoNaoConta()
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $this->opportunity($user, $subsite, null);
+
+        $this->assertSame([], $this->idsFor($user, $subsite));
+    }
 }
