@@ -10,6 +10,7 @@ use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Enum\TipoProponenteEnum;
 use MapasCulturais\App;
 use MapasCulturais\Entity;
+use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\i;
 
@@ -28,6 +29,16 @@ class OpportunityService
 
     /** Metadados do PAR que precisam estar preenchidos para a oportunidade ser enviada. */
     private const PAR_METADATA_KEYS = ['parExercicioId', 'parMetaId', 'parAcaoId', 'parAtividadeId'];
+
+    private const FEDERATIVE_ENTITY_METADATA_KEY = 'federativeEntityId';
+
+    /** Fases contam; lixeira, arquivada e desabilitada não. */
+    private const COUNTED_OPPORTUNITY_STATUSES = [
+        Opportunity::STATUS_ENABLED,
+        Opportunity::STATUS_DRAFT,
+        Opportunity::STATUS_PHASE,
+        Opportunity::STATUS_APPEAL_PHASE,
+    ];
 
     /** Metadado preenchido para a API: existe, não é nulo e não está em branco. */
     private const FILLED_METADATA_FILTER = 'AND(!NULL(),!EQ())';
@@ -241,6 +252,30 @@ class OpportunityService
             ->setParameter('statusPhase', Opportunity::STATUS_PHASE);
         $result = $query->getResult();
         return is_array($result) ? $result : [];
+    }
+
+    /**
+     * Ids dos entes federados que já têm oportunidade do agente no subsite informado.
+     *
+     * @return int[]
+     */
+    public function findFederativeEntityIdsWithOpportunities(Agent $owner, int $subsiteId): array
+    {
+        $opportunities = App::i()->repo('Opportunity')->findBy([
+            'owner' => $owner,
+            'subsite' => $subsiteId,
+            'status' => self::COUNTED_OPPORTUNITY_STATUSES,
+        ]);
+
+        $entityIds = [];
+        foreach ($opportunities as $opportunity) {
+            $entityId = (int) $opportunity->getMetadata(self::FEDERATIVE_ENTITY_METADATA_KEY);
+            if ($entityId > 0) {
+                $entityIds[$entityId] = true;
+            }
+        }
+
+        return array_keys($entityIds);
     }
 
     /**
