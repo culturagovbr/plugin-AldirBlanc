@@ -8,6 +8,9 @@ use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Role;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\AgentRelation;
+use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\Subsite;
+use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\AssertsHooks;
@@ -22,6 +25,8 @@ class ControllerFederativeEntityTest extends TestCase
     use UserDirector;
     use AssertsHooks;
 
+    private array $originalIntegrationConfig = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -29,6 +34,68 @@ class ControllerFederativeEntityTest extends TestCase
         // uma seleção feita num teste vaza pro próximo dentro do mesmo processo PHPUnit.
         unset($_SESSION['selectedFederativeEntity']);
         unset($_SESSION['federative_entity_redirect_uri']);
+        $this->originalIntegrationConfig = $this->readPluginConfig()['integration'] ?? [];
+    }
+
+    protected function tearDown(): void
+    {
+        $this->writePluginIntegrationConfig($this->originalIntegrationConfig);
+        parent::tearDown();
+    }
+
+    private function readPluginConfig(): array
+    {
+        $ref = new \ReflectionProperty($this->app->plugins['AldirBlanc'], '_config');
+        $ref->setAccessible(true);
+        return $ref->getValue($this->app->plugins['AldirBlanc']);
+    }
+
+    private function writePluginIntegrationConfig(array $integration): void
+    {
+        $plugin = $this->app->plugins['AldirBlanc'];
+        $ref = new \ReflectionProperty($plugin, '_config');
+        $ref->setAccessible(true);
+        $config = $ref->getValue($plugin);
+        $config['integration'] = $integration;
+        $ref->setValue($plugin, $config);
+    }
+
+    private function useIntegrationSubsite(Subsite $subsite): void
+    {
+        $integration = $this->readPluginConfig()['integration'] ?? [];
+        $integration['subsiteId'] = $subsite->id;
+        $this->writePluginIntegrationConfig($integration);
+    }
+
+    private function persistSubsite(User $owner): Subsite
+    {
+        $this->login($owner);
+        $this->app->disableAccessControl();
+        $subsite = new Subsite();
+        $subsite->name = 'Subsite Pnab ' . uniqid();
+        $subsite->url = 'subsite-pnab-' . uniqid();
+        $subsite->save(true);
+        $this->app->enableAccessControl();
+        return $subsite;
+    }
+
+    private function persistOpportunity(User $user, Subsite $subsite, FederativeEntity $entity): Opportunity
+    {
+        $this->login($user);
+        $this->app->disableAccessControl();
+        $opportunityClassName = $user->profile->opportunityClassName;
+        $opportunity = new $opportunityClassName();
+        $opportunity->owner = $user->profile;
+        $opportunity->ownerEntity = $user->profile;
+        $opportunity->name = 'Oportunidade ' . uniqid();
+        $opportunity->shortDescription = 'Oportunidade de teste';
+        $opportunity->subsite = $subsite;
+        $opportunity->status = Opportunity::STATUS_ENABLED;
+        $opportunity->save(true);
+        $opportunity->setMetadata('federativeEntityId', (string) $entity->id);
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+        return $opportunity;
     }
 
     private function controller(): Controller
@@ -74,13 +141,13 @@ class ControllerFederativeEntityTest extends TestCase
         return $entity;
     }
 
-    private function persistRelation($agent, FederativeEntity $entity): FederativeEntityAgentRelation
+    private function persistRelation($agent, FederativeEntity $entity, int $status = AgentRelation::STATUS_ENABLED): FederativeEntityAgentRelation
     {
         $relation = new FederativeEntityAgentRelation();
         $relation->agent = $agent;
         $relation->owner = $entity;
         $relation->hasControl = false;
-        $relation->status = AgentRelation::STATUS_ENABLED;
+        $relation->status = $status;
         $this->app->em->persist($relation);
         $this->app->em->flush();
         return $relation;
@@ -112,7 +179,72 @@ class ControllerFederativeEntityTest extends TestCase
             'name' => 'Ente Um',
             'document' => '11111111111111',
             'exercices' => $exercices,
+            'hasParData' => true,
         ]], $payload);
+    }
+
+    function testFederativeEntitiesEnteSemParComOportunidadeContinuaListado()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $subsite = $this->persistSubsite($user);
+        $this->useIntegrationSubsite($subsite);
+        $entity = $this->persistFederativeEntity('22222222222222', 'Ente Dois');
+        $this->persistRelation($user->profile, $entity);
+        $this->persistOpportunity($user, $subsite, $entity);
+        $this->login($user);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([[
+            'id' => $entity->id,
+            'name' => 'Ente Dois',
+            'document' => '22222222222222',
+            'exercices' => [],
+            'hasParData' => false,
+        ]], $payload);
+    }
+
+    function testFederativeEntitiesEnteSemParSemOportunidadeNaoEhListado()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $subsite = $this->persistSubsite($user);
+        $this->useIntegrationSubsite($subsite);
+        $entity = $this->persistFederativeEntity('33333333333333', 'Ente Três');
+        $this->persistRelation($user->profile, $entity);
+        $this->login($user);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([], $payload);
+    }
+
+    function testFederativeEntitiesOportunidadeDeOutroEnteNaoDestravaOEnteSemPar()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $subsite = $this->persistSubsite($user);
+        $this->useIntegrationSubsite($subsite);
+        $entity = $this->persistFederativeEntity('44444444444444', 'Ente Quatro');
+        $outroEnte = $this->persistFederativeEntity('55555555555555', 'Ente Cinco');
+        $this->persistRelation($user->profile, $entity);
+        $this->persistOpportunity($user, $subsite, $outroEnte);
+        $this->login($user);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([], $payload);
+    }
+
+    function testFederativeEntitiesRelacaoNaoHabilitadaNaoEhListada()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+        $exercices = [['id' => 1, 'ano' => 2025, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('66666666666666', 'Ente Seis', $exercices);
+        $this->persistRelation($user->profile, $entity, AgentRelation::STATUS_PENDING);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([], $payload);
     }
 
     function testFederativeEntitiesGestorSemRelacoesRetornaVazio()
