@@ -76,7 +76,7 @@ class GestorCultJob
 
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-            $this->validateFederativeEntitiesContract($federativeEntities);
+            $federativeEntities = $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
@@ -341,6 +341,30 @@ class GestorCultJob
             $index = array_key_first($discarded);
             throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
         }
+    }
+
+    /**
+     * Descarta os entes fora do contrato e mantém os demais, para um item ruim não derrubar o sync inteiro.
+     */
+    private function discardEntitiesOutOfContract(array $federativeEntities, $userId, string $document): array
+    {
+        [$valid, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
+
+        if ($discarded === []) {
+            return $valid;
+        }
+
+        $app = App::i();
+        foreach ($discarded as $index => $reason) {
+            $app->log->warning("[Gestores CultBR] Ente federado descartado | Usuário ID: {$userId} | Documento: {$document} | Item: {$index} | Motivo: {$reason}");
+        }
+
+        // Seguir com a lista vazia revogaria a role e apagaria todas as relações do agente.
+        if ($valid === []) {
+            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
+        }
+
+        return $valid;
     }
 
     /**
