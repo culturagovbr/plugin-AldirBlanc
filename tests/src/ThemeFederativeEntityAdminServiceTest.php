@@ -53,4 +53,23 @@ class ThemeFederativeEntityAdminServiceTest extends TestCase
 
         $this->assertFalse($this->itemFor('72222222222222')['has_par_data']);
     }
+
+    function testDetalhamentoRecebeAArvoreDoPar()
+    {
+        $exercices = [['id' => 1, 'ano' => 2025, 'metas' => [['id' => 9, 'nome' => 'Meta', 'acoes' => []]]]];
+        $entity = $this->federativeEntity('74444444444444', $exercices);
+
+        $dados = (new FederativeEntityAdminService($this->app))->getRequestedEntityData($entity);
+
+        $this->assertSame($exercices, $dados['parExercicios']);
+    }
+
+    function testDetalhamentoDeEnteSemParRecebeArvoreVazia()
+    {
+        $entity = $this->federativeEntity('75555555555555', []);
+
+        $dados = (new FederativeEntityAdminService($this->app))->getRequestedEntityData($entity);
+
+        $this->assertSame([], $dados['parExercicios']);
+    }
 }
