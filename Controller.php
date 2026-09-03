@@ -5,6 +5,7 @@ namespace AldirBlanc;
 use MapasCulturais\App;
 use MapasCulturais\i;
 use MapasCulturais\Traits;
+use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
@@ -81,6 +82,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $relations = $app->em->getRepository(FederativeEntityAgentRelation::class)->findBy([
             'agent' => $agent,
+            'status' => AgentRelation::STATUS_ENABLED,
         ]);
 
         $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? 0);
