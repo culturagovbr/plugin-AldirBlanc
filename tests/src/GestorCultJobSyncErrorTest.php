@@ -70,6 +70,87 @@ class GestorCultJobSyncErrorTest extends TestCase
         return $user;
     }
 
+    private function enteValido(string $document, string $name): array
+    {
+        return [
+            'document' => $document,
+            'name' => $name,
+            'exercicios' => [['id' => 1, 'ano' => 2025, 'metas' => []]],
+        ];
+    }
+
+    private function respostaComEntes(array $entes): array
+    {
+        return ['entes_federados' => $entes];
+    }
+
+    // ===== descarte de ente fora do contrato =====
+
+    function testEnteMalformadoEntreValidosNaoDerrubaOSync()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $resposta = $this->respostaComEntes([
+            $this->enteValido('81111111111111', 'Ente Bom Um'),
+            ['document' => '82222222222222', 'name' => 'Ente Ruim', 'exercicios' => [['ano' => 2025]]],
+            $this->enteValido('83333333333333', 'Ente Bom Dois'),
+        ]);
+
+        $this->jobWithResponse($resposta)->sync();
+        $this->app->em->clear();
+
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
+        $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '81111111111111']));
+        $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '83333333333333']));
+        $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222']));
+    }
+
+    function testEnteSemNomeEhDescartadoSemDerrubarOSync()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $resposta = $this->respostaComEntes([
+            ['document' => '84444444444444', 'name' => '   '],
+            $this->enteValido('85555555555555', 'Ente Bom'),
+        ]);
+
+        $this->jobWithResponse($resposta)->sync();
+        $this->app->em->clear();
+
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
+        $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '85555555555555']));
+        $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '84444444444444']));
+    }
+
+    function testTodosOsEntesMalformadosNaoRevogaRoleNemRemoveRelations()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->grantGestorRole();
+
+        $entity = $this->persistFederativeEntity('86666666666666', 'Ente Preservado');
+        $this->persistRelation($user->profile, $entity);
+
+        $resposta = $this->respostaComEntes([
+            ['document' => '87777777777777', 'name' => 'Ente Ruim', 'exercicios' => [['ano' => 2025]]],
+        ]);
+
+        try {
+            $this->jobWithResponse($resposta)->sync();
+            $this->fail('Esperava erro de contrato quando nenhum ente sobrevive');
+        } catch (\UnexpectedValueException $e) {
+            $this->assertStringContainsString('Resposta da API CultBr fora do contrato esperado', $e->getMessage());
+        }
+
+        $this->app->em->clear();
+
+        $this->assertTrue(UserAccessService::isGestorCultBr());
+        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
+        $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
+    }
+
     function testRespostaSemEntesRevogaRoleERemoveRelations()
     {
         $user = $this->userDirector->createUser();
