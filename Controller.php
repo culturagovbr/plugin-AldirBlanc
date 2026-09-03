@@ -85,10 +85,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'status' => AgentRelation::STATUS_ENABLED,
         ]);
 
-        $subsiteId = (int) ($app->plugins['AldirBlanc']->config['integration']['subsiteId'] ?? 0);
-        $entityIdsWithOpportunities = (new OpportunityService())
-            ->findFederativeEntityIdsWithOpportunities($agent, $subsiteId);
-
         $federativeEntities = [];
         foreach ($relations as $relation) {
             $federativeEntity = $relation->owner;
@@ -97,19 +93,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             }
 
             $exercices = $federativeEntity->exercices ?? [];
-            $hasParData = !empty($exercices);
-
-            // Sem PAR, só continua listado quem já tem oportunidade — para o gestor não perder o que criou.
-            if (!$hasParData && !in_array($federativeEntity->id, $entityIdsWithOpportunities, true)) {
-                continue;
-            }
 
             $federativeEntities[] = [
                 'id' => $federativeEntity->id,
                 'name' => $federativeEntity->name,
                 'document' => $federativeEntity->document,
                 'exercices' => $exercices,
-                'hasParData' => $hasParData,
+                'hasParData' => !empty($exercices),
             ];
         }
 
