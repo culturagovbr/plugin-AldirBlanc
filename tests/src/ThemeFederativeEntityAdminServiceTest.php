@@ -9,7 +9,7 @@ use Tests\Abstract\TestCase;
 /**
  * FederativeEntityAdminService::getViewData — estado do PAR na listagem do saasSuperAdmin.
  *
- * É o que decide o badge "Dados do PAR ausentes" em cada card.
+ * É o que decide o badge "Dados do PAR ausentes ou em análise" em cada card.
  */
 class ThemeFederativeEntityAdminServiceTest extends TestCase
 {
