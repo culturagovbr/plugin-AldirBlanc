@@ -76,7 +76,7 @@ class GestorCultJob
 
             $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-            $this->validateFederativeEntitiesContract($federativeEntities);
+            $federativeEntities = $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
@@ -335,32 +335,93 @@ class GestorCultJob
 
     private function validateFederativeEntitiesContract(array $federativeEntities): void
     {
+        [, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
+
+        if ($discarded !== []) {
+            $index = array_key_first($discarded);
+            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
+        }
+    }
+
+    /**
+     * Descarta os entes fora do contrato e mantém os demais, para um item ruim não derrubar o sync inteiro.
+     */
+    private function discardEntitiesOutOfContract(array $federativeEntities, $userId, string $document): array
+    {
+        [$valid, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
+
+        if ($discarded === []) {
+            return $valid;
+        }
+
+        $app = App::i();
+        foreach ($discarded as $index => $reason) {
+            $app->log->warning("[Gestores CultBR] Ente federado descartado | Usuário ID: {$userId} | Documento: {$document} | Item: {$index} | Motivo: {$reason}");
+        }
+
+        // Seguir com a lista vazia revogaria a role e apagaria todas as relações do agente.
+        if ($valid === []) {
+            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Separa os entes que atendem ao contrato dos que precisam ser descartados.
+     *
+     * @return array{0: list<array>, 1: array<int|string, string>} válidos, e o motivo de descarte por índice
+     */
+    private function partitionFederativeEntitiesByContract(array $federativeEntities): array
+    {
+        $valid = [];
+        $discarded = [];
         $documents = [];
 
         foreach ($federativeEntities as $index => $data) {
-            if (!is_array($data)) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} deve ser array");
+            $violation = $this->federativeEntityContractViolation($data, $documents);
+
+            if ($violation !== null) {
+                $discarded[$index] = $violation;
+                continue;
             }
 
-            if (!isset($data['document']) || trim((string) $data['document']) === '') {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem document");
-            }
-
-            if (!isset($data['name']) || trim((string) $data['name']) === '') {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} sem name");
-            }
-
-            $document = trim((string) $data['document']);
-            if (isset($documents[$document])) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": document duplicado {$document}");
-            }
-            $documents[$document] = true;
-
-            $exercises = $this->normalizeEntityExercises($data);
-            if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} com exercicios inválidos");
-            }
+            $documents[trim((string) $data['document'])] = true;
+            $valid[] = $data;
         }
+
+        return [$valid, $discarded];
+    }
+
+    private function federativeEntityContractViolation($data, array $knownDocuments): ?string
+    {
+        if (!is_array($data)) {
+            return 'deve ser array';
+        }
+
+        if (!isset($data['document']) || trim((string) $data['document']) === '') {
+            return 'sem document';
+        }
+
+        if (!isset($data['name']) || trim((string) $data['name']) === '') {
+            return 'sem name';
+        }
+
+        $document = trim((string) $data['document']);
+        if (isset($knownDocuments[$document])) {
+            return "com document duplicado {$document}";
+        }
+
+        if (!array_key_exists('exercicios', $data) && array_key_exists('exercices', $data)) {
+            return 'com a chave exercices, que não é suportada';
+        }
+
+        $exercises = $this->normalizeEntityExercises($data);
+        if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
+            return 'com exercicios inválidos';
+        }
+
+        return null;
     }
 
     private function isValidExercisesList($exercises): bool

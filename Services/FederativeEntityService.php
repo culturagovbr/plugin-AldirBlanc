@@ -39,6 +39,12 @@ class FederativeEntityService
         return is_array($ex) ? $ex : [];
     }
 
+    /** Se o ente federado tem exercícios do PAR gravados. */
+    public static function hasParData(int $id): bool
+    {
+        return !empty(self::getParExerciciosForFederativeEntityId($id));
+    }
+
     /**
      * @return array<int|string, mixed>
      */
