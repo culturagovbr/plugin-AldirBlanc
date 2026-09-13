@@ -2,6 +2,8 @@
 
 namespace AldirBlanc\Http\Clients;
 
+use AldirBlanc\Http\Transport\Transport;
+
 class ParAcaoClient extends AbstractClient
 {
     public const DEFAULT_SKIP = 0;
@@ -13,7 +15,11 @@ class ParAcaoClient extends AbstractClient
     protected int $skip;
     protected int $limit;
 
-    public function __construct(int $skip = self::DEFAULT_SKIP, int $limit = self::DEFAULT_LIMIT)
+    public function __construct(
+        int $skip = self::DEFAULT_SKIP,
+        int $limit = self::DEFAULT_LIMIT,
+        ?Transport $transport = null,
+    )
     {
         $this->document = '';
         $this->skip = max(0, $skip);
@@ -25,6 +31,6 @@ class ParAcaoClient extends AbstractClient
             'limit' => $this->limit,
         ]);
 
-        parent::__construct();
+        parent::__construct($transport);
     }
 }

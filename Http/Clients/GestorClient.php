@@ -3,12 +3,13 @@
 namespace AldirBlanc\Http\Clients;
 
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Http\Transport\Transport;
 
 class GestorClient extends AbstractClient
 {
     protected string $document;
 
-    public function __construct(GestorDocument $gestorDocument)
+    public function __construct(GestorDocument $gestorDocument, ?Transport $transport = null)
     {
         $config = $this->getClientConfig();
 
@@ -16,6 +17,6 @@ class GestorClient extends AbstractClient
         $this->endpoint = $this->requiredConfig($config, 'seficEndpoint', 'PNAB_CULTBR_SEFIC_ENDPOINT')
             . '/' . $this->requiredConfig($config, 'gestorEndpoint', 'PNAB_CULTBR_GESTOR_ENDPOINT');
 
-        parent::__construct();
+        parent::__construct($transport);
     }
 }

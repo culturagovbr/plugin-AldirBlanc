@@ -4,6 +4,7 @@ namespace AldirBlanc\Http\Clients;
 
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Http\Transport\Transport;
 
 class OportunidadeCultClient extends AbstractClient
 {
@@ -12,11 +13,11 @@ class OportunidadeCultClient extends AbstractClient
 
     private const PARAMETER_DEFAULT = '{id}';
 
-    public function __construct(OpportunityId $opportunityId)
+    public function __construct(OpportunityId $opportunityId, ?Transport $transport = null)
     {
         $this->endpoint = '';
         $this->document = (string) $opportunityId->id;
-        parent::__construct();
+        parent::__construct($transport);
 
         $this->parameter = self::PARAMETER_DEFAULT;
     }

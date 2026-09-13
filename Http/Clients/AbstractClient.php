@@ -4,10 +4,11 @@ namespace AldirBlanc\Http\Clients;
 
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Http\Transport\TransportResponse;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
-use Curl\Curl;
-use ReflectionClass;
 
 abstract class AbstractClient
 {
@@ -22,7 +23,9 @@ abstract class AbstractClient
     private string $host;
     private string $token;
 
-    private Curl $curl;
+    private Transport $transport;
+
+    private ?TransportResponse $lastResponse = null;
 
     /**
      * Callback opcional que recebe request + resposta de cada PUT (payload, status HTTP, corpo,
@@ -36,7 +39,7 @@ abstract class AbstractClient
     private const HTTP_REDIRECT_MIN = 300;
     private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
 
-    public function __construct()
+    public function __construct(?Transport $transport = null)
     {
         $config = $this->getClientConfig();
 
@@ -48,9 +51,26 @@ abstract class AbstractClient
         $this->host = $this->requiredConfig($config, 'host', 'PNAB_CULTBR_HOST');
         $this->token = $this->requiredConfig($config, 'token', 'PNAB_CULTBR_TOKEN');
         $this->parameter = self::PARAMETER_DEFAULT;
+        $this->transport = $transport ?? new CurlTransport();
+    }
 
-        // Carregando configurações do curl
-        $this->setCurl();
+    private function send(string $method, string $url, ?string $body = null): TransportResponse
+    {
+        $this->lastResponse = null;
+
+        $resposta = $this->transport->send($method, $url, $this->headers(), $body);
+        $this->lastResponse = $resposta;
+
+        return $resposta;
+    }
+
+    /** @return array<string,string> */
+    private function headers(): array
+    {
+        return [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $this->token,
+        ];
     }
 
     private function isDevelopmentMode(): bool
@@ -95,19 +115,18 @@ abstract class AbstractClient
         $app->log->info("[Gestores CultBR] GET requisição | Cliente: " . static::class . " | URL: {$fullUrl}");
 
         try {
-            $this->callCurlSuppressingDeprecations(fn() => $this->curl->get($fullUrl));
-            $app->log->info("[Gestores CultBR] GET resposta recebida | Cliente: " . static::class . " | HTTP: {$this->curl->http_status_code}");
+            $resposta = $this->send('GET', $fullUrl);
+            $app->log->info("[Gestores CultBR] GET resposta recebida | Cliente: " . static::class . " | HTTP: {$resposta->status}");
+
             return $this->parseResponse(
-                $this->curl->response,
-                $this->curl->http_status_code ?? 0,
-                $this->curl->error,
-                $this->curl->error_message,
-                $this->curl->error_code ?? 0,
+                $resposta->body,
+                $resposta->status,
+                $resposta->hasError,
+                $resposta->errorMessage,
+                $resposta->errorCode,
             );
         } catch (\Exception $e) {
             $this->handleError('[Gestores CultBR] Erro na API ao buscar dados', $e);
-        } finally {
-            $this->closeCurl();
         }
     }
 
@@ -121,20 +140,17 @@ abstract class AbstractClient
         $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         try {
-            $this->callCurlSuppressingDeprecations(fn() => $this->curl->post($fullUrl, $jsonPayload));
-            $rawResponse = $this->curl->response;
-            $parsed = $this->parseResponse(
-                $rawResponse,
-                $this->curl->http_status_code ?? 0,
-                $this->curl->error,
-                $this->curl->error_message,
-                $this->curl->error_code ?? 0,
+            $resposta = $this->send('POST', $fullUrl, $jsonPayload);
+
+            return $this->parseResponse(
+                $resposta->body,
+                $resposta->status,
+                $resposta->hasError,
+                $resposta->errorMessage,
+                $resposta->errorCode,
             );
-            return $parsed;
         } catch (\Exception $e) {
             $this->handleError('[CultBR] Erro na API ao enviar dados (POST)', $e);
-        } finally {
-            $this->closeCurl();
         }
     }
 
@@ -164,16 +180,15 @@ abstract class AbstractClient
         $app->log->info("[CultBR] PUT payload | URL: {$fullUrl} | Body: {$jsonPayload}");
 
         try {
-            $this->curl->setOpt(CURLOPT_CUSTOMREQUEST, 'PUT');
-            $this->callCurlSuppressingDeprecations(fn() => $this->curl->post($fullUrl, $jsonPayload));
-            $rawResponse = $this->curl->response;
-            $app->log->info("[CultBR] PUT response | HTTP: {$this->curl->http_status_code} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
+            $resposta = $this->send('PUT', $fullUrl, $jsonPayload);
+            $rawResponse = $resposta->body;
+            $app->log->info("[CultBR] PUT response | HTTP: {$resposta->status} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
             $parsed = $this->parseResponse(
                 $rawResponse,
-                $this->curl->http_status_code ?? 0,
-                $this->curl->error,
-                $this->curl->error_message,
-                $this->curl->error_code ?? 0,
+                $resposta->status,
+                $resposta->hasError,
+                $resposta->errorMessage,
+                $resposta->errorCode,
             );
 
             $this->recordExchange([
@@ -181,8 +196,8 @@ abstract class AbstractClient
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
-                'responseHeaders' => $this->responseHeaders(),
-                'httpStatus' => $this->curl->http_status_code ?? null,
+                'responseHeaders' => $resposta->headers,
+                'httpStatus' => $resposta->status,
                 'status' => CultBrRequestLogAttempt::RESULT_SUCCESS,
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
@@ -190,15 +205,15 @@ abstract class AbstractClient
 
             return $parsed;
         } catch (\Exception $e) {
-            $rawResponse = $this->curl->response ?? null;
+            $rawResponse = $this->lastResponse?->body;
 
             $this->recordExchange([
                 'method' => 'PUT',
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
-                'responseHeaders' => $this->responseHeaders(),
-                'httpStatus' => $this->curl->http_status_code ?? null,
+                'responseHeaders' => $this->lastResponse?->headers,
+                'httpStatus' => $this->lastResponse?->status,
                 'error' => $this->exchangeErrorMessage($e),
                 'status' => CultBrRequestLogAttempt::RESULT_ERROR,
                 'sentAt' => $sentAt,
@@ -206,8 +221,6 @@ abstract class AbstractClient
             ]);
 
             $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
-        } finally {
-            $this->closeCurl();
         }
     }
 
@@ -217,26 +230,7 @@ abstract class AbstractClient
     }
 
     /**
-     * Cabeçalhos da resposta como lista de linhas (a lib entrega string ou array).
-     * Registrados no log para que a resposta continue auditável quando o corpo não é JSON,
-     * está vazio ou vem em formato inesperado.
-     */
-    private function responseHeaders(): ?array
-    {
-        $headers = $this->curl->response_headers ?? null;
-
-        if (is_array($headers)) {
-            return array_values($headers);
-        }
-        if (is_string($headers) && $headers !== '') {
-            return preg_split('/\r\n|\n/', trim($headers), -1, PREG_SPLIT_NO_EMPTY) ?: null;
-        }
-
-        return null;
-    }
-
-    /**
-     * Mensagem do erro do curl (timeout, DNS, TLS) quando houver; senão, a da exceção.
+     * Mensagem do erro de transporte (timeout, DNS, TLS) quando houver; senão, a da exceção.
      * Sem isso, uma falha de transporte chegaria ao log como exceção genérica.
      */
     private function exchangeErrorMessage(\Throwable $e): string
@@ -245,27 +239,9 @@ abstract class AbstractClient
             return $e->getMessage();
         }
 
-        $curlError = trim((string) ($this->curl->error_message ?? ''));
+        $erroDeTransporte = trim((string) ($this->lastResponse?->errorMessage ?? ''));
 
-        return $curlError !== '' ? $curlError : $e->getMessage();
-    }
-
-    /**
-     * vendor/curl/curl (lib de terceiros) emite PHP Deprecated (preg_split com $limit nulo) a cada
-     * requisição real sob PHP 8.1+. Com display_errors=STDOUT, esse aviso é ecoado antes do corpo
-     * da resposta e quebra o parse de JSON no front-end. Suprime só E_DEPRECATED, só durante a
-     * chamada à lib, sem mexer em vendor/ nem esconder outros erros.
-     */
-    private function callCurlSuppressingDeprecations(callable $fn): void
-    {
-        $previousLevel = error_reporting();
-        error_reporting($previousLevel & ~E_DEPRECATED);
-
-        try {
-            $fn();
-        } finally {
-            error_reporting($previousLevel);
-        }
+        return $erroDeTransporte !== '' ? $erroDeTransporte : $e->getMessage();
     }
 
     protected final function getClientConfig(): array
@@ -283,19 +259,6 @@ abstract class AbstractClient
         $reflectionClass = new ReflectionClass(get_class($this));
         $className = $reflectionClass->getShortName();
         return "{$className}Fixture";
-    }
-
-    private function setCurl(): void
-    {
-        $this->curl = new Curl();
-        $this->curl->setHeader('Content-Type', 'application/json');
-        $this->curl->setHeader('Authorization', 'Bearer ' . $this->token);
-
-        // Configura timeout: 30 segundos para conexão e 60 segundos total
-        $this->curl->setOpt(CURLOPT_CONNECTTIMEOUT, 30);
-        $this->curl->setOpt(CURLOPT_TIMEOUT, 60);
-
-        $this->curl->setOpt(CURLOPT_FAILONERROR, false);
     }
 
     /**
@@ -347,8 +310,8 @@ abstract class AbstractClient
     }
 
     /**
-     * Interpreta a resposta do curl (código HTTP, body JSON, erros) e retorna o resultado ou lança exceção.
-     * Recebe o estado do curl como parâmetros explícitos (em vez de ler $this->curl) para ser testável de forma pura.
+     * Interpreta a resposta da API (código HTTP, body JSON, erros) e retorna o resultado ou lança exceção.
+     * Recebe o estado da resposta como parâmetros explícitos, para ser testável de forma pura.
      * @param mixed $response corpo da resposta (string, array, object ou null)
      * @param int $httpCode código HTTP da resposta
      * @param bool $curlError se o curl reportou erro de transporte
@@ -511,16 +474,5 @@ abstract class AbstractClient
         $status = $e->httpStatus();
 
         return $status === null || $status >= 500;
-    }
-
-    /**
-     * Fecha o curl
-     * @return void
-     */
-    protected function closeCurl(): void
-    {
-        if (isset($this->curl)) {
-            $this->curl->close();
-        }
     }
 }
