@@ -9,9 +9,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
-use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Provider;
-use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
@@ -19,16 +17,11 @@ use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
+use AldirBlanc\Integration\SendOutcomeMapper;
 
 /** A API de Gestão por trás do contrato, sobre os clients que já existem. */
 final class GestaoProvider implements IntegrationProvider
 {
-    private const RESULT_BY_LOG_STATUS = [
-        CultBrRequestLogAttempt::RESULT_SUCCESS => SendResult::Success,
-        CultBrRequestLogAttempt::RESULT_SIMULATED => SendResult::Simulated,
-        CultBrRequestLogAttempt::RESULT_ERROR => SendResult::Error,
-    ];
-
     public function __construct(private readonly ?Transport $transport = null)
     {
     }
@@ -86,24 +79,6 @@ final class GestaoProvider implements IntegrationProvider
             throw IntegrationError::contract('envio não registrou o que aconteceu');
         }
 
-        return $this->outcome($trocado);
-    }
-
-    private function outcome(array $exchange): SendOutcome
-    {
-        $status = (string) ($exchange['status'] ?? '');
-
-        return new SendOutcome(
-            provider: $this->provider(),
-            result: self::RESULT_BY_LOG_STATUS[$status] ?? SendResult::Error,
-            method: (string) ($exchange['method'] ?? 'PUT'),
-            endpoint: (string) ($exchange['endpoint'] ?? ''),
-            payload: is_array($exchange['payload'] ?? null) ? $exchange['payload'] : [],
-            sentAt: $exchange['sentAt'] ?? new \DateTimeImmutable(),
-            durationMs: (int) ($exchange['durationMs'] ?? 0),
-            response: is_string($exchange['response'] ?? null) ? $exchange['response'] : null,
-            responseHeaders: is_array($exchange['responseHeaders'] ?? null) ? $exchange['responseHeaders'] : null,
-            httpStatus: isset($exchange['httpStatus']) ? (int) $exchange['httpStatus'] : null,
-        );
+        return SendOutcomeMapper::fromExchange($trocado, $this->provider());
     }
 }
