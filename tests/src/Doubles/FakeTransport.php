@@ -14,14 +14,29 @@ class FakeTransport implements Transport
     public function __construct(
         private int $status = 200,
         private mixed $body = '{}',
+        private bool $hasError = false,
+        private ?string $errorMessage = null,
+        private int $errorCode = 0,
     ) {
+    }
+
+    /** Timeout, DNS, TLS: a requisição não chegou a ter resposta HTTP. */
+    public static function falhaDeTransporte(string $mensagem = 'Connection timed out', int $codigo = 28): self
+    {
+        return new self(status: 0, body: null, hasError: true, errorMessage: $mensagem, errorCode: $codigo);
     }
 
     public function send(string $method, string $url, array $headers, ?string $body = null): TransportResponse
     {
         $this->requisicoes[] = compact('method', 'url', 'headers', 'body');
 
-        return new TransportResponse(status: $this->status, body: $this->body);
+        return new TransportResponse(
+            status: $this->status,
+            body: $this->body,
+            hasError: $this->hasError,
+            errorMessage: $this->errorMessage,
+            errorCode: $this->errorCode,
+        );
     }
 
     public function metodos(): array
