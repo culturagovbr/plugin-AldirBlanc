@@ -104,6 +104,7 @@ class OportunidadeCultJob extends JobType
 					$this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
 						'attempt'     => $attempt,
 						'maxAttempts' => self::MAX_ATTEMPTS,
+						'provider'    => $this->activeProviderName(),
 					]));
 				}
 			}
@@ -177,6 +178,16 @@ class OportunidadeCultJob extends JobType
 			return $operation();
 		} catch (\Throwable $e) {
 			App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
+			return null;
+		}
+	}
+
+	/** Qual API atende a integração agora; não saber não pode custar a gravação da tentativa. */
+	private function activeProviderName(): ?string
+	{
+		try {
+			return Plugin::getInstance()->integrationProvider()->provider()->value;
+		} catch (\Throwable) {
 			return null;
 		}
 	}
