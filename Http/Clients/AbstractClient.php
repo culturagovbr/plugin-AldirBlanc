@@ -35,13 +35,7 @@ abstract class AbstractClient
 
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_ERROR_MIN = 400;
-    private const HTTP_NOT_FOUND = 404;
     private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
-    private const NOT_FOUND_DETAILS = [
-        'não encontrada',
-        'não encontrado',
-        'not found',
-    ];
 
     public function __construct()
     {
@@ -371,11 +365,6 @@ abstract class AbstractClient
                 throw new \Exception('Resposta da API não é um JSON válido', 0);
             }
 
-            // Verifica se a resposta contém o JSON de ausência de dados da API.
-            if ($httpCode === self::HTTP_NOT_FOUND && is_array($decoded) && $this->hasNotFoundDetail($decoded)) {
-                return [];
-            }
-
             if (is_array($decoded)) {
                 if (!empty($decoded) && (array_key_exists('error', $decoded) || array_key_exists('message', $decoded) || array_key_exists('erro', $decoded))) {
                     $errorMsg = $decoded['message'] ?? $decoded['error'] ?? $decoded['erro'] ?? 'Erro na resposta da API';
@@ -425,23 +414,6 @@ abstract class AbstractClient
 
         // Se chegou aqui, a resposta não está em um formato esperado
         throw new \Exception('Formato de resposta da API não reconhecido', 0);
-    }
-
-    private function hasNotFoundDetail(array $response): bool
-    {
-        $detail = $response['detail'] ?? null;
-        if (!is_string($detail)) {
-            return false;
-        }
-
-        $normalizedDetail = function_exists('mb_strtolower') ? mb_strtolower($detail, 'UTF-8') : strtolower($detail);
-        foreach (self::NOT_FOUND_DETAILS as $expectedDetail) {
-            if (str_contains($normalizedDetail, $expectedDetail)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function handleError(string $criticalMessageBase, \Exception $e, bool $isIntegration = false): void
