@@ -17,6 +17,9 @@ class IntegrationError extends \Exception
     /** A API respondeu, mas o corpo não é utilizável. */
     public const KIND_PARSE = 'parse';
 
+    /** Falta configuração para a chamada acontecer — não adianta repetir. */
+    public const KIND_CONFIGURATION = 'configuration';
+
     private string $kind;
     private ?int $httpStatus;
     private ?string $rawBody;
@@ -49,6 +52,11 @@ class IntegrationError extends \Exception
     public static function parse(string $message, ?int $httpStatus = null, ?string $rawBody = null, ?\Throwable $previous = null): self
     {
         return new self($message, self::KIND_PARSE, $httpStatus, $rawBody, $httpStatus ?? 0, $previous);
+    }
+
+    public static function configuration(string $variavel, string $detalhe): self
+    {
+        return new self("Configuração ausente ou inválida: {$variavel} — {$detalhe}", self::KIND_CONFIGURATION);
     }
 
     public function kind(): string
