@@ -153,6 +153,22 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertSame([Provider::Gestao->value, Provider::Conecta->value], $this->providers($uuid));
     }
 
+    /** Provedor irresolvível não pode custar o registro da tentativa. */
+    function testProvedorIrresolvivelRegistraATentativaSemProvedor()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProviderConfigurado('nao-existe', function () use ($opp) {
+            $this->enqueueUpdateJob($opp);
+            $this->processJobs(number_of_jobs: 1);
+        });
+
+        $rows = $this->logs($opp->id);
+
+        $this->assertCount(1, $rows[0]['attempts'], 'A tentativa precisa ficar registrada');
+        $this->assertNull($this->providers($rows[0]['requestUuid'])[0]);
+    }
+
     /**
      * A retentativa precisa entrar como tentativa 2 do MESMO envio — é isso que dá
      * a leitura "Tentativa 2/3" sob um único uuid na aba.
