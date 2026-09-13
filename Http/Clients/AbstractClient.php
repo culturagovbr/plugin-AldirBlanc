@@ -44,9 +44,9 @@ abstract class AbstractClient
             throw new \Exception('Configuração do cliente não encontrada');
         }
 
-        $this->mode = $config['mode'];
-        $this->host = $config['host'];
-        $this->token = $config['token'];
+        $this->mode = (string) ($config['mode'] ?? '');
+        $this->host = $this->requiredConfig($config, 'host', 'PNAB_CULTBR_HOST');
+        $this->token = $this->requiredConfig($config, 'token', 'PNAB_CULTBR_TOKEN');
         $this->parameter = self::PARAMETER_DEFAULT;
 
         // Carregando configurações do curl
@@ -314,6 +314,28 @@ abstract class AbstractClient
     private function prepareEndpoint(): string
     {
         return str_replace($this->parameter, $this->document, $this->endpoint);
+    }
+
+    /** Configuração ausente precisa dizer qual variável falta, não estourar TypeError. */
+    protected function requiredConfig(array $config, string $chave, string $variavel): string
+    {
+        $valor = trim((string) ($config[$chave] ?? ''));
+
+        if ($valor === '') {
+            throw $this->configurationError($variavel, 'sem valor na configuração do plugin');
+        }
+
+        return $valor;
+    }
+
+    /** Loga na detecção: os três call sites engolem a exceção, e um deles sem deixar rastro. */
+    private function configurationError(string $variavel, string $detalhe): IntegrationError
+    {
+        $erro = IntegrationError::configuration($variavel, $detalhe);
+
+        App::i()->log->critical('[CultBR] ' . $erro->getMessage());
+
+        return $erro;
     }
 
     /**

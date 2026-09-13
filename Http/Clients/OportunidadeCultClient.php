@@ -23,11 +23,11 @@ class OportunidadeCultClient extends AbstractClient
 
     public function update(OpportunityDto $payload)
     {
-        $endpoint = $this->getClientConfig()['updateOportunidadeEndpoint'] ?? null;
-        if (empty($endpoint)) {
-            throw new \RuntimeException('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT não configurado.');
-        }
-        $this->endpoint = $endpoint;
+        $this->endpoint = $this->requiredConfig(
+            $this->getClientConfig(),
+            'updateOportunidadeEndpoint',
+            'PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT',
+        );
         return $this->put($payload->toArray());
     }
 }
