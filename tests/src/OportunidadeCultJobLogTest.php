@@ -4,6 +4,7 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Opportunity;
@@ -59,6 +60,16 @@ class OportunidadeCultJobLogTest extends TestCase
         return (new CultBrRequestLogService())->findByOpportunity($opportunityId);
     }
 
+    /** O provider de cada tentativa, na ordem: findByOpportunity não expõe a coluna. */
+    private function providers(string $requestUuid): array
+    {
+        $log = $this->app->repo(CultBrRequestLog::class)->findOneBy(['requestUuid' => $requestUuid]);
+        $attempts = $this->app->repo(CultBrRequestLogAttempt::class)
+            ->findBy(['log' => $log], ['attempt' => 'ASC']);
+
+        return array_map(fn(CultBrRequestLogAttempt $attempt) => $attempt->provider, $attempts);
+    }
+
     /** Ver OportunidadeCultJobUpdateTest: apaga a linha mantendo o objeto na identity map. */
     private function deleteOpportunityFromDb(int $opportunityId): void
     {
@@ -86,6 +97,19 @@ class OportunidadeCultJobLogTest extends TestCase
             $rows[0]['attempts'][0]['status'],
             'Em modo development a tentativa é simulada'
         );
+    }
+
+    /** Com duas implementações, o log precisa dizer para qual API o envio foi. */
+    function testCadaTentativaGravaOProvedorQueAAtendeu()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $uuid = $this->logs($opp->id)[0]['requestUuid'];
+
+        $this->assertSame([Provider::Gestao->value], $this->providers($uuid));
     }
 
     /**
