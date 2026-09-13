@@ -6,6 +6,7 @@ use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Plugin;
 use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
@@ -110,6 +111,46 @@ class OportunidadeCultJobLogTest extends TestCase
         $uuid = $this->logs($opp->id)[0]['requestUuid'];
 
         $this->assertSame([Provider::Gestao->value], $this->providers($uuid));
+    }
+
+    private function comProviderConfigurado(string $valor, callable $exercicio): void
+    {
+        $plugin = Plugin::getInstance();
+        $ref = new \ReflectionProperty($plugin, '_config');
+        $ref->setAccessible(true);
+
+        $config = $ref->getValue($plugin);
+        $original = $config['client']['provider'] ?? null;
+        $config['client']['provider'] = $valor;
+        $ref->setValue($plugin, $config);
+        $plugin->resetIntegrationProvider();
+
+        try {
+            $exercicio();
+        } finally {
+            $config = $ref->getValue($plugin);
+            $config['client']['provider'] = $original;
+            $ref->setValue($plugin, $config);
+            $plugin->resetIntegrationProvider();
+        }
+    }
+
+    /** Envio retomado sob outra configuração: cada tentativa guarda a API que a atendeu. */
+    function testTentativasEmProvedoresDiferentesSaoDistinguiveisNoLog()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $uuid = $this->logs($opp->id)[0]['requestUuid'];
+
+        $this->comProviderConfigurado(Provider::Conecta->value, function () use ($opp, $uuid) {
+            $this->enqueueUpdateJob($opp, ['attempt' => 2, 'requestUuid' => $uuid]);
+            $this->processJobs(number_of_jobs: 1);
+        });
+
+        $this->assertSame([Provider::Gestao->value, Provider::Conecta->value], $this->providers($uuid));
     }
 
     /**
