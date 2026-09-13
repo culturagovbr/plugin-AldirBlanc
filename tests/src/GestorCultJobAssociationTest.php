@@ -478,6 +478,126 @@ class GestorCultJobAssociationTest extends TestCase
 
     // ===== updateAgentFromGestorResponse =====
 
+    private function agenteComPerfilPreenchido(): object
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $agent->setMetadata('rgNumero', 'RG-ATUAL');
+        $agent->setMetadata('En_CEP', '57300000');
+        $agent->setMetadata('En_Num', '100');
+        $agent->setMetadata('telefone1', '82999990000');
+        $agent->setMetadata('En_Complemento', 'Sala 2');
+        $agent->setMetadata('nomeCompleto', 'Nome Anterior');
+        $agent->save(true);
+
+        return $agent;
+    }
+
+    /** Nulo da API é campo que ela não preencheu, não ordem de apagar o que o gestor já cadastrou. */
+    function testCampoNuloNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, [
+            'nome' => 'Nome Novo',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+        ]);
+
+        $this->assertSame('Nome Novo', $agent->getMetadata('nomeCompleto'));
+        $this->assertSame('RG-ATUAL', $agent->getMetadata('rgNumero'));
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+        $this->assertSame('82999990000', $agent->getMetadata('telefone1'));
+        $this->assertSame('Sala 2', $agent->getMetadata('En_Complemento'));
+    }
+
+    function testCampoAusenteNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['nome' => 'Nome Novo']);
+
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+        $this->assertSame('RG-ATUAL', $agent->getMetadata('rgNumero'));
+    }
+
+    function testCampoVazioNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['cep' => '', 'numero' => '   ']);
+
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+    }
+
+    function testCampoPreenchidoEDiferenteAtualizaOMetadado()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['cep' => '01001000', 'rg' => 'RG-NOVO']);
+
+        $this->assertSame('01001000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('RG-NOVO', $agent->getMetadata('rgNumero'));
+    }
+
+    /** O critério do fim a fim: o sync inteiro com o retorno real não esvazia o perfil. */
+    function testSyncComORetornoRealNaoEsvaziaOPerfilDoGestor()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $job = $this->job();
+        $job->setGestorResponse([
+            'nome' => 'GESTOR DE TESTE',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+            'entes_federados' => [
+                ['name' => 'ESTADO DO PIAUI', 'document' => '06553481000300', 'exercicios' => []],
+            ],
+        ]);
+        $job->sync();
+        $this->app->em->clear();
+
+        $recarregado = $this->app->repo('MapasCulturais\\Entities\\Agent')->find($agent->id);
+
+        $this->assertSame('57300000', $recarregado->getMetadata('En_CEP'));
+        $this->assertSame('100', $recarregado->getMetadata('En_Num'));
+        $this->assertSame('GESTOR DE TESTE', $recarregado->getMetadata('nomeCompleto'));
+    }
+
+    /** O retorno real da Conecta: cinco dos seis campos nulos, e nenhum metadado pode se perder. */
+    function testRetornoRealDaConectaNaoEsvaziaNenhumCampoObrigatorio()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, [
+            'nome' => 'GESTOR DE TESTE',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+            'logradouro' => null,
+            'bairro' => null,
+            'municipio' => null,
+            'uf' => null,
+        ]);
+
+        foreach (['En_CEP' => '57300000', 'En_Num' => '100'] as $chave => $esperado) {
+            $this->assertSame($esperado, $agent->getMetadata($chave), "{$chave} é obrigatório no perfil");
+        }
+    }
+
     function testUpdateAgentFromGestorResponsePersisteSoCamposDiferentes()
     {
         $user = $this->userDirector->createUser();
