@@ -56,61 +56,39 @@ class AbstractClientParseResponseTest extends TestCase
         $this->client()->callParseResponse('{json invalido', 200);
     }
 
-    function testHttp404ComDetailNaoEncontradoRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'Pessoa não encontrada']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailRealDaCultBrRetornaArrayVazio()
+    /** `detail` real das duas APIs quando o CPF não existe na base do CultBR. */
+    function testHttp404ComDetailDeNegocioLancaExcecao()
     {
         $response = json_encode(['detail' => 'Pessoa com o CPF fornecido não encontrada no sistema.']);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
 
-        $this->assertSame([], $result);
+        $this->client()->callParseResponse($response, 404);
     }
 
-    function testHttp404ComDetailNotFoundEmInglesRetornaArrayVazio()
+    /** É o corpo que a Conecta devolve para rota inexistente, e o que mais se parece com ausência de dados. */
+    function testHttp404NotFoundGenericoLancaExcecao()
     {
-        $response = json_encode(['detail' => 'Resource not found']);
+        $response = json_encode(['detail' => 'Not Found']);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
 
-        $this->assertSame([], $result);
+        $this->client()->callParseResponse($response, 404);
     }
 
-    function testHttp404ComDetailNaoEncontradaFormaFemininaRetornaArrayVazio()
+    function testHttp200ComEntesVaziosRetornaRespostaIntacta()
     {
-        $response = json_encode(['detail' => 'Entidade não encontrada']);
+        $response = json_encode(['entes_federados' => []]);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $result = $this->client()->callParseResponse($response, 200);
 
-        $this->assertSame([], $result);
+        $this->assertSame(['entes_federados' => []], $result);
     }
 
-    function testHttp404ComDetailCaseInsensitiveAsciiRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'RESOURCE NOT FOUND']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailMaiusculoAcentuadoRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'PESSOA NÃO ENCONTRADA']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailNaoStringNaoAtivaCasoDeAusencia()
+    /** `detail` em lista é a forma do 422 do FastAPI; num 404 continua sendo erro. */
+    function testHttp404ComDetailEmListaLancaExcecao()
     {
         $response = json_encode(['detail' => ['motivo' => 'algo']]);
 
