@@ -247,7 +247,8 @@ abstract class AbstractClient
         return $erroDeTransporte !== '' ? $erroDeTransporte : $e->getMessage();
     }
 
-    protected final function getClientConfig(): array
+    /** Sobrescrevível: cada provedor pode ler o próprio bucket de configuração. */
+    protected function getClientConfig(): array
     {
         return Plugin::getInstance()->config['client'] ?? [];
     }
