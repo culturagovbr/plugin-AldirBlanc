@@ -8,6 +8,7 @@ use AldirBlanc\Enum\OpportunityStatus;
 use AldirBlanc\Enum\SpecialOption;
 use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Enum\TipoProponenteEnum;
+use AldirBlanc\Integration\FederativeEntityDocument;
 use MapasCulturais\App;
 use MapasCulturais\Entity;
 use MapasCulturais\Entities\Opportunity;
@@ -380,7 +381,8 @@ class OpportunityService
             return null;
         }
         $name = $this->normalizeString($ente->name ?? '') ?? '';
-        $document = $this->normalizeString($ente->document) ?? '';
+        // O payload precisa sair na mesma grafia, qualquer que seja a gravada na linha.
+        $document = FederativeEntityDocument::normalize($this->normalizeString($ente->document));
         if ($document === '') {
             return null;
         }
