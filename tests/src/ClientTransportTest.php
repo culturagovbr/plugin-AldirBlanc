@@ -8,6 +8,7 @@ use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\Conecta\CatalogoClient as CatalogoConecta;
 use Tests\AldirBlanc\Doubles\FakeTransport;
+use Tests\AldirBlanc\Doubles\FixtureAusenteClient;
 use Tests\AldirBlanc\Doubles\Gestao\CatalogoClient as CatalogoGestao;
 use Tests\AldirBlanc\Doubles\SpyCurlTransport;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
@@ -140,12 +141,19 @@ class ClientTransportTest extends TestCase
     function testFixtureAusenteFalhaNomeandoOArquivo()
     {
         try {
-            (new CatalogoConecta())->get();
+            (new FixtureAusenteClient())->get();
             $this->fail('Esperava falha por fixture inexistente');
         } catch (IntegrationError $e) {
             $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
-            $this->assertStringContainsString('conecta/par-acoes.php', $e->getMessage());
+            $this->assertStringContainsString('conecta/nao-existe.php', $e->getMessage());
         }
+    }
+
+    /** Com as duas fixtures existindo, a prova passa a ser que cada uma carrega a sua. */
+    function testCadaClientHomonimoCarregaAPropriaFixture()
+    {
+        $this->assertArrayHasKey('data', (new CatalogoGestao())->get());
+        $this->assertArrayHasKey('data', (new CatalogoConecta())->get());
     }
 
     function testClientSemFixtureDeclaradaFalhaEmVezDeIncluirODiretorio()
