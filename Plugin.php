@@ -6,6 +6,8 @@ use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
+use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
@@ -17,10 +19,14 @@ class Plugin extends \MapasCulturais\Plugin
 
     protected static $instance;
 
+    private ?ProviderResolver $providerResolver = null;
+
     function __construct($config = [])
     {
         $config += [
             'client' => [
+                'provider' => env('PNAB_CULTBR_PROVIDER', null),
+
                 // Sem declaração, modo real: fixture silenciosa em produção é pior que falhar.
                 'mode' => env('PNAB_CULTBR_MODE', 'live'),
                 'host' => env('PNAB_CULTBR_HOST', null),
@@ -54,6 +60,19 @@ class Plugin extends \MapasCulturais\Plugin
     public static function getInstance(): ?Plugin
     {
         return self::$instance;
+    }
+
+    /** Resolvido sob demanda: em _init() o Plugin ainda não é acessível por getInstance(). */
+    public function integrationProvider(): IntegrationProvider
+    {
+        $this->providerResolver ??= new ProviderResolver($this->config['client']['provider'] ?? null);
+
+        return $this->providerResolver->resolve();
+    }
+
+    public function resetIntegrationProvider(): void
+    {
+        $this->providerResolver = null;
     }
 
     public function _init()
