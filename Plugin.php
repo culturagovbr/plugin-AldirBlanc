@@ -21,7 +21,8 @@ class Plugin extends \MapasCulturais\Plugin
     {
         $config += [
             'client' => [
-                'mode' => env('PNAB_CULTBR_MODE', 'development'),
+                // Sem declaração, modo real: fixture silenciosa em produção é pior que falhar.
+                'mode' => env('PNAB_CULTBR_MODE', 'live'),
                 'host' => env('PNAB_CULTBR_HOST', null),
                 'token' => env('PNAB_CULTBR_TOKEN', null),
 
@@ -29,7 +30,7 @@ class Plugin extends \MapasCulturais\Plugin
                 'seficEndpoint' => env('PNAB_CULTBR_SEFIC_ENDPOINT', null),
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
-                'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', 'par/sefic/acoes'),
+                'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', null),
                 'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
             ], 
             // Token de integração para consumo do CultBR
