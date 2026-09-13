@@ -3,6 +3,8 @@ services:
     environment:
       # A suíte roda com fixture local, sem chamada real. O modo precisa ser declarado: o default
       # do plugin é modo real, para que ambiente mal configurado falhe em vez de devolver fixture.
+      # Quem atende a integração. Sem declarar, a resolução falha nomeando os valores aceitos.
+      - PNAB_CULTBR_PROVIDER=gestao
       - PNAB_CULTBR_MODE=development
       # host e token são exigidos na construção do client mesmo em modo fixture. Valores fictícios,
       # nunca usados de fato.
