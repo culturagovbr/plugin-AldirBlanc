@@ -20,9 +20,15 @@ class IntegrationError extends \Exception
     /** Falta configuração para a chamada acontecer — não adianta repetir. */
     public const KIND_CONFIGURATION = 'configuration';
 
+    /** O corpo é legível, mas a forma não é a que o contrato exige. */
+    public const KIND_CONTRACT = 'contract';
+
+    private const HTTP_SERVER_ERROR_MIN = 500;
+
     private string $kind;
     private ?int $httpStatus;
     private ?string $rawBody;
+    private array $details;
 
     public function __construct(
         string $message,
@@ -31,12 +37,14 @@ class IntegrationError extends \Exception
         ?string $rawBody = null,
         int $code = 0,
         ?\Throwable $previous = null,
+        array $details = [],
     ) {
         parent::__construct($message, $code, $previous);
 
         $this->kind = $kind;
         $this->httpStatus = $httpStatus;
         $this->rawBody = $rawBody;
+        $this->details = $details;
     }
 
     public static function transport(string $message, int $curlErrorCode, ?\Throwable $previous = null): self
@@ -59,6 +67,15 @@ class IntegrationError extends \Exception
         return new self("Configuração ausente ou inválida: {$variavel} — {$detalhe}", self::KIND_CONFIGURATION);
     }
 
+    public static function contract(
+        string $message,
+        array $details = [],
+        ?int $httpStatus = null,
+        ?string $rawBody = null,
+    ): self {
+        return new self($message, self::KIND_CONTRACT, $httpStatus, $rawBody, 0, null, $details);
+    }
+
     public function kind(): string
     {
         return $this->kind;
@@ -72,5 +89,20 @@ class IntegrationError extends \Exception
     public function rawBody(): ?string
     {
         return $this->rawBody;
+    }
+
+    public function details(): array
+    {
+        return $this->details;
+    }
+
+    /** Só repetir o que pode mudar de resultado: transporte e erro do servidor. */
+    public function isRetryable(): bool
+    {
+        if ($this->kind === self::KIND_TRANSPORT) {
+            return true;
+        }
+
+        return $this->kind === self::KIND_HTTP && $this->httpStatus >= self::HTTP_SERVER_ERROR_MIN;
     }
 }
