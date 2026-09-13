@@ -143,20 +143,19 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame('Mensagem segura do job', $payload['errorMessage']);
     }
 
-    function testStartSyncComLockExistenteNaoDeixaSessaoEmAndamento()
+    /**
+     * Lock ativo é concorrência local — o sync está em curso em outra requisição ou acabou de
+     * terminar. Dizer "sem conexão" com a API no ar faria o gestor esperar por nada.
+     */
+    function testStartSyncComLockExistenteDelegaAoStatusEmVezDeAcusarFalhaDeApi()
     {
         $controller = $this->controller();
         $controller->setSyncCallback(fn() => false);
 
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
-        $this->assertSame([
-            'started' => false,
-            'error' => true,
-            'errorMessage' => GestorCultJob::API_UNAVAILABLE_MESSAGE,
-        ], $payload);
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+        $this->assertSame(['started' => true], $payload);
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
     }
 
     function testStartSyncComSessaoStalePermiteReexecutar()

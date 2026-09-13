@@ -406,10 +406,14 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $gestorDocument = new GestorDocument($this->getGestorCpf());
             $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
 
+            // Só o lock devolve false, e lock ativo é concorrência local: o sync está em curso
+            // em outra requisição, ou acabou de terminar. Dizer "sem conexão" com a API no ar
+            // mandaria o gestor esperar por nada — o caminho é consultar o status.
             if (!$syncExecuted) {
-                $_SESSION['gestor_cult_sync_completed'] = true;
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+                $app->log->info("[Gestores CultBR] startSync concorrente, delegando ao status | Usuário ID: {$userId}");
+
+                $this->json(['started' => true]);
+                return;
             }
 
             if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
