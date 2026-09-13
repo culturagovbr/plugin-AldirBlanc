@@ -41,7 +41,12 @@ class OportunidadeCultJob extends JobType
 		$opportunityId = new OpportunityId($opportunityId);
 
 		$this->opportunityService = new OpportunityService();
-		$this->oportunidadeCultClient = new OportunidadeCultClient($opportunityId);
+		$this->oportunidadeCultClient = $this->createOportunidadeCultClient($opportunityId);
+	}
+
+	protected function createOportunidadeCultClient(OpportunityId $opportunityId): OportunidadeCultClient
+	{
+		return new OportunidadeCultClient($opportunityId);
 	}
 
 	/**
