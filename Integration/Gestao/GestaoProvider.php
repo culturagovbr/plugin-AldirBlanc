@@ -17,6 +17,7 @@ use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
+use AldirBlanc\Integration\ParActionPageMapper;
 use AldirBlanc\Integration\SendOutcomeMapper;
 
 /** A API de Gestão por trás do contrato, sobre os clients que já existem. */
@@ -47,22 +48,7 @@ final class GestaoProvider implements IntegrationProvider
     {
         $resposta = (new ParAcaoClient($skip, $limit, $this->transport))->get();
 
-        if (!is_array($resposta) || !array_key_exists('data', $resposta) || !is_array($resposta['data'])) {
-            throw IntegrationError::contract('catálogo do PAR sem a chave data');
-        }
-
-        $paginacao = is_array($resposta['pagination'] ?? null) ? $resposta['pagination'] : [];
-        $itens = array_values(array_map(
-            fn(array $acao) => ParAction::fromArray($acao),
-            array_filter($resposta['data'], 'is_array'),
-        ));
-
-        return new ParActionPage(
-            items: $itens,
-            skip: (int) ($paginacao['skip'] ?? $skip),
-            limit: (int) ($paginacao['limit'] ?? $limit),
-            total: (int) ($paginacao['total'] ?? count($itens)),
-        );
+        return ParActionPageMapper::fromResponse($resposta, $skip, $limit);
     }
 
     public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
