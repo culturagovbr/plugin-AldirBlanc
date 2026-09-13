@@ -10,6 +10,7 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Integration\FederativeEntityDocument;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Services\UserAccessService;
 
@@ -278,9 +279,8 @@ class GestorCultJob
      */
     protected function normalizeFederativeEntities($federativeEntities): array
     {
-        // Se já é um array, retorna como está
         if (is_array($federativeEntities)) {
-            return $federativeEntities;
+            return FederativeEntityDocument::dedupe($federativeEntities);
         }
 
         // Se é uma string, tenta decodificar JSON
