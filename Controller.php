@@ -297,7 +297,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
 
         try {
-            $cultBrResponse = (new ParAcaoClient($skip, $limit))->get();
+            $cultBrResponse = $this->createParAcaoClient($skip, $limit)->get();
 
             if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
                 $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
@@ -459,6 +459,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     protected function getGestorCpf(): string
     {
         return (new UserService())->getCpf();
+    }
+
+    protected function createParAcaoClient(int $skip, int $limit): ParAcaoClient
+    {
+        return new ParAcaoClient($skip, $limit);
     }
 
     protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob
