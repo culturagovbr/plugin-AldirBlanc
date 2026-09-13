@@ -18,6 +18,18 @@ class TestableAbstractClient extends AbstractClient
     {
     }
 
+    public function callPrepareEndpoint(string $endpoint, string $document, string $parameter): string
+    {
+        $this->endpoint = $endpoint;
+        $this->document = $document;
+        $this->parameter = $parameter;
+
+        $metodo = new \ReflectionMethod(parent::class, 'prepareEndpoint');
+        $metodo->setAccessible(true);
+
+        return $metodo->invoke($this);
+    }
+
     public function callHandleError(\Exception $e): void
     {
         $this->handleError('[Teste] Erro na API', $e);

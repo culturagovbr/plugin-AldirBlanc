@@ -4,6 +4,7 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
@@ -25,7 +26,7 @@ class OportunidadeCultClientTest extends TestCase
         return new OpportunityDto(id: 1);
     }
 
-    function testUpdateLancaRuntimeExceptionQuandoEndpointNaoConfigurado()
+    function testUpdateFalhaComoErroDeConfiguracaoQuandoEndpointNaoConfigurado()
     {
         $original = Plugin::getInstance()->config['client']['updateOportunidadeEndpoint'];
         $client = new OportunidadeCultClient(new OpportunityId(1));
@@ -33,8 +34,9 @@ class OportunidadeCultClientTest extends TestCase
 
         try {
             $client->update($this->makePayload());
-            $this->fail('Esperava RuntimeException ao chamar update() sem endpoint configurado');
-        } catch (\RuntimeException $e) {
+            $this->fail('Esperava falha ao chamar update() sem endpoint configurado');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
             $this->assertStringContainsString('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', $e->getMessage());
         } finally {
             $this->setPluginClientConfig('updateOportunidadeEndpoint', $original);
