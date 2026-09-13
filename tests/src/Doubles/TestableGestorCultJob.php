@@ -3,8 +3,10 @@
 namespace Tests\AldirBlanc\Doubles;
 
 use AldirBlanc\Dtos\GestorDocument;
-use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Integration\Gestao\GestaoProvider;
+use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Jobs\GestorCultJob;
 use MapasCulturais\Entities\Agent;
 
@@ -32,15 +34,18 @@ class TestableGestorCultJob extends GestorCultJob
         $this->documento = $gestorDocument;
     }
 
-    /** Liga o client de verdade ao job, para exercitar o parse junto com o gate de revogação. */
+    /** Liga o provedor de verdade ao job, para exercitar o parse junto com o gate de revogação. */
     public function useTransport(Transport $transport): void
     {
         $this->transport = $transport;
     }
 
+    /** Recebe a resposta como a API a devolve; traduzir é o que o provedor faz em produção. */
     public function setGestorResponse(mixed $response): void
     {
-        $this->gestorResponse = $response;
+        $this->gestorResponse = is_array($response)
+            ? ManagerSnapshotMapper::fromResponse($response, acceptFlatList: true)
+            : $response;
         $this->hasGestorResponse = true;
     }
 
@@ -69,7 +74,7 @@ class TestableGestorCultJob extends GestorCultJob
         $this->beforeFlushException = $exception;
     }
 
-    protected function fetchGestorData()
+    protected function fetchGestorData(): ?ManagerSnapshot
     {
         if ($this->gestorException) {
             throw $this->gestorException;
@@ -80,7 +85,7 @@ class TestableGestorCultJob extends GestorCultJob
         }
 
         if ($this->transport !== null) {
-            return (new GestorClient($this->documento, $this->transport))->get();
+            return (new GestaoProvider($this->transport))->fetchManager($this->documento);
         }
 
         return parent::fetchGestorData();
@@ -95,13 +100,13 @@ class TestableGestorCultJob extends GestorCultJob
         parent::associateFederativeEntities($agent, $federativeEntities, $beforeFlush);
     }
 
-    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, ManagerSnapshot $snapshot): void
     {
         if ($this->updateAgentException) {
             throw $this->updateAgentException;
         }
 
-        parent::updateAgentFromGestorResponse($agent, $apiResponse);
+        parent::updateAgentFromGestorResponse($agent, $snapshot);
     }
 
     protected function grantGestorCultBrRole($userId, Agent $agent): void
@@ -140,8 +145,12 @@ class TestableGestorCultJob extends GestorCultJob
         $this->associateFederativeEntities($agent, $federativeEntities);
     }
 
+    /** Recebe a resposta como a API a devolve e monta o snapshot, para o teste ler igual ao real. */
     public function callUpdateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
     {
-        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+        $this->updateAgentFromGestorResponse($agent, ManagerSnapshotMapper::fromResponse(
+            $apiResponse + ['entes_federados' => []],
+            acceptFlatList: false,
+        ));
     }
 }
