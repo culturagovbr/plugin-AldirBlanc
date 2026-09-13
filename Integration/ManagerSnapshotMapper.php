@@ -62,7 +62,7 @@ final class ManagerSnapshotMapper
                 // A API escreve "exercicios"; a coluna se chama "exercices", e a troca é da fronteira.
                 exercices: is_array($ente['exercicios'] ?? null) ? $ente['exercicios'] : [],
             ),
-            array_filter($lista, 'is_array'),
+            array_filter(FederativeEntityDocument::dedupe($lista), 'is_array'),
         ));
     }
 }
