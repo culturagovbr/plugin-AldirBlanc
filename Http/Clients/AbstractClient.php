@@ -3,6 +3,7 @@
 namespace AldirBlanc\Http\Clients;
 
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use Curl\Curl;
@@ -25,16 +26,14 @@ abstract class AbstractClient
 
     /**
      * Callback opcional que recebe request + resposta de cada PUT (payload, status HTTP, corpo,
-     * duração). Usado pelo OportunidadeCultJob para gravar o histórico da aba "Logs CultBr" —
-     * é aqui, e não no job, porque handleError() relança uma exceção genérica e o chamador
-     * perde status e corpo do erro.
+     * duração). Usado pelo OportunidadeCultJob para gravar o histórico da aba "Logs CultBr".
      *
      * @var callable|null
      */
     private $exchangeRecorder = null;
 
     private const PARAMETER_DEFAULT = '{document}';
-    private const HTTP_ERROR_MIN = 400;
+    private const HTTP_REDIRECT_MIN = 300;
     private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
 
     public function __construct()
@@ -242,6 +241,10 @@ abstract class AbstractClient
      */
     private function exchangeErrorMessage(\Throwable $e): string
     {
+        if ($e instanceof IntegrationError && $e->kind() !== IntegrationError::KIND_TRANSPORT) {
+            return $e->getMessage();
+        }
+
         $curlError = trim((string) ($this->curl->error_message ?? ''));
 
         return $curlError !== '' ? $curlError : $e->getMessage();
@@ -332,88 +335,152 @@ abstract class AbstractClient
         int $curlErrorCode = 0,
     ): array|object
     {
-        if ($response === null) {
-            throw new \Exception(self::NO_RESPONSE_MESSAGE, $httpCode);
-        }
+        $rawBody = is_string($response) ? $response : null;
 
-        // Se a resposta é uma string JSON, decodifica para array
+        $decoded = $response;
+        $bodyIsUsable = $response !== null;
+
         if (is_string($response)) {
-            // Se a string está vazia, trata como indisponibilidade/erro de API.
-            if (trim($response) === '') {
-                $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
-                throw new \Exception($errorMessage ?: self::NO_RESPONSE_MESSAGE, $httpCode);
-            }
-
-            $decoded = json_decode($response, true);
-
-            // Verifica se houve erro no JSON
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Resposta da API não é um JSON válido', 0);
-            }
-
-            if (is_array($decoded)) {
-                if (!empty($decoded) && (array_key_exists('error', $decoded) || array_key_exists('message', $decoded) || array_key_exists('erro', $decoded))) {
-                    $errorMsg = $decoded['message'] ?? $decoded['error'] ?? $decoded['erro'] ?? 'Erro na resposta da API';
-                    throw new \Exception($errorMsg, $httpCode ?: 0);
-                }
-
-                if ($httpCode >= self::HTTP_ERROR_MIN) {
-                    $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
-                    throw new \Exception($errorMessage, $httpCode);
-                }
-
-                return $decoded;
-            }
-
-            // Se decodificou para null, retorna array vazio (caso válido)
-            if ($decoded === null) {
-                if ($httpCode >= self::HTTP_ERROR_MIN) {
-                    $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
-                    throw new \Exception($errorMessage, $httpCode);
-                }
-
-                return [];
-            }
+            $bodyIsUsable = trim($response) !== '';
+            $decoded = $bodyIsUsable ? json_decode($response, true) : null;
+            $bodyIsUsable = $bodyIsUsable && json_last_error() === JSON_ERROR_NONE;
         }
 
-        // Verifica outros códigos HTTP de erro (500, etc) ANTES de verificar curl->error
-        if ($httpCode >= self::HTTP_ERROR_MIN) {
-            $errorMessage = $curlErrorMessage ?? "Erro HTTP {$httpCode}";
-            throw new \Exception($errorMessage, $httpCode);
+        // O status decide antes da forma do corpo: 3xx sem FOLLOWLOCATION também é falha,
+        // e um corpo ilegível não pode apagar o status que veio com ele.
+        if ($httpCode >= self::HTTP_REDIRECT_MIN) {
+            throw IntegrationError::http(
+                $this->httpErrorMessage($bodyIsUsable ? $decoded : null, $httpCode, $curlErrorMessage),
+                $httpCode,
+                $rawBody,
+            );
         }
 
-        // Verifica se houve erro HTTP.
+        // `error` da lib também é ligado por status de erro, então só aqui — sem status de
+        // erro — ele significa falha de transporte de verdade.
         if ($curlError) {
-            $errorMessage = $curlErrorMessage ?? 'Erro desconhecido na requisição';
-            throw new \Exception($errorMessage, $curlErrorCode);
+            throw IntegrationError::transport(
+                $this->firstFilled($curlErrorMessage, 'Erro desconhecido na requisição'),
+                $curlErrorCode,
+            );
         }
 
-        // Se já é um array, retorna como está (incluindo arrays vazios)
-        if (is_array($response)) {
-            return $response;
+        if ($response === null) {
+            throw IntegrationError::parse(self::NO_RESPONSE_MESSAGE, $httpCode);
         }
 
-        // Se é um objeto, retorna como está
-        if (is_object($response)) {
-            return $response;
+        if (!$bodyIsUsable) {
+            $message = $rawBody !== null && trim($rawBody) === ''
+                ? self::NO_RESPONSE_MESSAGE
+                : 'Resposta da API não é um JSON válido';
+
+            throw IntegrationError::parse($message, $httpCode, $rawBody);
         }
 
-        // Se chegou aqui, a resposta não está em um formato esperado
-        throw new \Exception('Formato de resposta da API não reconhecido', 0);
+        if (is_array($decoded) || is_object($decoded)) {
+            return $decoded;
+        }
+
+        // JSON `null` é resposta sem conteúdo, não erro.
+        if ($decoded === null) {
+            return [];
+        }
+
+        throw IntegrationError::parse('Formato de resposta da API não reconhecido', $httpCode, $rawBody);
     }
 
-    private function handleError(string $criticalMessageBase, \Exception $e, bool $isIntegration = false): void
+    /**
+     * Mensagem de um status de erro, na ordem em que as APIs a entregam: `detail` da Conecta
+     * (string na exceção HTTP, lista de campos no 422), depois as chaves da Gestão, e por fim
+     * a linha de status que a lib de curl deixa em error_message.
+     */
+    private function httpErrorMessage(mixed $decoded, int $httpCode, ?string $curlErrorMessage): string
     {
-        // Dispara alerta para Telegram
+        if (is_array($decoded)) {
+            $detail = $decoded['detail'] ?? null;
+
+            if (is_string($detail) && trim($detail) !== '') {
+                return $detail;
+            }
+
+            if (is_array($detail) && $detail !== []) {
+                return $this->validationDetailMessage($detail);
+            }
+
+            foreach (['message', 'error', 'erro'] as $chave) {
+                if (isset($decoded[$chave]) && is_string($decoded[$chave]) && trim($decoded[$chave]) !== '') {
+                    return $decoded[$chave];
+                }
+            }
+        }
+
+        return $this->firstFilled($curlErrorMessage, "Erro HTTP {$httpCode}");
+    }
+
+    /** Achata a lista de `{loc, msg}` do 422 do FastAPI em "campo: motivo". */
+    private function validationDetailMessage(array $detail): string
+    {
+        $itens = [];
+
+        foreach ($detail as $erro) {
+            if (!is_array($erro)) {
+                continue;
+            }
+
+            $campo = is_array($erro['loc'] ?? null) ? implode('.', $erro['loc']) : null;
+            $motivo = is_string($erro['msg'] ?? null) ? $erro['msg'] : null;
+
+            if ($motivo !== null) {
+                $itens[] = $campo !== null ? "{$campo}: {$motivo}" : $motivo;
+            }
+        }
+
+        return $itens === [] ? 'Payload recusado pela API' : implode('; ', $itens);
+    }
+
+    /** `error_message` do curl vem como string vazia, não null — `??` não a trata. */
+    private function firstFilled(?string $valor, string $alternativa): string
+    {
+        return trim((string) $valor) !== '' ? $valor : $alternativa;
+    }
+
+    protected function handleError(string $criticalMessageBase, \Exception $e, bool $isIntegration = false): void
+    {
         $app = App::i();
         $endpoint = $this->endpoint ?? 'N/A';
         $document = $this->document ?? 'N/A';
 
         $documentPlaceholder = $isIntegration ? 'ID da oportunidade' : 'Documento';
-        $app->log->critical("{$criticalMessageBase} | Endpoint: {$endpoint} | {$documentPlaceholder}: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+        $mensagem = "{$criticalMessageBase} | Endpoint: {$endpoint} | {$documentPlaceholder}: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode();
 
-        // Qualquer erro da API é tratado como indisponibilidade
-        throw new \Exception("Não foi possível consolidar seus dados, tente novamente mais tarde", 0);
+        // `critical` dispara alerta: um 4xx repetido por oportunidade viraria tempestade.
+        if ($this->deservesAlert($e)) {
+            $app->log->critical($mensagem);
+        } else {
+            $app->log->error($mensagem);
+        }
+
+        if ($e instanceof IntegrationError) {
+            throw $e;
+        }
+
+        throw IntegrationError::parse($e->getMessage(), null, null, $e);
+    }
+
+    /** Só o que não melhora sozinho merece alerta: erro de transporte, 5xx e falha não classificada. */
+    private function deservesAlert(\Throwable $e): bool
+    {
+        if (!$e instanceof IntegrationError) {
+            return true;
+        }
+
+        if ($e->kind() === IntegrationError::KIND_TRANSPORT) {
+            return true;
+        }
+
+        $status = $e->httpStatus();
+
+        return $status === null || $status >= 500;
     }
 
     /**
