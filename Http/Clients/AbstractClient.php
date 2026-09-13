@@ -51,8 +51,8 @@ abstract class AbstractClient
         }
 
         $this->mode = (string) ($config['mode'] ?? '');
-        $this->host = rtrim($this->requiredConfig($config, 'host', 'PNAB_CULTBR_HOST'), '/');
-        $this->token = $this->requiredConfig($config, 'token', 'PNAB_CULTBR_TOKEN');
+        $this->host = rtrim($this->requiredConfig($config, 'host', $this->envName('HOST')), '/');
+        $this->token = $this->requiredConfig($config, 'token', $this->envName('TOKEN'));
         $this->parameter = self::PARAMETER_DEFAULT;
         $this->transport = $transport ?? new CurlTransport();
     }
@@ -245,6 +245,12 @@ abstract class AbstractClient
         $erroDeTransporte = trim((string) ($this->lastResponse?->errorMessage ?? ''));
 
         return $erroDeTransporte !== '' ? $erroDeTransporte : $e->getMessage();
+    }
+
+    /** Sobrescrevível junto do bucket: a mensagem precisa nomear a variável que de fato falta. */
+    protected function envName(string $sufixo): string
+    {
+        return 'PNAB_CULTBR_' . $sufixo;
     }
 
     /** Sobrescrevível: cada provedor pode ler o próprio bucket de configuração. */
