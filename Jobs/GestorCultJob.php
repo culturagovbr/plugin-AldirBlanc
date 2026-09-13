@@ -323,16 +323,6 @@ class GestorCultJob
         return is_array($data['exercicios']) ? $data['exercicios'] : [];
     }
 
-    private function hasParData(array $data): bool
-    {
-        return array_key_exists('exercicios', $data) && $this->isValidExercisesList($data['exercicios']);
-    }
-
-    private function filterFederativeEntitiesWithParData(array $federativeEntities): array
-    {
-        return array_values(array_filter($federativeEntities, fn(array $data) => $this->hasParData($data)));
-    }
-
     private function validateFederativeEntitiesContract(array $federativeEntities): void
     {
         [, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
