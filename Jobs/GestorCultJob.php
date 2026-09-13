@@ -9,9 +9,11 @@ use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
+use AldirBlanc\Dtos\FederativeEntitySnapshot;
+use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Integration\FederativeEntityDocument;
-use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
@@ -70,12 +72,15 @@ class GestorCultJob
     private function performSync(Agent $agent, $userId, string $document): void
     {
         $app = App::i();
-        $apiResponse = null;
 
         try {
-            $apiResponse = $this->fetchGestorData();
+            $snapshot = $this->fetchGestorData();
 
-            $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
+            if ($snapshot === null) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': documento não encontrado na origem');
+            }
+
+            $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
             $federativeEntities = $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
 
@@ -119,12 +124,12 @@ class GestorCultJob
         $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
 
         try {
-            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $apiResponse, $shouldGrantGestorRole, $userId) {
+            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
 
                 try {
-                    if (is_array($apiResponse)) {
-                        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+                    if ($snapshot !== null) {
+                        $this->updateAgentFromGestorResponse($agent, $snapshot);
                         $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
                         $agent->save(false);
                     }
@@ -186,22 +191,35 @@ class GestorCultJob
         return $response;
     }
 
-    protected function fetchGestorData()
+    protected function fetchGestorData(): ?ManagerSnapshot
     {
-        return (new GestorClient($this->gestorDocument))->get();
+        return Plugin::getInstance()->integrationProvider()->fetchManager($this->gestorDocument);
+    }
+
+    /** O job trabalha com a forma que já sabe tratar; a origem dela é que passou a ser o provedor. */
+    private function entitiesAsArray(ManagerSnapshot $snapshot): array
+    {
+        return array_map(
+            fn(FederativeEntitySnapshot $ente) => [
+                'document' => $ente->document,
+                'name' => $ente->name,
+                'exercicios' => $ente->exercices,
+            ],
+            $snapshot->entities(),
+        );
     }
 
     /**
-     * Mapeamento: chave no retorno da API do gestor => chave de metadado do Agent.
+     * Mapeamento: campo do contrato => chave de metadado do Agent.
      * Apenas campos que devem ser atualizados no sync.
      */
     private const GESTOR_API_TO_AGENT_METADATA = [
         'rg' => 'rgNumero',
         'cep' => 'En_CEP',
-        'nome' => 'nomeCompleto',
-        'celular' => 'telefone1',        // telefone privado 1 (campo no tema Pnab)
-        'numero' => 'En_Num',
-        'complemento' => 'En_Complemento',
+        'name' => 'nomeCompleto',
+        'cellphone' => 'telefone1',      // telefone privado 1 (campo no tema Pnab)
+        'number' => 'En_Num',
+        'complement' => 'En_Complemento',
     ];
 
     /**
@@ -209,12 +227,12 @@ class GestorCultJob
      * Altera apenas metadados cujo valor seja diferente do atual; se nada mudou, não persiste.
      *
      * @param Agent $agent
-     * @param array $apiResponse Retorno bruto da API (objeto com rg, cep, nome, etc.)
+     * @param ManagerSnapshot $snapshot dados de pessoa que a origem devolveu
      */
-    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, ManagerSnapshot $snapshot): void
     {
-        foreach (self::GESTOR_API_TO_AGENT_METADATA as $apiKey => $agentKey) {
-            $apiValue = $apiResponse[$apiKey] ?? null;
+        foreach (self::GESTOR_API_TO_AGENT_METADATA as $campo => $agentKey) {
+            $apiValue = $snapshot->{$campo}();
             $normalizedApi = $this->normalizeStringForComparison($apiValue);
 
             // Campo sem valor na resposta é ausência de informação, não ordem de apagar: En_CEP e
