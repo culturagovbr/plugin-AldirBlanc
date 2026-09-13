@@ -94,8 +94,9 @@ class GestorCultJob
             throw $e;
         }
 
-        // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
-        if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+        // Só revoga com resposta inteira e sem nenhum ente: falha de rede, 404 e corpo
+        // ilegível saem pelo catch acima, sem chegar aqui e sem tocar no papel.
+        if ($federativeEntities === []) {
             $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
 
             if (UserAccessService::isGestorCultBr()) {
