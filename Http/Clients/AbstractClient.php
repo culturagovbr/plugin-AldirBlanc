@@ -313,6 +313,14 @@ abstract class AbstractClient
      */
     private function prepareEndpoint(): string
     {
+        // Client sem documento a substituir (o catálogo, por exemplo) não tem marcador a exigir.
+        if ($this->document !== '' && !str_contains($this->endpoint, $this->parameter)) {
+            throw $this->configurationError(
+                'endpoint de ' . static::class,
+                "não contém o marcador {$this->parameter}, e a URL sairia sem o identificador",
+            );
+        }
+
         return str_replace($this->parameter, $this->document, $this->endpoint);
     }
 
