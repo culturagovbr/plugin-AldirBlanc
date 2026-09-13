@@ -96,6 +96,13 @@ class CultBrRequestLogAttempt extends \MapasCulturais\Entity
     protected $httpMethod;
 
     /**
+     * @var string|null Qual API atendeu esta tentativa.
+     *
+     * @ORM\Column(name="provider", type="string", length=20, nullable=true)
+     */
+    protected $provider;
+
+    /**
      * @var integer|null
      *
      * @ORM\Column(name="http_status", type="integer", nullable=true)

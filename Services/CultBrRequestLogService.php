@@ -107,6 +107,7 @@ class CultBrRequestLogService
             ? array_map(fn($header) => $this->toValidUtf8((string) $header), $exchange['responseHeaders'])
             : null;
         $attempt->errorMessage = $exchange['error'] ?? null;
+        $attempt->provider = $exchange['provider'] ?? null;
         // Desfecho ausente é falha: sem informação, não se assume que o envio deu certo.
         $attempt->result = (string) ($exchange['status'] ?? CultBrRequestLogAttempt::RESULT_ERROR);
         $attempt->sentAt = $exchange['sentAt'] ?? new \DateTime();
