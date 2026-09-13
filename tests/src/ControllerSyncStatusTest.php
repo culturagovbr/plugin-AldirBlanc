@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\GestorCultJob;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Exceptions\Halt;
@@ -108,6 +109,7 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame([
             'started' => false,
             'error' => true,
+            'retryable' => true,
             'errorMessage' => 'Falha preservada',
         ], $payload);
         $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
@@ -141,6 +143,63 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
         $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
         $this->assertSame('Mensagem segura do job', $payload['errorMessage']);
+    }
+
+    /**
+     * O gestor vê sempre o mesmo texto — nenhuma dessas causas depende dele. O que muda é a
+     * classificação, que fica na sessão e no log, e o direito de tentar de novo.
+     */
+    function testFalhaDeConfiguracaoNaoEhRetentavelETemMensagemPropria()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::configuration('PNAB_CULTBR_PROVIDER', 'sem valor');
+        });
+
+        $payload = $this->callJson(fn() => $controller->callStartSync());
+
+        $this->assertFalse($payload['retryable']);
+        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame('configuration_error', $_SESSION['gestor_cult_sync_error']);
+    }
+
+    function testRespostaForaDoContratoNaoEhRetentavel()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw new \UnexpectedValueException('Resposta da API CultBr fora do contrato esperado');
+        });
+
+        $payload = $this->callJson(fn() => $controller->callStartSync());
+
+        $this->assertFalse($payload['retryable']);
+        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame('unexpected_response', $_SESSION['gestor_cult_sync_error']);
+    }
+
+    /** Timeout e erro do servidor melhoram na tentativa seguinte, e seguem sendo retentados. */
+    function testFalhaDeTransporteContinuaRetentavelComAMensagemDeSempre()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::transport('Connection timed out', 28);
+        });
+
+        $payload = $this->callJson(fn() => $controller->callStartSync());
+
+        $this->assertTrue($payload['retryable']);
+        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+    }
+
+    function testErroDoServidorContinuaRetentavel()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::http('Erro HTTP 500', 500);
+        });
+
+        $this->assertTrue($this->callJson(fn() => $controller->callStartSync())['retryable']);
     }
 
     /**

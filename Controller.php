@@ -10,9 +10,11 @@ use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
@@ -422,6 +424,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 $this->json([
                     'started' => false,
                     'error' => true,
+                    'retryable' => true,
                     'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
                 ]);
                 return;
@@ -432,6 +435,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         } catch (Halt $e) {
             throw $e;
         } catch (\Throwable $e) {
+            $falha = $this->syncFailureFor($e);
+
             // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
             // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
@@ -442,15 +447,15 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // Em caso de erro, marca como concluído para não travar
             $_SESSION['gestor_cult_sync_completed'] = true;
             
-            // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
             if (!isset($_SESSION['gestor_cult_sync_error'])) {
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+                $_SESSION['gestor_cult_sync_error'] = $falha->value;
                 $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
             }
-            
+
             $this->json([
                 'started' => false,
                 'error' => true,
+                'retryable' => $falha->isRetryable(),
                 'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
             ]);
             return;
@@ -458,6 +463,22 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $app->log->info("[Gestores CultBR] startSync finalizado | Usuário ID: {$userId}");
         $this->json(['started' => true]);
+    }
+
+    /**
+     * Classifica a falha para a sessão e para o log. O gestor vê sempre o mesmo texto — ele não
+     * pode agir sobre nenhuma dessas causas —, mas só espera e tenta de novo quando faz sentido.
+     */
+    protected function syncFailureFor(\Throwable $e): SyncFailure
+    {
+        if ($e instanceof IntegrationError && $e->kind() === IntegrationError::KIND_CONFIGURATION) {
+            return SyncFailure::ConfigurationError;
+        }
+
+        $foraDoContrato = $e instanceof \UnexpectedValueException
+            || ($e instanceof IntegrationError && in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true));
+
+        return $foraDoContrato ? SyncFailure::UnexpectedResponse : SyncFailure::ApiUnavailable;
     }
 
     protected function getGestorCpf(): string
