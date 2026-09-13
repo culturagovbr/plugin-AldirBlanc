@@ -37,6 +37,16 @@ class Plugin extends \MapasCulturais\Plugin
                 'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
                 'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', null),
                 'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
+
+                'conecta' => [
+                    'mode' => env('PNAB_CULTBR_MODE', 'live'),
+                    'host' => env('PNAB_CULTBR_CONECTA_HOST', null),
+                    'token' => env('PNAB_CULTBR_CONECTA_TOKEN', null),
+                    'entesEndpoint' => env('PNAB_CULTBR_CONECTA_ENTES_ENDPOINT', null),
+                    'parAcoesEndpoint' => env('PNAB_CULTBR_CONECTA_PAR_ACOES_ENDPOINT', null),
+                    'oportunidadeEndpoint' => env('PNAB_CULTBR_CONECTA_OPORTUNIDADE_ENDPOINT', null),
+                    'validarTokenEndpoint' => env('PNAB_CULTBR_CONECTA_VALIDAR_TOKEN_ENDPOINT', null),
+                ],
             ], 
             // Token de integração para consumo do CultBR
             'integration' => [
