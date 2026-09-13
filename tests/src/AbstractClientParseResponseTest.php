@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Exceptions\IntegrationError;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
 
@@ -25,13 +26,13 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame($payload, $result);
     }
 
-    function testRespostaStringVaziaSemCurlErrorMessageUsaErroHttpNaMensagem()
+    function testCorpoVazioComStatusDeSucessoLancaAusenciaDeResposta()
     {
         try {
             $this->client()->callParseResponse('', 200);
             $this->fail('Esperava uma exceção');
         } catch (\Exception $e) {
-            $this->assertSame('Erro HTTP 200', $e->getMessage());
+            $this->assertSame('API não retornou resposta', $e->getMessage());
             $this->assertSame(200, $e->getCode());
         }
     }
@@ -97,12 +98,6 @@ class AbstractClientParseResponseTest extends TestCase
         $this->client()->callParseResponse($response, 404);
     }
 
-    /**
-     * Nuance real do código: a checagem de $httpCode >= 400 só é alcançada quando $response
-     * já é array/objeto (não uma string JSON) — dentro do bloco is_string(), qualquer JSON válido
-     * sem chave error/message/erro retorna antes de chegar nesse check (ver branch abaixo:
-     * testHttp404ComDetailNaoRelacionadoEStringRetornaComoSucesso).
-     */
     function testHttp404ComArrayJaDecodificadoLancaExcecaoComCodigo()
     {
         try {
@@ -176,12 +171,12 @@ class AbstractClientParseResponseTest extends TestCase
         }
     }
 
-    function testChaveErrorComValorNullLancaExcecaoGenerica()
+    function testChaveErrorComValorNullUsaOStatusNaMensagem()
     {
         $response = json_encode(['error' => null, 'rg' => '123']);
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('Erro na resposta da API');
+        $this->expectExceptionMessage('Erro HTTP 400');
 
         $this->client()->callParseResponse($response, 400);
     }
@@ -252,4 +247,114 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame($response, $this->client()->callParseResponse($response, 200));
     }
 
+
+    function testHttp422ComDetailEmListaTrazOsCamposNaMensagem()
+    {
+        $response = json_encode(['detail' => [
+            ['type' => 'int_parsing', 'loc' => ['path', 'id_mapas'], 'msg' => 'Input should be a valid integer'],
+        ]]);
+
+        try {
+            $this->client()->callParseResponse($response, 422);
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('path.id_mapas', $e->getMessage());
+            $this->assertStringContainsString('valid integer', $e->getMessage());
+            $this->assertSame(422, $e->getCode());
+        }
+    }
+
+    function testHttp401ComDetailStringTrazAMensagemDaApi()
+    {
+        $response = json_encode(['detail' => 'Token expirado']);
+
+        try {
+            $this->client()->callParseResponse($response, 401);
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertSame('Token expirado', $e->getMessage());
+            $this->assertSame(401, $e->getCode());
+        }
+    }
+
+    /** A lib de curl entrega string vazia, não null: sem isso a exceção sairia sem texto. */
+    function testMensagemNaoFicaVaziaQuandoOCurlNaoTrazTexto()
+    {
+        try {
+            $this->client()->callParseResponse('Internal Server Error', 500, true, '');
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertSame('Erro HTTP 500', $e->getMessage());
+        }
+    }
+
+    function testCorpoNaoJsonComStatusDeErroPreservaStatusECorpo()
+    {
+        try {
+            $this->client()->callParseResponse('Internal Server Error', 500);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(500, $e->httpStatus());
+            $this->assertSame('Internal Server Error', $e->rawBody());
+            $this->assertSame(IntegrationError::KIND_HTTP, $e->kind());
+        }
+    }
+
+    /** Trocar host é onde redirect aparece, e sem FOLLOWLOCATION ele chegaria como resposta boa. */
+    function testRespostaDeRedirecionamentoNaoEhSucesso()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['location' => 'https://outro']), 301);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(301, $e->httpStatus());
+            $this->assertSame(IntegrationError::KIND_HTTP, $e->kind());
+        }
+    }
+
+    function testChaveMessageComStatusDeSucessoNaoLancaExcecao()
+    {
+        $payload = ['message' => 'planilha gerada', 'url' => 'https://exemplo'];
+
+        $this->assertSame($payload, $this->client()->callParseResponse(json_encode($payload), 200));
+    }
+
+    function testErroDeTransporteEhClassificadoComoTal()
+    {
+        try {
+            $this->client()->callParseResponse('', 0, true, 'Connection timed out', 28);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_TRANSPORT, $e->kind());
+            $this->assertSame(28, $e->getCode());
+            $this->assertNull($e->httpStatus());
+        }
+    }
+
+    function testHandleErrorPreservaOErroOriginal()
+    {
+        $original = IntegrationError::http('Token inválido', 401, '{"detail":"Token inválido"}');
+
+        try {
+            $this->client()->callHandleError($original);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame($original, $e);
+            $this->assertSame(401, $e->httpStatus());
+            $this->assertSame('{"detail":"Token inválido"}', $e->rawBody());
+        }
+    }
+
+    function testHandleErrorEnvolveErroDesconhecidoSemPerderACausa()
+    {
+        $original = new \RuntimeException('endpoint não configurado');
+
+        try {
+            $this->client()->callHandleError($original);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame('endpoint não configurado', $e->getMessage());
+            $this->assertSame($original, $e->getPrevious());
+        }
+    }
 }

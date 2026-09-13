@@ -18,6 +18,11 @@ class TestableAbstractClient extends AbstractClient
     {
     }
 
+    public function callHandleError(\Exception $e): void
+    {
+        $this->handleError('[Teste] Erro na API', $e);
+    }
+
     public function callParseResponse(
         mixed $response,
         int $httpCode = 0,
