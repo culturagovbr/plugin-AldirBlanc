@@ -111,7 +111,7 @@ abstract class AbstractClient
         // Utilizado para testes locais
         if ($this->isDevelopmentMode()) {
             $app->log->info("[Gestores CultBR] Modo development: usando fixture | Cliente: " . static::class);
-            return require $this->getFixturePath();
+            return $this->loadFixture();
         }
 
         $fullUrl = $this->prepareUrl();
@@ -250,6 +250,22 @@ abstract class AbstractClient
     protected final function getClientConfig(): array
     {
         return Plugin::getInstance()->config['client'] ?? [];
+    }
+
+    /** Fixture ausente precisa dizer qual arquivo falta, não derrubar o processo com erro fatal. */
+    private function loadFixture(): mixed
+    {
+        if (static::FIXTURE === '') {
+            throw $this->configurationError('fixture de ' . static::class, 'a classe não declara arquivo de simulação');
+        }
+
+        $caminho = $this->getFixturePath();
+
+        if (!is_file($caminho)) {
+            throw $this->configurationError('fixture de ' . static::class, "arquivo não encontrado em {$caminho}");
+        }
+
+        return require $caminho;
     }
 
     private function getFixturePath(): string
