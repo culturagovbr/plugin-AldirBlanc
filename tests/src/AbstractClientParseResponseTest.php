@@ -181,11 +181,16 @@ class AbstractClientParseResponseTest extends TestCase
         $this->client()->callParseResponse($response, 400);
     }
 
-    function testJsonStringNullRetornaArrayVazio()
+    /** Devolver [] aqui faria a resposta sem conteúdo ser lida como "gestor sem nenhum ente". */
+    function testJsonStringNullViraErroDeContrato()
     {
-        $result = $this->client()->callParseResponse('null', 200);
-
-        $this->assertSame([], $result);
+        try {
+            $this->client()->callParseResponse('null', 200);
+            $this->fail('Esperava erro de contrato para corpo null');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
+            $this->assertSame(200, $e->httpStatus());
+        }
     }
 
     function testJsonStringNullComErroHttpLancaExcecao()
