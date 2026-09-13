@@ -35,6 +35,9 @@ abstract class AbstractClient
      */
     private $exchangeRecorder = null;
 
+    /** Caminho da fixture, relativo a Http/Fixtures. Declarado por client para não colidir entre provedores. */
+    protected const FIXTURE = '';
+
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_REDIRECT_MIN = 300;
     private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
@@ -251,14 +254,7 @@ abstract class AbstractClient
 
     private function getFixturePath(): string
     {
-        return __DIR__ . "/../Fixtures/{$this->getFixtureClassName()}.php";
-    }
-
-    private function getFixtureClassName(): string
-    {
-        $reflectionClass = new ReflectionClass(get_class($this));
-        $className = $reflectionClass->getShortName();
-        return "{$className}Fixture";
+        return __DIR__ . '/../Fixtures/' . static::FIXTURE;
     }
 
     /**

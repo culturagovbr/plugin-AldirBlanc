@@ -6,6 +6,8 @@ use AldirBlanc\Http\Transport\Transport;
 
 class ParAcaoClient extends AbstractClient
 {
+    protected const FIXTURE = 'gestao/par-acoes.php';
+
     public const DEFAULT_SKIP = 0;
     public const DEFAULT_LIMIT = 1000;
     public const ALLOWED_LIMITS = [1000];
