@@ -2,7 +2,6 @@
 
 namespace AldirBlanc\Integration\Gestao;
 
-use AldirBlanc\Dtos\FederativeEntitySnapshot;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
@@ -19,20 +18,11 @@ use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ManagerSnapshotMapper;
 
 /** A API de Gestão por trás do contrato, sobre os clients que já existem. */
 final class GestaoProvider implements IntegrationProvider
 {
-    /** Chave na resposta da API => campo do snapshot. */
-    private const MANAGER_FIELDS = [
-        'nome' => 'name',
-        'rg' => 'rg',
-        'cep' => 'cep',
-        'celular' => 'cellphone',
-        'numero' => 'number',
-        'complemento' => 'complement',
-    ];
-
     private const RESULT_BY_LOG_STATUS = [
         CultBrRequestLogAttempt::RESULT_SUCCESS => SendResult::Success,
         CultBrRequestLogAttempt::RESULT_SIMULATED => SendResult::Simulated,
@@ -56,19 +46,8 @@ final class GestaoProvider implements IntegrationProvider
     {
         $resposta = (new GestorClient($document, $this->transport))->get();
 
-        if (!is_array($resposta)) {
-            throw IntegrationError::contract('resposta do gestor não é um objeto');
-        }
-
-        $campos = [];
-
-        foreach (self::MANAGER_FIELDS as $naApi => $noContrato) {
-            if (array_key_exists($naApi, $resposta)) {
-                $campos[$noContrato] = $resposta[$naApi] === null ? null : (string) $resposta[$naApi];
-            }
-        }
-
-        return new ManagerSnapshot($campos, $this->entities($resposta));
+        // A lista nua é forma antiga e legítima da Gestão.
+        return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: true);
     }
 
     public function listParActions(int $skip, int $limit): ParActionPage
@@ -108,32 +87,6 @@ final class GestaoProvider implements IntegrationProvider
         }
 
         return $this->outcome($trocado);
-    }
-
-    /** Os dois formatos de retorno da Gestão: envelope com a chave, ou a lista nua. */
-    private function entities(array $resposta): array
-    {
-        if (array_key_exists('entes_federados', $resposta)) {
-            if (!is_array($resposta['entes_federados'])) {
-                throw IntegrationError::contract('entes_federados deve ser array');
-            }
-
-            $lista = $resposta['entes_federados'];
-        } elseif (array_is_list($resposta)) {
-            $lista = $resposta;
-        } else {
-            throw IntegrationError::contract('chave entes_federados ausente');
-        }
-
-        return array_values(array_map(
-            fn(array $ente) => new FederativeEntitySnapshot(
-                name: (string) ($ente['name'] ?? ''),
-                document: (string) ($ente['document'] ?? ''),
-                // A API escreve "exercicios"; a coluna se chama "exercices", e a troca é da fronteira.
-                exercices: is_array($ente['exercicios'] ?? null) ? $ente['exercicios'] : [],
-            ),
-            array_filter($lista, 'is_array'),
-        ));
     }
 
     private function outcome(array $exchange): SendOutcome
