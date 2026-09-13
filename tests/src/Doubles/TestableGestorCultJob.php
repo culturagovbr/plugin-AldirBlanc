@@ -2,6 +2,9 @@
 
 namespace Tests\AldirBlanc\Doubles;
 
+use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Jobs\GestorCultJob;
 use MapasCulturais\Entities\Agent;
 
@@ -11,6 +14,9 @@ use MapasCulturais\Entities\Agent;
  */
 class TestableGestorCultJob extends GestorCultJob
 {
+    private ?GestorDocument $documento = null;
+    private ?Transport $transport = null;
+
     private mixed $gestorResponse = null;
     private bool $hasGestorResponse = false;
     private ?\Throwable $gestorException = null;
@@ -18,6 +24,19 @@ class TestableGestorCultJob extends GestorCultJob
     private ?\Throwable $updateAgentException = null;
     private ?\Throwable $grantRoleException = null;
     private ?\Throwable $beforeFlushException = null;
+
+    public function __construct(GestorDocument $gestorDocument)
+    {
+        parent::__construct($gestorDocument);
+
+        $this->documento = $gestorDocument;
+    }
+
+    /** Liga o client de verdade ao job, para exercitar o parse junto com o gate de revogação. */
+    public function useTransport(Transport $transport): void
+    {
+        $this->transport = $transport;
+    }
 
     public function setGestorResponse(mixed $response): void
     {
@@ -58,6 +77,10 @@ class TestableGestorCultJob extends GestorCultJob
 
         if ($this->hasGestorResponse) {
             return $this->gestorResponse;
+        }
+
+        if ($this->transport !== null) {
+            return (new GestorClient($this->documento, $this->transport))->get();
         }
 
         return parent::fetchGestorData();
