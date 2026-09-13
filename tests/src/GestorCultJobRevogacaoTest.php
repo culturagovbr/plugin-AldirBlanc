@@ -158,6 +158,27 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
+    /** Documento que a origem não conhece não é "gestor sem entes": não pode revogar nada. */
+    function testDocumentoDesconhecidoPelaOrigemNaoRevoga()
+    {
+        $user = $this->gestorLogadoComUmEnte();
+
+        $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->setGestorResponse(null);
+        $falha = null;
+
+        try {
+            $job->sync();
+        } catch (\Throwable $e) {
+            $falha = $e;
+        }
+
+        $this->app->em->clear();
+
+        $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
+        $this->assertPapelERelacoesIntactos($user);
+    }
+
     /** O caminho legítimo continua revogando: a API respondeu, e não há ente nenhum. */
     function testListaVaziaBemFormadaRevoga()
     {
