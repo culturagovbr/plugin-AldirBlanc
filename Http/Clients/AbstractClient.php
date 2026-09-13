@@ -393,9 +393,10 @@ abstract class AbstractClient
             return $decoded;
         }
 
-        // JSON `null` é resposta sem conteúdo, não erro.
+        // Devolver [] aqui faria a resposta sem conteúdo passar por "a API respondeu e não
+        // trouxe nada", que é o que revoga o papel do gestor.
         if ($decoded === null) {
-            return [];
+            throw IntegrationError::contract('corpo da resposta é null', [], $httpCode, $rawBody);
         }
 
         throw IntegrationError::parse('Formato de resposta da API não reconhecido', $httpCode, $rawBody);
