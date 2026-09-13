@@ -1001,6 +1001,23 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('12345678000195', $result['document']);
     }
 
+    /** A linha pode estar gravada na grafia curta; o payload sai sempre com quatorze dígitos. */
+    function testGetEnteFederadoNormalizaODocumentoDaLinhaGravada()
+    {
+        $opp = $this->createOpportunity();
+        $ente = $this->persistFederativeEntity('1612689000178', 'MUNICIPIO DE MATUREIA');
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('federativeEntityId', (string) $ente->id);
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertSame(
+            '01612689000178',
+            $this->service->publicGetEnteFederadoByOpportunity($opp)['document'],
+        );
+    }
+
     function testGetEnteFederadoComDocumentoApenasEspacosRetornaNul()
     {
         $opp = $this->createOpportunity();

@@ -545,4 +545,25 @@ class GestorCultJobAssociationTest extends TestCase
         $entities = $this->app->repo(FederativeEntity::class)->findBy(['document' => '12345678901234']);
         $this->assertCount(1, $entities, 'Rodar sync() de novo não deve duplicar a FederativeEntity');
     }
+
+    /** Unir as grafias antes da validação evita que o par vire "document duplicado" e seja descartado. */
+    function testParDeGrafiasDoMesmoEnteViraUmaAssociacaoSo()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $job = $this->job();
+        $entes = $job->callNormalizeFederativeEntities([
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+        ]);
+
+        $job->callAssociateFederativeEntities($user->profile, $entes);
+        $this->app->em->clear();
+
+        $relacoes = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+
+        $this->assertCount(1, $relacoes);
+        $this->assertSame('01612689000178', $relacoes[0]->owner->document);
+    }
 }

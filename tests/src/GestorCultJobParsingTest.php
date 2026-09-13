@@ -65,11 +65,62 @@ class GestorCultJobParsingTest extends TestCase
 
     // ===== normalizeFederativeEntities =====
 
-    function testNormalizeJaArrayRetornaComoEsta()
+    function testNormalizeCompletaODocumentoComZerosAEsquerda()
     {
         $entes = [['document' => '1']];
 
-        $this->assertSame($entes, $this->job()->callNormalizeFederativeEntities($entes));
+        $this->assertSame(
+            [['document' => '00000000000001']],
+            $this->job()->callNormalizeFederativeEntities($entes),
+        );
+    }
+
+    /** As duas grafias do mesmo CNPJ eram chaves distintas, e viravam duas linhas do mesmo ente. */
+    function testNormalizeUneAsDuasGrafiasDoMesmoDocumento()
+    {
+        $entes = [
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA'],
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA'],
+        ];
+
+        $unidos = $this->job()->callNormalizeFederativeEntities($entes);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('01612689000178', $unidos[0]['document']);
+    }
+
+    /** Há homônimos com CNPJ legitimamente distinto: agrupar por nome uniria entes diferentes. */
+    function testNormalizeNaoUneHomonimosComDocumentoDistinto()
+    {
+        $entes = [
+            ['document' => '06553481000149', 'name' => 'ESTADO DO PIAUI'],
+            ['document' => '06553481000300', 'name' => 'ESTADO DO PIAUI'],
+        ];
+
+        $this->assertCount(2, $this->job()->callNormalizeFederativeEntities($entes));
+    }
+
+    /** O critério é a ordem da API: o primeiro vence, mesmo quando é o de árvore vazia. */
+    function testNormalizeMantemOPrimeiroDaOrdemDaApi()
+    {
+        $entes = [
+            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => [['id' => 1]]],
+        ];
+
+        $unidos = $this->job()->callNormalizeFederativeEntities($entes);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('PRIMEIRO', $unidos[0]['name']);
+        $this->assertSame([], $unidos[0]['exercicios']);
+    }
+
+    /** Item torto segue adiante: quem descarta e registra o motivo é a validação de contrato. */
+    function testNormalizeNaoEngoleItemSemDocumento()
+    {
+        $entes = [['name' => 'sem documento'], 'nem array'];
+
+        $this->assertCount(2, $this->job()->callNormalizeFederativeEntities($entes));
     }
 
     function testNormalizeJsonStringValidaDecodifica()
