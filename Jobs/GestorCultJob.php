@@ -217,6 +217,12 @@ class GestorCultJob
             $apiValue = $apiResponse[$apiKey] ?? null;
             $normalizedApi = $this->normalizeStringForComparison($apiValue);
 
+            // Campo sem valor na resposta é ausência de informação, não ordem de apagar: En_CEP e
+            // En_Num são obrigatórios no perfil, e esvaziá-los devolve o gestor a completeProfile.
+            if ($normalizedApi === '') {
+                continue;
+            }
+
             $currentValue = $agent->getMetadata($agentKey);
             $normalizedCurrent = $this->normalizeStringForComparison($currentValue);
 
@@ -224,7 +230,7 @@ class GestorCultJob
                 continue;
             }
 
-            $agent->setMetadata($agentKey, $apiValue === null ? null : (string) $apiValue);
+            $agent->setMetadata($agentKey, (string) $apiValue);
         }
     }
 
