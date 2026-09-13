@@ -51,7 +51,7 @@ abstract class AbstractClient
         }
 
         $this->mode = (string) ($config['mode'] ?? '');
-        $this->host = $this->requiredConfig($config, 'host', 'PNAB_CULTBR_HOST');
+        $this->host = rtrim($this->requiredConfig($config, 'host', 'PNAB_CULTBR_HOST'), '/');
         $this->token = $this->requiredConfig($config, 'token', 'PNAB_CULTBR_TOKEN');
         $this->parameter = self::PARAMETER_DEFAULT;
         $this->transport = $transport ?? new CurlTransport();
@@ -279,7 +279,7 @@ abstract class AbstractClient
      */
     private function prepareUrl(): string
     {
-        return "{$this->host}/{$this->prepareEndpoint()}";
+        return $this->host . '/' . ltrim($this->prepareEndpoint(), '/');
     }
 
     /**
