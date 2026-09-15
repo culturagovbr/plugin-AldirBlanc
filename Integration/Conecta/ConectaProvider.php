@@ -20,7 +20,7 @@ use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
-use AldirBlanc\Integration\SendOutcomeMapper;
+use AldirBlanc\Integration\RecordedSend;
 use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 
@@ -59,19 +59,7 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
 
     public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
     {
-        $client = new OportunidadeClient($id, $this->transport);
-        $trocado = null;
-        $client->setExchangeRecorder(function (array $exchange) use (&$trocado) {
-            $trocado = $exchange;
-        });
-
-        $client->update($payload);
-
-        if ($trocado === null) {
-            throw IntegrationError::contract('envio não registrou o que aconteceu');
-        }
-
-        return SendOutcomeMapper::fromExchange($trocado, $this->provider());
+        return RecordedSend::perform(new OportunidadeClient($id, $this->transport), $payload, $this->provider());
     }
 
     public function validateCredential(): CredentialCheck

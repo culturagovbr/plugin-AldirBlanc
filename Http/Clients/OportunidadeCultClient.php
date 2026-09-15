@@ -5,8 +5,9 @@ namespace AldirBlanc\Http\Clients;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Integration\OpportunitySender;
 
-class OportunidadeCultClient extends AbstractClient
+class OportunidadeCultClient extends AbstractClient implements OpportunitySender
 {
     /** @var string id da oportunidade (usado como {id} no endpoint de update no AbstractClient) */
     protected string $document;

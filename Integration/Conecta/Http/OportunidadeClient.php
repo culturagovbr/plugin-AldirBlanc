@@ -5,8 +5,9 @@ namespace AldirBlanc\Integration\Conecta\Http;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Integration\OpportunitySender;
 
-class OportunidadeClient extends ConectaClient
+class OportunidadeClient extends ConectaClient implements OpportunitySender
 {
     private const PARAMETER_DEFAULT = '{id}';
 

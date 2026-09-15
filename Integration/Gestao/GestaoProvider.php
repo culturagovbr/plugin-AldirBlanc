@@ -10,7 +10,6 @@ use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
-use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Http\Clients\ParAcaoClient;
@@ -18,7 +17,7 @@ use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
-use AldirBlanc\Integration\SendOutcomeMapper;
+use AldirBlanc\Integration\RecordedSend;
 
 /** A API de Gestão por trás do contrato, sobre os clients que já existem. */
 final class GestaoProvider implements IntegrationProvider
@@ -53,18 +52,6 @@ final class GestaoProvider implements IntegrationProvider
 
     public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
     {
-        $client = new OportunidadeCultClient($id, $this->transport);
-        $trocado = null;
-        $client->setExchangeRecorder(function (array $exchange) use (&$trocado) {
-            $trocado = $exchange;
-        });
-
-        $client->update($payload);
-
-        if ($trocado === null) {
-            throw IntegrationError::contract('envio não registrou o que aconteceu');
-        }
-
-        return SendOutcomeMapper::fromExchange($trocado, $this->provider());
+        return RecordedSend::perform(new OportunidadeCultClient($id, $this->transport), $payload, $this->provider());
     }
 }
