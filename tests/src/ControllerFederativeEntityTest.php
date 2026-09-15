@@ -74,13 +74,13 @@ class ControllerFederativeEntityTest extends TestCase
         return $entity;
     }
 
-    private function persistRelation($agent, FederativeEntity $entity): FederativeEntityAgentRelation
+    private function persistRelation($agent, FederativeEntity $entity, int $status = AgentRelation::STATUS_ENABLED): FederativeEntityAgentRelation
     {
         $relation = new FederativeEntityAgentRelation();
         $relation->agent = $agent;
         $relation->owner = $entity;
         $relation->hasControl = false;
-        $relation->status = AgentRelation::STATUS_ENABLED;
+        $relation->status = $status;
         $this->app->em->persist($relation);
         $this->app->em->flush();
         return $relation;
@@ -112,7 +112,55 @@ class ControllerFederativeEntityTest extends TestCase
             'name' => 'Ente Um',
             'document' => '11111111111111',
             'exercices' => $exercices,
+            'hasParData' => true,
         ]], $payload);
+    }
+
+    function testFederativeEntitiesEnteSemParEhListadoMarcado()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+        $entity = $this->persistFederativeEntity('22222222222222', 'Ente Dois');
+        $this->persistRelation($user->profile, $entity);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([[
+            'id' => $entity->id,
+            'name' => 'Ente Dois',
+            'document' => '22222222222222',
+            'exercices' => [],
+            'hasParData' => false,
+        ]], $payload);
+    }
+
+    function testFederativeEntitiesListaEntesComESemPar()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+        $comPar = $this->persistFederativeEntity('33333333333333', 'Ente Com PAR', [['id' => 1, 'ano' => 2025, 'metas' => []]]);
+        $semPar = $this->persistFederativeEntity('44444444444444', 'Ente Sem PAR');
+        $this->persistRelation($user->profile, $comPar);
+        $this->persistRelation($user->profile, $semPar);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $marcacaoPorEnte = array_column($payload, 'hasParData', 'id');
+        // assertEquals, não assertSame: o findBy não ordena e === em array exige a mesma ordem de chaves.
+        $this->assertEquals([$comPar->id => true, $semPar->id => false], $marcacaoPorEnte);
+    }
+
+    function testFederativeEntitiesRelacaoNaoHabilitadaNaoEhListada()
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+        $exercices = [['id' => 1, 'ano' => 2025, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('66666666666666', 'Ente Seis', $exercices);
+        $this->persistRelation($user->profile, $entity, AgentRelation::STATUS_PENDING);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame([], $payload);
     }
 
     function testFederativeEntitiesGestorSemRelacoesRetornaVazio()
