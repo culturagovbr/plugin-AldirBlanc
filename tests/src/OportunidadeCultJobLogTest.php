@@ -2,16 +2,21 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendResult;
+use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
-use Tests\AldirBlanc\Doubles\TestableOportunidadeCultJob;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
@@ -113,6 +118,17 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertSame([Provider::Gestao->value], $this->providers($uuid));
     }
 
+    /** O bucket da Conecta não vem do override da suíte: o envio por ela precisa dele declarado. */
+    private const CONFIG_CONECTA = [
+        'mode' => 'development',
+        'host' => 'http://conecta.invalid',
+        'token' => 'token-de-teste',
+        'entesEndpoint' => 'auth/pessoa/{document}/entes',
+        'parAcoesEndpoint' => 'par/acoes',
+        'oportunidadeEndpoint' => 'oportunidades/{id}',
+        'validarTokenEndpoint' => 'validar-token',
+    ];
+
     private function comProviderConfigurado(string $valor, callable $exercicio): void
     {
         $plugin = Plugin::getInstance();
@@ -120,8 +136,9 @@ class OportunidadeCultJobLogTest extends TestCase
         $ref->setAccessible(true);
 
         $config = $ref->getValue($plugin);
-        $original = $config['client']['provider'] ?? null;
+        $original = $config['client'];
         $config['client']['provider'] = $valor;
+        $config['client']['conecta'] = self::CONFIG_CONECTA;
         $ref->setValue($plugin, $config);
         $plugin->resetIntegrationProvider();
 
@@ -129,7 +146,7 @@ class OportunidadeCultJobLogTest extends TestCase
             $exercicio();
         } finally {
             $config = $ref->getValue($plugin);
-            $config['client']['provider'] = $original;
+            $config['client'] = $original;
             $ref->setValue($plugin, $config);
             $plugin->resetIntegrationProvider();
         }
@@ -153,8 +170,8 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertSame([Provider::Gestao->value, Provider::Conecta->value], $this->providers($uuid));
     }
 
-    /** Provedor irresolvível não pode custar o registro da tentativa. */
-    function testProvedorIrresolvivelRegistraATentativaSemProvedor()
+    /** Provedor irresolvível impede o envio: não há tentativa a registrar, e nada fecha como sucesso. */
+    function testProvedorIrresolvivelNaoEnviaENaoFechaComoSucesso()
     {
         $opp = $this->createOpportunity($this->userDirector->createUser());
 
@@ -165,8 +182,127 @@ class OportunidadeCultJobLogTest extends TestCase
 
         $rows = $this->logs($opp->id);
 
-        $this->assertCount(1, $rows[0]['attempts'], 'A tentativa precisa ficar registrada');
-        $this->assertNull($this->providers($rows[0]['requestUuid'])[0]);
+        $this->assertCount(0, $rows[0]['attempts'], 'Sem provedor não houve chamada a registrar');
+        $this->assertNotEquals(CultBrRequestLog::RESULT_SUCCESS, $rows[0]['status']);
+    }
+
+    /** Roda o exercício com o envio atendido por um provedor de teste, resolvido por nome de classe. */
+    private function comProvedorDuble(callable $aoEnviar, callable $exercicio): void
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoEnviar = $aoEnviar;
+
+        try {
+            $this->comProviderConfigurado(FakeIntegrationProvider::class, $exercicio);
+        } finally {
+            // O que foi enviado sobrevive ao exercício: é o que o teste asserta depois.
+            FakeIntegrationProvider::$aoEnviar = null;
+        }
+    }
+
+    private function desfecho(array $trocas = []): SendOutcome
+    {
+        return new SendOutcome(
+            provider: $trocas['provider'] ?? Provider::Conecta,
+            result: $trocas['result'] ?? SendResult::Success,
+            method: 'PUT',
+            endpoint: $trocas['endpoint'] ?? 'http://conecta.invalid/oportunidades/9',
+            payload: ['id' => 9],
+            sentAt: new \DateTime(),
+            durationMs: 42,
+            response: $trocas['response'] ?? '{"id_par_edital":1249}',
+            responseHeaders: ['HTTP/2 200'],
+            httpStatus: $trocas['httpStatus'] ?? 200,
+        );
+    }
+
+    /**
+     * A tentativa é gravada a partir do que a operação devolveu, e não de estado deixado numa
+     * instância de client: o dublê não registra recorder nenhum.
+     */
+    function testTentativaVemDoDesfechoDevolvidoPeloProvedor()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            fn() => $this->desfecho(['endpoint' => 'http://conecta.invalid/oportunidades/77', 'httpStatus' => 201]),
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        $rows = $this->logs($opp->id);
+        $tentativa = $rows[0]['attempts'][0];
+
+        $this->assertSame([(int) $opp->id], FakeIntegrationProvider::$enviados);
+        $this->assertEquals('http://conecta.invalid/oportunidades/77', $tentativa['endpoint']);
+        $this->assertEquals(201, $tentativa['httpStatus']);
+        $this->assertEquals(SendResult::Success->value, $tentativa['status']);
+        $this->assertEquals(Provider::Conecta->value, $this->providers($rows[0]['requestUuid'])[0]);
+    }
+
+    /** O envio que falha registra a tentativa com o que a API respondeu — era o que se perdia. */
+    function testEnvioQueFalhaRegistraATentativaComARespostaDaApi()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            function () {
+                throw new SendFailed(
+                    $this->desfecho([
+                        'result' => SendResult::Error,
+                        'httpStatus' => 500,
+                        'response' => 'Internal Server Error',
+                    ]),
+                    IntegrationError::http('Erro HTTP 500', 500, 'Internal Server Error')
+                );
+            },
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        $rows = $this->logs($opp->id);
+
+        $this->assertCount(1, $rows[0]['attempts'], 'A falha precisa deixar a tentativa registrada');
+        $tentativa = $rows[0]['attempts'][0];
+        $this->assertEquals(500, $tentativa['httpStatus']);
+        $this->assertEquals(SendResult::Error->value, $tentativa['status']);
+        $this->assertEquals('Erro HTTP 500', $tentativa['errorMessage']);
+        $this->assertStringContainsString('Internal Server Error', json_encode($tentativa['response']));
+    }
+
+    /** Dois envios no mesmo processo: cada log recebe a sua tentativa, e só a sua. */
+    function testDoisEnviosNoMesmoProcessoNaoMisturamLog()
+    {
+        $user = $this->userDirector->createUser();
+        $primeira = $this->createOpportunity($user);
+        $segunda = $this->createOpportunity($user);
+
+        $this->comProvedorDuble(
+            fn(OpportunityId $id) => $this->desfecho(['endpoint' => "http://conecta.invalid/oportunidades/{$id->id}"]),
+            function () use ($primeira, $segunda) {
+                // Um envio de cada vez, no mesmo processo: é entre eles que o estado vazava.
+                $this->enqueueUpdateJob($primeira);
+                $this->processJobs(number_of_jobs: 1);
+
+                $this->enqueueUpdateJob($segunda);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        foreach ([$primeira, $segunda] as $opp) {
+            $rows = $this->logs($opp->id);
+            $this->assertCount(1, $rows, "A oportunidade {$opp->id} deve ter um envio");
+            $this->assertCount(1, $rows[0]['attempts'], "A oportunidade {$opp->id} deve ter uma tentativa");
+            $this->assertEquals(
+                "http://conecta.invalid/oportunidades/{$opp->id}",
+                $rows[0]['attempts'][0]['endpoint'],
+                'A tentativa gravada é a do próprio envio'
+            );
+        }
     }
 
     /**
@@ -222,21 +358,6 @@ class OportunidadeCultJobLogTest extends TestCase
 
         $rows = $this->logs($oppId);
         $this->assertEquals($user->id, $rows[0]['user']['id'] ?? null, 'Retentativa não pode perder o autor');
-    }
-
-    /**
-     * 404 do CultBR é recusa, não sucesso: o parseResponse aceita a resposta sem lançar, e o
-     * endpoint é upsert (não devolve 404 por id inexistente), então sem essa checagem o job
-     * carimbaria cultBrLastSyncedAt para um envio que o servidor recusou.
-     */
-    function testRespostaRecusadaPeloCultBrNaoMarcaOportunidadeComoSincronizada()
-    {
-        $job = new TestableOportunidadeCultJob(OportunidadeCultJob::SLUG);
-
-        $this->assertTrue($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_REJECTED));
-        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SUCCESS));
-        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SIMULATED));
-        $this->assertFalse($job->callApiRejectedSend(null), 'Sem tentativa registrada, não há recusa a inferir');
     }
 
     /** Esgotadas as 3 tentativas, o envio fecha como falha — hoje o job engole a exceção. */
