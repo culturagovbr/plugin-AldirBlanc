@@ -185,6 +185,31 @@ class CultBrRequestLogServiceTest extends TestCase
     }
 
     /**
+     * Envio verde com zero linhas na aba mente para o gestor: sem tentativa gravada, não há
+     * evidência de que o CultBR recebeu coisa alguma.
+     */
+    function testEnvioSemTentativaNaoFechaComoSucesso()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_ERROR, $log->result);
+    }
+
+    function testEnvioComTentativaFechaComoSucesso()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        $service->recordAttempt($log, ['status' => CultBrRequestLogAttempt::RESULT_SUCCESS]);
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $log->result);
+    }
+
+    /**
      * O job de retry é descartado quando um novo save enfileira o mesmo id: sem fechar o envio
      * anterior, ele apareceria "em andamento" para sempre na aba.
      */
