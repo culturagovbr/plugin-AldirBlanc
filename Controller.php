@@ -5,6 +5,7 @@ namespace AldirBlanc;
 use MapasCulturais\App;
 use MapasCulturais\i;
 use MapasCulturais\Traits;
+use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
@@ -80,20 +81,26 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $relations = $app->em->getRepository(FederativeEntityAgentRelation::class)->findBy([
-            'agent' => $agent
+            'agent' => $agent,
+            'status' => AgentRelation::STATUS_ENABLED,
         ]);
 
         $federativeEntities = [];
         foreach ($relations as $relation) {
-            $exercices = $relation->owner->exercices ?? [];
-            if ($relation->owner && !empty($exercices)) {
-                $federativeEntities[] = [
-                    'id' => $relation->owner->id,
-                    'name' => $relation->owner->name,
-                    'document' => $relation->owner->document,
-                    'exercices' => $exercices,
-                ];
+            $federativeEntity = $relation->owner;
+            if (!$federativeEntity) {
+                continue;
             }
+
+            $exercices = $federativeEntity->exercices ?? [];
+
+            $federativeEntities[] = [
+                'id' => $federativeEntity->id,
+                'name' => $federativeEntity->name,
+                'document' => $federativeEntity->document,
+                'exercices' => $exercices,
+                'hasParData' => !empty($exercices),
+            ];
         }
 
         $this->json($federativeEntities);
