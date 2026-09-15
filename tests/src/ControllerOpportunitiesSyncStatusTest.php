@@ -112,6 +112,8 @@ class ControllerOpportunitiesSyncStatusTest extends TestCase
         $service = new CultBrRequestLogService();
         $log = $service->startOrResume($opportunityId, 'update');
         $log->createTimestamp = new \DateTime($createdAt);
+        // Envio sem tentativa não fecha como sucesso: o desfecho precisa de uma para ser legítimo.
+        $service->recordAttempt($log, ['status' => $result]);
         $service->finish($log, $result);
 
         return $log;

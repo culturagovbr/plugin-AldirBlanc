@@ -133,11 +133,21 @@ class CultBrRequestLogService
 
         $app = App::i();
 
+        if ($result === CultBrRequestLog::RESULT_SUCCESS && !$this->hasAttempt($log)) {
+            $app->log->critical("[CultBR] Envio {$log->requestUuid} fecharia como sucesso sem nenhuma tentativa registrada");
+            $result = CultBrRequestLog::RESULT_ERROR;
+        }
+
         $log->result = $result;
         $log->updateTimestamp = new \DateTime();
 
         $app->em->persist($log);
         $app->em->flush();
+    }
+
+    private function hasAttempt(CultBrRequestLog $log): bool
+    {
+        return App::i()->repo(CultBrRequestLogAttempt::class)->findOneBy(['log' => $log]) !== null;
     }
 
     /**
