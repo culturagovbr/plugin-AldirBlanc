@@ -8,18 +8,17 @@ use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
 use AldirBlanc\Entities\CultBrRequestLog;
-use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
-use AldirBlanc\Http\Clients\OportunidadeCultClient;
+use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Controller;
 
 class OportunidadeCultJob extends JobType
 {
 	private OpportunityService $opportunityService;
-	private OportunidadeCultClient $oportunidadeCultClient;
 
     const SLUG = 'oportunidade-cult';
 
@@ -36,17 +35,9 @@ class OportunidadeCultJob extends JobType
         return "oportunidade-cult-{$action}:{$opportunity->id}";
     }
 
-	private function initServices(int $opportunityId): void
+	private function initServices(): void
 	{
-		$opportunityId = new OpportunityId($opportunityId);
-
 		$this->opportunityService = new OpportunityService();
-		$this->oportunidadeCultClient = $this->createOportunidadeCultClient($opportunityId);
-	}
-
-	protected function createOportunidadeCultClient(OpportunityId $opportunityId): OportunidadeCultClient
-	{
-		return new OportunidadeCultClient($opportunityId);
 	}
 
 	/**
@@ -70,7 +61,7 @@ class OportunidadeCultJob extends JobType
 	{
 		$app = App::i();
 
-		$this->initServices($job->opportunity->id);
+		$this->initServices();
 
 		$opportunity = $job->opportunity;
 		$action = $job->action;
@@ -93,37 +84,9 @@ class OportunidadeCultJob extends JobType
 			$job->requestUuid ?? null,
 			$job->user ?? null
 		));
-		// Desfecho da última tentativa: o parseResponse aceita um 404 "não encontrado" sem lançar,
-		// então é aqui que o job descobre que a API recusou o envio.
-		$lastAttemptResult = null;
-		$this->oportunidadeCultClient->setExchangeRecorder(
-			function (array $exchange) use ($logService, $requestLog, $attempt, &$lastAttemptResult) {
-				$lastAttemptResult = $exchange['status'] ?? null;
-
-				if ($requestLog) {
-					$this->recordLog(fn() => $logService->recordAttempt($requestLog, $exchange + [
-						'attempt'     => $attempt,
-						'maxAttempts' => self::MAX_ATTEMPTS,
-						'provider'    => $this->activeProviderName(),
-					]));
-				}
-			}
-		);
-
 		try {
-			$this->{$method}($opportunity);
-
-			// Envio recusado (404): o update não chegou ao CultBR. Marcar como sincronizada
-			// esconderia a divergência entre os dois lados.
-			if ($this->apiRejectedSend($lastAttemptResult)) {
-				$app->log->error("OportunidadeCultJob não sincronizou: o CultBR recusou o envio da oportunidade: {$opportunity->id}");
-
-				if ($requestLog) {
-					$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
-				}
-
-				return true;
-			}
+			$outcome = $this->{$method}($opportunity);
+			$this->recordAttempt($logService, $requestLog, $outcome, $attempt);
 
 			if ($action === 'update') {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
@@ -132,6 +95,10 @@ class OportunidadeCultJob extends JobType
 			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$action} para oportunidade: {$opportunity->id}");
 		} catch (\Throwable $e) {
 			$app->log->error("OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}");
+
+			if ($e instanceof SendFailed) {
+				$this->recordAttempt($logService, $requestLog, $e->outcome(), $attempt, $e->getMessage());
+			}
 
 			if ($attempt < self::MAX_ATTEMPTS) {
 				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'] ?? 'now';
@@ -157,15 +124,33 @@ class OportunidadeCultJob extends JobType
 		return true;
 	}
 
-	/**
-	 * A API recusou o envio mesmo sem erro no fluxo? É o caso do 404, que o
-	 * AbstractClient::parseResponse aceita sem lançar exceção. Como o endpoint é upsert (cria
-	 * quando o id é novo), esse 404 é falta de permissão sobre o edital — repetir o PUT não
-	 * muda isso, por isso não há retentativa.
-	 */
-	protected function apiRejectedSend(?string $lastAttemptResult): bool
-	{
-		return $lastAttemptResult === CultBrRequestLogAttempt::RESULT_REJECTED;
+	/** Grava a tentativa juntando o desfecho do envio com o que só o job sabe: em que tentativa está. */
+	private function recordAttempt(
+		CultBrRequestLogService $logService,
+		?CultBrRequestLog $requestLog,
+		SendOutcome $outcome,
+		int $attempt,
+		?string $error = null
+	): void {
+		if (!$requestLog) {
+			return;
+		}
+
+		$this->recordLog(fn() => $logService->recordAttempt($requestLog, [
+			'method'          => $outcome->method,
+			'endpoint'        => $outcome->endpoint,
+			'payload'         => $outcome->payload,
+			'response'        => $outcome->response,
+			'responseHeaders' => $outcome->responseHeaders,
+			'httpStatus'      => $outcome->httpStatus,
+			'status'          => $outcome->result->value,
+			'sentAt'          => $outcome->sentAt,
+			'durationMs'      => $outcome->durationMs,
+			'provider'        => $outcome->provider->value,
+			'error'           => $error,
+			'attempt'         => $attempt,
+			'maxAttempts'     => self::MAX_ATTEMPTS,
+		]));
 	}
 
 	/**
@@ -178,16 +163,6 @@ class OportunidadeCultJob extends JobType
 			return $operation();
 		} catch (\Throwable $e) {
 			App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
-			return null;
-		}
-	}
-
-	/** Qual API atende a integração agora; não saber não pode custar a gravação da tentativa. */
-	private function activeProviderName(): ?string
-	{
-		try {
-			return Plugin::getInstance()->integrationProvider()->provider()->value;
-		} catch (\Throwable) {
 			return null;
 		}
 	}
@@ -219,7 +194,7 @@ class OportunidadeCultJob extends JobType
 		}
 	}
 
-	private function updateInCult(Opportunity $opportunity)
+	private function updateInCult(Opportunity $opportunity): SendOutcome
 	{
 		$opportunityId = $opportunity->id;
 
@@ -234,8 +209,9 @@ class OportunidadeCultJob extends JobType
 
 		$opportunityDto = OpportunityDto::fromArray($this->opportunityService->mapOpportunityToIntegrationPayload($loaded));
 
-		$response = $this->oportunidadeCultClient->update($opportunityDto);
-
-		return $response;
+		return Plugin::getInstance()->integrationProvider()->sendOpportunity(
+			new OpportunityId((int) $opportunityId),
+			$opportunityDto
+		);
 	}
 }
