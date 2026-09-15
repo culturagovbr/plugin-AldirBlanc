@@ -8,6 +8,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
@@ -222,8 +223,11 @@ class GestaoProviderTest extends TestCase
         }
     }
 
-    /** Falha sobe como exceção tipada, e é assim que os consumidores já a tratam hoje. */
-    function testEnvioComErroDoServidorPropagaExcecao()
+    /**
+     * Falha sobe como exceção tipada carregando o desfecho: sem ele, a tentativa que o client
+     * chegou a registrar se perderia e o envio falho ficaria sem linha na aba.
+     */
+    function testEnvioComErroDoServidorPropagaExcecaoComODesfecho()
     {
         $this->emModoReal(['updateOportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
             $transporte = new FakeTransport(500, 'Internal Server Error');
@@ -232,10 +236,17 @@ class GestaoProviderTest extends TestCase
                 (new GestaoProvider($transporte))
                     ->sendOpportunity(new OpportunityId(7), new OpportunityDto(id: 7));
                 $this->fail('Esperava exceção no envio com 500');
-            } catch (IntegrationError $e) {
+            } catch (SendFailed $e) {
                 $this->assertSame(IntegrationError::KIND_HTTP, $e->kind());
                 $this->assertSame(500, $e->httpStatus());
                 $this->assertTrue($e->isRetryable());
+
+                $outcome = $e->outcome();
+                $this->assertSame(SendResult::Error, $outcome->result);
+                $this->assertSame(500, $outcome->httpStatus);
+                $this->assertSame(Provider::Gestao, $outcome->provider);
+                $this->assertSame('Internal Server Error', $outcome->response);
+                $this->assertSame(self::HOST . '/integracao/oportunidades/7', $outcome->endpoint);
             }
         });
     }
