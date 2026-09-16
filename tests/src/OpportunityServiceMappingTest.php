@@ -1044,6 +1044,32 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertNull($this->service->publicGetEnteFederadoByOpportunity($opp));
     }
 
+    /**
+     * O metadado aponta para um ente que não resolve — apagado, ou com documento vazio — e a
+     * elegibilidade só exige que ele não esteja em branco. Decidiu-se deixar enviar assim: o
+     * contrato aceita `ente_federado` anulável, e o CultBR pode receber edital sem ente identificado.
+     */
+    function testOportunidadeComEnteIrresolvivelContinuaEnviavelComEnteNulo()
+    {
+        $opp = $this->createOpportunity();
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('federativeEntityId', '999999999');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertArrayHasKey('ente_federado', $payload, 'A chave sai no payload mesmo sem ente');
+        $this->assertNull($payload['ente_federado']);
+        $this->assertNull(
+            (new OpportunityDto(id: (int) $opp->id))->toArray()['ente_federado'],
+            'E o DTO não inventa um ente vazio no lugar do nulo'
+        );
+    }
+
     // ======================= mapOpportunityToIntegrationPayload (integração) =======================
 
     /**
