@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Integration\Gestao\GestaoProvider;
 use AldirBlanc\Plugin;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Exceptions\Halt;
@@ -41,8 +42,13 @@ class ControllerParAcoesTest extends TestCase
         return $this->app->response->getStatusCode();
     }
 
-    /** Modo real com transporte falso: exercita o client de verdade, sem sair da máquina. */
+    /** Modo real com transporte falso: exercita provedor e client de verdade, sem sair da máquina. */
     private function comCatalogo(FakeTransport $transport, callable $exercicio): void
+    {
+        $this->comProvedorDoCatalogo(fn() => new GestaoProvider($transport), $transport, $exercicio);
+    }
+
+    private function comProvedorDoCatalogo(callable $criaProvedor, FakeTransport $transport, callable $exercicio): void
     {
         $plugin = Plugin::getInstance();
         $ref = new \ReflectionProperty($plugin, '_config');
@@ -53,10 +59,16 @@ class ControllerParAcoesTest extends TestCase
         $config['client']['mode'] = 'live';
         $config['client']['host'] = self::HOST;
         $config['client']['token'] = 'token-de-teste';
+        $config['client']['conecta'] = [
+            'mode' => 'live',
+            'host' => self::HOST,
+            'token' => 'token-de-teste',
+            'parAcoesEndpoint' => 'par/acoes',
+        ] + ($config['client']['conecta'] ?? []);
         $ref->setValue($plugin, $config);
 
         $controller = new TestableController();
-        $controller->setParAcaoTransport($transport);
+        $controller->setIntegrationProvider($criaProvedor());
 
         try {
             $exercicio($controller);

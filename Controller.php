@@ -13,6 +13,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
@@ -299,41 +300,31 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
 
         try {
-            $cultBrResponse = $this->createParAcaoClient($skip, $limit)->get();
-
-            if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
-                $this->failParActionsCatalog('resposta sem a chave data', apiRespondeu: true);
-                return;
-            }
-
-            $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
-            if (empty($data)) {
-                $this->failParActionsCatalog('a API respondeu sem nenhuma ação', apiRespondeu: true);
-                return;
-            }
-
-            $pagination = is_array($cultBrResponse['pagination'] ?? null) ? $cultBrResponse['pagination'] : [];
-            $normalizedData = array_values(array_filter(array_map(function (array $actionData) {
-                $action = ParAction::fromArray($actionData);
-                return $action->label !== '' ? $action->toArray() : null;
-            }, $data)));
-            $normalizedData = $this->removeDuplicatedParActions($normalizedData);
-            $normalizedData = $this->sortParActionsByLabel($normalizedData);
-        } catch (Halt $halt) {
-            // errorJson() encerra lançando Halt; sem relançar, o erro de contrato vira erro de conexão.
-            throw $halt;
+            $page = $this->integrationProvider()->listParActions($skip, $limit);
         } catch (\Throwable $exception) {
             $this->failParActionsCatalog($exception->getMessage(), $this->apiRespondeuAoCatalogo($exception));
             return;
         }
 
+        if (!$page->items) {
+            $this->failParActionsCatalog('a API respondeu sem nenhuma ação', apiRespondeu: true);
+            return;
+        }
+
+        $normalizedData = array_values(array_filter(array_map(
+            fn(ParAction $action) => $action->label !== '' ? $action->toArray() : null,
+            $page->items
+        )));
+        $normalizedData = $this->removeDuplicatedParActions($normalizedData);
+        $normalizedData = $this->sortParActionsByLabel($normalizedData);
+
         $this->json([
             'pagination' => [
-                'skip' => isset($pagination['skip']) ? (int) $pagination['skip'] : $skip,
-                'limit' => isset($pagination['limit']) ? (int) $pagination['limit'] : $limit,
-                'total' => isset($pagination['total']) ? (int) $pagination['total'] : count($data),
-                'next' => isset($pagination['next']) && $pagination['next'] !== null ? (int) $pagination['next'] : null,
-                'previous' => isset($pagination['previous']) && $pagination['previous'] !== null ? (int) $pagination['previous'] : null,
+                'skip' => $page->skip,
+                'limit' => $page->limit,
+                'total' => $page->total,
+                'next' => $page->next,
+                'previous' => $page->previous,
             ],
             'data' => $normalizedData,
         ]);
@@ -509,9 +500,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         return (new UserService())->getCpf();
     }
 
-    protected function createParAcaoClient(int $skip, int $limit): ParAcaoClient
+    protected function integrationProvider(): IntegrationProvider
     {
-        return new ParAcaoClient($skip, $limit);
+        return Plugin::getInstance()->integrationProvider();
     }
 
     protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob

@@ -4,8 +4,7 @@ namespace Tests\AldirBlanc\Doubles;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\GestorDocument;
-use AldirBlanc\Http\Clients\ParAcaoClient;
-use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Jobs\GestorCultJob;
 use MapasCulturais\Entities\Opportunity;
 
@@ -21,7 +20,7 @@ class TestableController extends Controller
     private int $syncCalls = 0;
     private ?\Throwable $controlPermissionException = null;
     private ?\Throwable $saveAfterPostGenerateException = null;
-    private ?Transport $parAcaoTransport = null;
+    private ?IntegrationProvider $integrationProviderDouble = null;
 
     public function callForceResyncOpportunities(): void
     {
@@ -157,14 +156,14 @@ class TestableController extends Controller
         $this->_getIntegrationFederativeEntityOpportunities();
     }
 
-    public function setParAcaoTransport(Transport $transport): void
+    public function setIntegrationProvider(IntegrationProvider $provider): void
     {
-        $this->parAcaoTransport = $transport;
+        $this->integrationProviderDouble = $provider;
     }
 
-    protected function createParAcaoClient(int $skip, int $limit): ParAcaoClient
+    protected function integrationProvider(): IntegrationProvider
     {
-        return new ParAcaoClient($skip, $limit, $this->parAcaoTransport);
+        return $this->integrationProviderDouble ?? parent::integrationProvider();
     }
 
     public function callGetParAcoes(): void
