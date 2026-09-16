@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
 use AldirBlanc\Plugin;
 use Laminas\Diactoros\Response;
@@ -221,6 +222,35 @@ class ControllerParAcoesTest extends TestCase
 
             $this->assertEquals(50, $resposta['pagination']['limit'], 'Ecoa o pedido, não o usado');
         });
+    }
+
+    /** O catálogo é o mesmo nos dois contratos: trocar o provedor não pode mudar a tela. */
+    function testCatalogoPelaConectaProduzOMesmoEnvelope()
+    {
+        $this->loginComPermissao();
+
+        $corpo = self::corpo(
+            [self::acao('1.1 Fomento Cultural'), self::acao('1.5 Subsídio a espaços culturais')],
+            ['skip' => 0, 'limit' => 2000, 'total' => 2, 'next' => null, 'previous' => null]
+        );
+
+        $pelaGestao = null;
+        $this->comCatalogo(new FakeTransport(status: 200, body: $corpo), function ($controller) use (&$pelaGestao) {
+            $pelaGestao = $this->callJson(fn() => $controller->callGetParAcoes());
+        });
+
+        $transporteConecta = new FakeTransport(status: 200, body: $corpo);
+        $pelaConecta = null;
+        $this->comProvedorDoCatalogo(
+            fn() => new ConectaProvider($transporteConecta),
+            $transporteConecta,
+            function ($controller) use (&$pelaConecta) {
+                $pelaConecta = $this->callJson(fn() => $controller->callGetParAcoes());
+            }
+        );
+
+        $this->assertSame($pelaGestao, $pelaConecta);
+        $this->assertStringContainsString('/par/acoes?', (string) $transporteConecta->ultimaUrl());
     }
 
     /** Sem host nem token configurados não há o que pedir, e repetir não resolveria. */
