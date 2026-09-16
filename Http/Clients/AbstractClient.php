@@ -466,8 +466,8 @@ abstract class AbstractClient
         $documentPlaceholder = $isIntegration ? 'ID da oportunidade' : 'Documento';
         $mensagem = "{$criticalMessageBase} | Endpoint: {$endpoint} | {$documentPlaceholder}: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode();
 
-        // `critical` dispara alerta: um 4xx repetido por oportunidade viraria tempestade.
-        if ($this->deservesAlert($e)) {
+        // No envio quem alerta é o job, único a saber se ainda há tentativa pela frente.
+        if (!$isIntegration && $this->deservesAlert($e)) {
             $app->log->critical($mensagem);
         } else {
             $app->log->error($mensagem);
