@@ -6,6 +6,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Doubles\NotAProvider;
@@ -13,6 +14,7 @@ use Tests\AldirBlanc\Doubles\NotAProvider;
 /** Quem atende a integração é decidido por configuração, e valor ruim falha alto. */
 class ProviderResolverTest extends TestCase
 {
+    use CapturesLog;
     use ConfiguresPlugin;
 
     private function resolverCom(mixed $configurado): ProviderResolver
@@ -167,5 +169,36 @@ class ProviderResolverTest extends TestCase
                 }
             }
         );
+    }
+
+    /** Na virada, é esta linha que confirma que o processo leu a variável nova. */
+    function testResolucaoRegistraProvedorHostEPrefixoDoToken()
+    {
+        $capturado = $this->capturandoLog(function () {
+            (new ProviderResolver('gestao'))->resolve();
+        });
+
+        $this->assertTrue($capturado->hasInfoThatContains('integração ativa'));
+        $this->assertTrue($capturado->hasInfoThatContains('provedor: gestao'));
+    }
+
+    /** Token inteiro em arquivo de log é credencial vazada: só o prefixo sai. */
+    function testTokenNuncaSaiInteiroNoLog()
+    {
+        $segredo = 'token-secreto-que-nao-pode-vazar';
+
+        $capturado = $this->capturandoLog(function () use ($segredo) {
+            $this->comConfigDoPlugin(
+                function (array $config) use ($segredo) {
+                    $config['client']['token'] = $segredo;
+
+                    return $config;
+                },
+                fn() => (new ProviderResolver('gestao'))->resolve()
+            );
+        });
+
+        $this->assertFalse($capturado->hasInfoThatContains($segredo), 'O token não pode aparecer inteiro');
+        $this->assertTrue($capturado->hasInfoThatContains(substr($segredo, 0, 6)), 'Só o prefixo');
     }
 }
