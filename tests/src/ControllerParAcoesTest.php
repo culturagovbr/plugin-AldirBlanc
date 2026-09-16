@@ -253,6 +253,44 @@ class ControllerParAcoesTest extends TestCase
         $this->assertStringContainsString('/par/acoes?', (string) $transporteConecta->ultimaUrl());
     }
 
+    /** O que a API declara na paginação é o que o front recebe, sem recálculo nosso. */
+    function testPaginacaoDaApiEhPreservada()
+    {
+        $this->loginComPermissao();
+
+        $corpo = self::corpo(
+            [self::acao('1.1 Fomento Cultural')],
+            ['skip' => 40, 'limit' => 20, 'total' => 100, 'next' => 60, 'previous' => 20]
+        );
+
+        $this->comCatalogo(new FakeTransport(status: 200, body: $corpo), function ($controller) {
+            $resposta = $this->callJson(fn() => $controller->callGetParAcoes());
+
+            $this->assertSame(
+                ['skip' => 40, 'limit' => 20, 'total' => 100, 'next' => 60, 'previous' => 20],
+                $resposta['pagination']
+            );
+        });
+    }
+
+    /** Sem os campos no envelope, a página seguinte ainda precisa ser alcançável pela tela. */
+    function testPaginacaoEhDerivadaQuandoAApiOmiteOsCampos()
+    {
+        $this->loginComPermissao();
+
+        $corpo = self::corpo(
+            [self::acao('1.1 Fomento Cultural')],
+            ['skip' => 0, 'limit' => 1, 'total' => 5]
+        );
+
+        $this->comCatalogo(new FakeTransport(status: 200, body: $corpo), function ($controller) {
+            $resposta = $this->callJson(fn() => $controller->callGetParAcoes());
+
+            $this->assertSame(1, $resposta['pagination']['next'], 'Há mais páginas a alcançar');
+            $this->assertNull($resposta['pagination']['previous'], 'A primeira página não tem anterior');
+        });
+    }
+
     /** Sem host nem token configurados não há o que pedir, e repetir não resolveria. */
     function testIntegracaoSemEndpointConfiguradoResponde502()
     {
