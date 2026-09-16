@@ -319,6 +319,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             }, $data)));
             $normalizedData = $this->removeDuplicatedParActions($normalizedData);
             $normalizedData = $this->sortParActionsByLabel($normalizedData);
+        } catch (Halt $halt) {
+            // errorJson() encerra lançando Halt; sem relançar, o erro de contrato vira erro de conexão.
+            throw $halt;
         } catch (\Throwable $exception) {
             $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
             return;
