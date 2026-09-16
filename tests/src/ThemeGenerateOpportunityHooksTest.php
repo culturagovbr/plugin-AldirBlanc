@@ -13,6 +13,7 @@ use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
 use MapasCulturais\Request;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 /**
@@ -22,6 +23,7 @@ use Tests\Traits\UserDirector;
  */
 class ThemeGenerateOpportunityHooksTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
 
     protected function setUp(): void
@@ -262,6 +264,101 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
 
         $payload = $this->assertHookBloqueiaCom($model, '42', 422);
         $this->assertArrayHasKey('parAcaoId', $payload['data']);
+    }
+
+    /**
+     * O catálogo devolve o nome com prefixo hierárquico ("1.1 Fomento Cultural") e é esse nome
+     * que o modelo persiste. Renumerar de um lado só derruba todo modelo já associado.
+     */
+    function testNomeComPrefixoNumericoCasaComOModelo()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], '1.1 Fomento Cultural', '42');
+
+        $this->assertHookLibera($gestor, '42');
+    }
+
+    /** Duas ações do catálogo real não têm prefixo, e precisam continuar casando. */
+    function testNomeSemPrefixoTambemCasa()
+    {
+        $nome = 'Executar a Política Nacional Aldir Blanc de Fomento à Cultura';
+        $gestor = $this->gestorComModelo([$nome], $nome, '77');
+
+        $this->assertHookLibera($gestor, '77');
+    }
+
+    /** A árvore do ente vem com espaço sobrando; o modelo, sem. O trim é o que faz casar. */
+    function testEspacoEmVoltaDoNomeNaoImpedeOCasamento()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], '  1.1 Fomento Cultural  ', '42');
+
+        $this->assertHookLibera($gestor, '42');
+    }
+
+    /** Prefixo diferente é nome diferente: a divergência tem que aparecer, não passar batido. */
+    function testPrefixoDivergenteBloqueia()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], '1.2 Fomento Cultural', '42');
+
+        $payload = $this->assertHookBloqueiaCom($gestor, '42', 422);
+
+        $this->assertStringContainsString('1.2 Fomento Cultural', $payload['data']['parAcaoId'][0]);
+    }
+
+    /** Sem o nome na mensagem, uma grafia divergente é indistinguível de escolha errada do usuário. */
+    function testMensagemNomeiaAAcaoQueNaoCasou()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], 'Ação Que Não Está No Modelo', '42');
+
+        $payload = $this->assertHookBloqueiaCom($gestor, '42', 422);
+
+        $this->assertStringContainsString('Ação Que Não Está No Modelo', $payload['data']['parAcaoId'][0]);
+    }
+
+    /** Quem investiga a divergência precisa ver os dois lados, e a tela só mostra um. */
+    function testLogRegistraAAcaoRecusadaEAsDoModelo()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], '1.2 Fomento Cultural', '42');
+
+        $capturado = $this->capturandoLog(function () use ($gestor) {
+            $this->assertHookBloqueiaCom($gestor, '42', 422);
+        });
+
+        $this->assertTrue($capturado->hasErrorThatContains('1.2 Fomento Cultural'), 'A ação recusada');
+        $this->assertTrue($capturado->hasErrorThatContains('1.1 Fomento Cultural'), 'As do modelo');
+    }
+
+    /** Ação que a árvore do ente não conhece não tem nome a nomear: a mensagem volta à genérica. */
+    function testAcaoForaDaArvoreDoEnteUsaAMensagemGenerica()
+    {
+        $gestor = $this->gestorComModelo(['1.1 Fomento Cultural'], '1.1 Fomento Cultural', '42');
+
+        $payload = $this->assertHookBloqueiaCom($gestor, '999', 422);
+
+        $this->assertStringContainsString('não é compatível', $payload['data']['parAcaoId'][0]);
+    }
+
+    /** Monta o cenário: modelo com as ações associadas e o ente com uma ação na árvore. */
+    private function gestorComModelo(array $acoesDoModelo, string $nomeNaArvore, string $idNaArvore): Opportunity
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $model = $this->opportunity($gestor, 'Modelo com parActions');
+
+        $this->app->disableAccessControl();
+        $model->setMetadata('parActions', json_encode($acoesDoModelo));
+        $model->save(true);
+        $this->app->enableAccessControl();
+
+        $federativeEntity = $this->persistFederativeEntity(
+            (string) random_int(10000000000000, 99999999999999),
+            'Ente do casamento por nome',
+            [['metas' => [['acoes' => [['id' => $idNaArvore, 'nome' => $nomeNaArvore]]]]]]
+        );
+
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        return $model;
     }
 
     // ===== entity(Opportunity).validationErrors — validação do PAR sem parActions =====
