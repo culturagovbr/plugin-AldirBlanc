@@ -15,6 +15,9 @@ class ParAcaoClientTest extends TestCase
 {
     private const HOST = 'http://cultbr.invalid';
 
+    /** Tamanho do catálogo na homologação, para a folga do teto ser verificável. */
+    private const ACOES_MEDIDAS = 1044;
+
     private function urlPedida(int $skip, int $limit): string
     {
         $plugin = Plugin::getInstance();
@@ -43,7 +46,40 @@ class ParAcaoClientTest extends TestCase
 
     function testPaginacaoPedidaViajaNaQueryString()
     {
-        $this->assertStringContainsString('skip=0&limit=1000', $this->urlPedida(0, 1000));
+        $this->assertStringContainsString(
+            'skip=0&limit=' . ParAcaoClient::DEFAULT_LIMIT,
+            $this->urlPedida(0, ParAcaoClient::DEFAULT_LIMIT)
+        );
+    }
+
+    /**
+     * Contagem lida na homologação em 2026-09-16, pela paginação da própria tela: 1044 ações.
+     * A folga é o que impede o dedupe de rodar sobre página incompleta e descartar associação.
+     */
+    function testTetoTemFolgaSobreOCatalogoMedido()
+    {
+        $this->assertGreaterThan(
+            self::ACOES_MEDIDAS,
+            ParAcaoClient::DEFAULT_LIMIT,
+            'O catálogo precisa caber inteiro numa página'
+        );
+    }
+
+    function testPedidoAcimaDoTetoEhCoagido()
+    {
+        $this->assertStringContainsString(
+            'limit=' . ParAcaoClient::DEFAULT_LIMIT,
+            $this->urlPedida(0, ParAcaoClient::DEFAULT_LIMIT * 5)
+        );
+    }
+
+    /** Tela servida com JS em cache pede o teto anterior, e não pode receber página cortada. */
+    function testPedidoAbaixoDoTetoEhCoagido()
+    {
+        $this->assertStringContainsString(
+            'limit=' . ParAcaoClient::DEFAULT_LIMIT,
+            $this->urlPedida(0, intdiv(ParAcaoClient::DEFAULT_LIMIT, 2))
+        );
     }
 
     /** O catálogo real cabe numa página; um limite fora da lista é trocado pelo default. */
