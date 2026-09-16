@@ -6,9 +6,9 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Role;
-use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
 use Tests\Traits\UserDirector;
@@ -19,6 +19,8 @@ use Tests\Traits\UserDirector;
  */
 class GestorCultJobRevogacaoTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     use UserDirector;
 
     private const HOST = 'http://cultbr.invalid';
@@ -27,24 +29,15 @@ class GestorCultJobRevogacaoTest extends TestCase
 
     private function comModoReal(callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['mode'] = 'live';
+                $config['client']['host'] = self::HOST;
 
-        $config = $ref->getValue($plugin);
-        $originais = ['mode' => $config['client']['mode'] ?? null, 'host' => $config['client']['host'] ?? null];
-        $config['client']['mode'] = 'live';
-        $config['client']['host'] = self::HOST;
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['mode'] = $originais['mode'];
-            $config['client']['host'] = $originais['host'];
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     private function gestorLogadoComUmEnte(): object

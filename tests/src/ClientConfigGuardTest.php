@@ -6,9 +6,9 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Http\Clients\ParAcaoClient;
-use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 
 /**
  * Configuração ausente precisa falhar nomeando a variável, em vez de bater na API antiga,
@@ -16,24 +16,17 @@ use Tests\AldirBlanc\Doubles\TestableAbstractClient;
  */
 class ClientConfigGuardTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private function comConfig(string $chave, mixed $valor, callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-
-        $config = $ref->getValue($plugin);
-        $original = $config['client'][$chave] ?? null;
-        $config['client'][$chave] = $valor;
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client'][$chave] = $original;
-            $ref->setValue($plugin, $config);
-        }
+        $this->comConfigDoPlugin(
+            function (array $config) use ($chave, $valor) {
+                $config['client'][$chave] = $valor;
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     function testEndpointDoCatalogoAusenteFalhaNomeandoAVariavel()

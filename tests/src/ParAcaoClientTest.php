@@ -4,9 +4,9 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Integration\ParActionPageLimits;
-use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 
 /**
  * O que o client do catálogo pede à API: a guarda de paginação existe para o front não
@@ -14,6 +14,8 @@ use Tests\AldirBlanc\Doubles\FakeTransport;
  */
 class ParAcaoClientTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private const HOST = 'http://cultbr.invalid';
 
     /** Tamanho do catálogo na homologação, para a folga do teto ser verificável. */
@@ -21,26 +23,18 @@ class ParAcaoClientTest extends TestCase
 
     private function urlPedida(int $skip, int $limit): string
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-
-        $config = $ref->getValue($plugin);
-        $original = $config['client'];
-        $config['client']['mode'] = 'live';
-        $config['client']['host'] = self::HOST;
-        $config['client']['token'] = 'token-de-teste';
-        $ref->setValue($plugin, $config);
-
         $transport = new FakeTransport(status: 200, body: '{"data":[],"pagination":{}}');
 
-        try {
-            (new ParAcaoClient($skip, $limit, $transport))->get();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client'] = $original;
-            $ref->setValue($plugin, $config);
-        }
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['mode'] = 'live';
+                $config['client']['host'] = self::HOST;
+                $config['client']['token'] = 'token-de-teste';
+
+                return $config;
+            },
+            fn() => (new ParAcaoClient($skip, $limit, $transport))->get()
+        );
 
         return (string) $transport->ultimaUrl();
     }

@@ -11,13 +11,15 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Integration\ValidatesCredential;
-use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 
 /** A API Conecta satisfazendo o contrato, com as diferenças que ela tem em relação à Gestão. */
 class ConectaProviderTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private const HOST = 'http://conecta.invalid';
     private const DOCUMENTO = '06575305300';
 
@@ -33,22 +35,14 @@ class ConectaProviderTest extends TestCase
 
     private function comConfig(array $trocas, callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) use ($trocas) {
+                $config['client']['conecta'] = $trocas + self::CONFIG_BASE;
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client']['conecta'] ?? null;
-        $config['client']['conecta'] = $trocas + self::CONFIG_BASE;
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['conecta'] = $original;
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     private function comResposta(string $json, callable $exercicio, int $status = 200): void

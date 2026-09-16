@@ -6,13 +6,13 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
-use AldirBlanc\Plugin;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Exceptions\Halt;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\AldirBlanc\Traits\CapturesLog;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\Traits\UserDirector;
 
 /**
@@ -23,6 +23,7 @@ class ControllerParAcoesTest extends TestCase
 {
     use UserDirector;
     use CapturesLog;
+    use ConfiguresPlugin;
 
     private const HOST = 'http://cultbr.invalid';
 
@@ -52,33 +53,27 @@ class ControllerParAcoesTest extends TestCase
 
     private function comProvedorDoCatalogo(callable $criaProvedor, FakeTransport $transport, callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['mode'] = 'live';
+                $config['client']['host'] = self::HOST;
+                $config['client']['token'] = 'token-de-teste';
+                $config['client']['conecta'] = [
+                    'mode' => 'live',
+                    'host' => self::HOST,
+                    'token' => 'token-de-teste',
+                    'parAcoesEndpoint' => 'par/acoes',
+                ] + ($config['client']['conecta'] ?? []);
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client'];
-        $config['client']['mode'] = 'live';
-        $config['client']['host'] = self::HOST;
-        $config['client']['token'] = 'token-de-teste';
-        $config['client']['conecta'] = [
-            'mode' => 'live',
-            'host' => self::HOST,
-            'token' => 'token-de-teste',
-            'parAcoesEndpoint' => 'par/acoes',
-        ] + ($config['client']['conecta'] ?? []);
-        $ref->setValue($plugin, $config);
+                return $config;
+            },
+            function () use ($criaProvedor, $exercicio) {
+                $controller = new TestableController();
+                $controller->setIntegrationProvider($criaProvedor());
 
-        $controller = new TestableController();
-        $controller->setIntegrationProvider($criaProvedor());
-
-        try {
-            $exercicio($controller);
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client'] = $original;
-            $ref->setValue($plugin, $config);
-        }
+                $exercicio($controller);
+            }
+        );
     }
 
     private function loginComPermissao(): void
@@ -326,22 +321,14 @@ class ControllerParAcoesTest extends TestCase
 
     private function semEndpointDoCatalogo(callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['parAcoesEndpoint'] = '';
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client']['parAcoesEndpoint'] ?? null;
-        $config['client']['parAcoesEndpoint'] = '';
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['parAcoesEndpoint'] = $original;
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     function testUsuarioSemPermissaoRecebe403()

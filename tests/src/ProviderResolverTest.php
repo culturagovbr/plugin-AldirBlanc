@@ -6,12 +6,15 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Doubles\NotAProvider;
 
 /** Quem atende a integração é decidido por configuração, e valor ruim falha alto. */
 class ProviderResolverTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private function resolverCom(mixed $configurado): ProviderResolver
     {
         return new ProviderResolver($configurado);
@@ -147,22 +150,22 @@ class ProviderResolverTest extends TestCase
     function testOPluginEntregaOProvedorQueAConfiguracaoDiz()
     {
         $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client']['provider'] ?? null;
-        $config['client']['provider'] = InMemoryProvider::class;
-        $ref->setValue($plugin, $config);
-        $plugin->resetIntegrationProvider();
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['provider'] = InMemoryProvider::class;
 
-        try {
-            $this->assertInstanceOf(InMemoryProvider::class, $plugin->integrationProvider());
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['provider'] = $original;
-            $ref->setValue($plugin, $config);
-            $plugin->resetIntegrationProvider();
-        }
+                return $config;
+            },
+            function () use ($plugin) {
+                $plugin->resetIntegrationProvider();
+
+                try {
+                    $this->assertInstanceOf(InMemoryProvider::class, $plugin->integrationProvider());
+                } finally {
+                    $plugin->resetIntegrationProvider();
+                }
+            }
+        );
     }
 }

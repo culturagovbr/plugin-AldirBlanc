@@ -10,44 +10,32 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
-use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 
 /** A API de Gestão satisfazendo o contrato, com o transporte substituído. */
 class GestaoProviderTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private const HOST = 'http://cultbr.invalid';
     private const DOCUMENTO = '06575305300';
 
     private function emModoReal(array $valores, callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-
-        $config = $ref->getValue($plugin);
-        $originais = [];
         $trocas = $valores + ['mode' => 'live', 'host' => self::HOST];
 
-        foreach ($trocas as $chave => $valor) {
-            $originais[$chave] = $config['client'][$chave] ?? null;
-            $config['client'][$chave] = $valor;
-        }
+        $this->comConfigDoPlugin(
+            function (array $config) use ($trocas) {
+                foreach ($trocas as $chave => $valor) {
+                    $config['client'][$chave] = $valor;
+                }
 
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-
-            foreach ($originais as $chave => $valor) {
-                $config['client'][$chave] = $valor;
-            }
-
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     private function comResposta(string $json, callable $exercicio): void
@@ -203,24 +191,19 @@ class GestaoProviderTest extends TestCase
     /** Modo simulado não é sucesso: o desfecho precisa dizer que nada saiu pela rede. */
     function testEnvioEmModoSimuladoSeDeclaraSimulado()
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-        $config = $ref->getValue($plugin);
-        $modoOriginal = $config['client']['mode'] ?? null;
-        $config['client']['mode'] = 'development';
-        $ref->setValue($plugin, $config);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['mode'] = 'development';
 
-        try {
-            $outcome = (new GestaoProvider())->sendOpportunity(new OpportunityId(7), new OpportunityDto(id: 7));
+                return $config;
+            },
+            function () {
+                $outcome = (new GestaoProvider())->sendOpportunity(new OpportunityId(7), new OpportunityDto(id: 7));
 
-            $this->assertSame(SendResult::Simulated, $outcome->result);
-            $this->assertNull($outcome->httpStatus);
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['mode'] = $modoOriginal;
-            $ref->setValue($plugin, $config);
-        }
+                $this->assertSame(SendResult::Simulated, $outcome->result);
+                $this->assertNull($outcome->httpStatus);
+            }
+        );
     }
 
     /**

@@ -4,8 +4,8 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\CurlTransport;
-use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\Conecta\CatalogoClient as CatalogoConecta;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Doubles\FixtureAusenteClient;
@@ -19,35 +19,22 @@ use Tests\AldirBlanc\Doubles\TestableAbstractClient;
  */
 class ClientTransportTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private const HOST = 'http://cultbr.invalid';
 
     private function comConfigDoCliente(array $valores, callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) use ($valores) {
+                foreach ($valores as $chave => $valor) {
+                    $config['client'][$chave] = $valor;
+                }
 
-        $config = $ref->getValue($plugin);
-        $originais = [];
-
-        foreach ($valores as $chave => $valor) {
-            $originais[$chave] = $config['client'][$chave] ?? null;
-            $config['client'][$chave] = $valor;
-        }
-
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-
-            foreach ($originais as $chave => $valor) {
-                $config['client'][$chave] = $valor;
-            }
-
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     /** Modo real com transporte falso: exercita o caminho de rede sem sair da máquina. */

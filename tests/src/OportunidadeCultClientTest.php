@@ -10,21 +10,21 @@ use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Http\Transport\TransportResponse;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Traits\CapturesLog;
 
 class OportunidadeCultClientTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     use CapturesLog;
 
     private function setPluginClientConfig(string $key, mixed $value): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-        $config = $ref->getValue($plugin);
+        $config = $this->leConfigDoPlugin();
         $config['client'][$key] = $value;
-        $ref->setValue($plugin, $config);
+        $this->escreveConfigDoPlugin($config);
     }
 
     private function makePayload(): OpportunityDto

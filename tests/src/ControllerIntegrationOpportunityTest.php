@@ -11,6 +11,7 @@ use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
 use MapasCulturais\Request;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\Traits\UserDirector;
 
@@ -20,6 +21,8 @@ use Tests\Traits\UserDirector;
  */
 class ControllerIntegrationOpportunityTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     use UserDirector;
 
     private ?array $originalIntegrationConfig = null;
@@ -40,19 +43,14 @@ class ControllerIntegrationOpportunityTest extends TestCase
 
     private function readPluginConfig(): array
     {
-        $ref = new \ReflectionProperty($this->app->plugins['AldirBlanc'], '_config');
-        $ref->setAccessible(true);
-        return $ref->getValue($this->app->plugins['AldirBlanc']);
+        return $this->leConfigDoPlugin();
     }
 
     private function writePluginIntegrationConfig(array $integration): void
     {
-        $plugin = $this->app->plugins['AldirBlanc'];
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-        $config = $ref->getValue($plugin);
+        $config = $this->leConfigDoPlugin();
         $config['integration'] = $integration;
-        $ref->setValue($plugin, $config);
+        $this->escreveConfigDoPlugin($config);
     }
 
     private function controller(int $subsiteId, mixed $id = null): TestableController

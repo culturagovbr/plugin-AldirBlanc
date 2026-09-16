@@ -15,6 +15,8 @@ use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 /** Exercita o envio de oportunidade pelo job, com o provedor trocado por dublê. */
 trait SendsOpportunityThroughJob
 {
+    use ConfiguresPlugin;
+
     /** O bucket da Conecta não vem do override da suíte: o envio por ela precisa dele declarado. */
     private const CONFIG_CONECTA = [
         'mode' => 'development',
@@ -59,24 +61,24 @@ trait SendsOpportunityThroughJob
     protected function comProviderConfigurado(string $valor, callable $exercicio): void
     {
         $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client'];
-        $config['client']['provider'] = $valor;
-        $config['client']['conecta'] = self::CONFIG_CONECTA;
-        $ref->setValue($plugin, $config);
-        $plugin->resetIntegrationProvider();
+        $this->comConfigDoPlugin(
+            function (array $config) use ($valor) {
+                $config['client']['provider'] = $valor;
+                $config['client']['conecta'] = self::CONFIG_CONECTA;
 
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client'] = $original;
-            $ref->setValue($plugin, $config);
-            $plugin->resetIntegrationProvider();
-        }
+                return $config;
+            },
+            function () use ($exercicio, $plugin) {
+                $plugin->resetIntegrationProvider();
+
+                try {
+                    $exercicio();
+                } finally {
+                    $plugin->resetIntegrationProvider();
+                }
+            }
+        );
     }
 
     /** Roda o exercício com o envio atendido por um provedor de teste, resolvido por nome de classe. */

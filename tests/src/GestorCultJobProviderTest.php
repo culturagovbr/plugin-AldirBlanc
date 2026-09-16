@@ -7,6 +7,7 @@ use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
@@ -14,26 +15,29 @@ use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
 /** Trocar a configuração troca a origem dos entes, sem que o job mude. */
 class GestorCultJobProviderTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     private function comProviderConfigurado(string $valor, callable $exercicio): void
     {
         $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client']['provider'] ?? null;
-        $config['client']['provider'] = $valor;
-        $ref->setValue($plugin, $config);
-        $plugin->resetIntegrationProvider();
+        $this->comConfigDoPlugin(
+            function (array $config) use ($valor) {
+                $config['client']['provider'] = $valor;
 
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['provider'] = $original;
-            $ref->setValue($plugin, $config);
-            $plugin->resetIntegrationProvider();
-        }
+                return $config;
+            },
+            function () use ($exercicio, $plugin) {
+                // A resolução é memoizada: sem o reset, o provedor anterior sobrevive à troca.
+                $plugin->resetIntegrationProvider();
+
+                try {
+                    $exercicio();
+                } finally {
+                    $plugin->resetIntegrationProvider();
+                }
+            }
+        );
     }
 
     private function buscar(): mixed
@@ -65,22 +69,14 @@ class GestorCultJobProviderTest extends TestCase
 
     private function comModoReal(callable $exercicio): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['mode'] = 'live';
 
-        $config = $ref->getValue($plugin);
-        $original = $config['client']['mode'] ?? null;
-        $config['client']['mode'] = 'live';
-        $ref->setValue($plugin, $config);
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client']['mode'] = $original;
-            $ref->setValue($plugin, $config);
-        }
+                return $config;
+            },
+            $exercicio
+        );
     }
 
     /** O job não conhece client nenhum: o que ele recebe é sempre o contrato. */
