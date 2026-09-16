@@ -21,11 +21,27 @@ final class ParActionPageMapper
             array_filter($resposta['data'], 'is_array'),
         ));
 
+        $skipEfetivo = (int) ($paginacao['skip'] ?? $skip);
+        $limiteEfetivo = (int) ($paginacao['limit'] ?? $limit);
+        $total = (int) ($paginacao['total'] ?? count($itens));
+        $temMais = ($skipEfetivo + count($itens)) < $total;
+
         return new ParActionPage(
             items: $itens,
-            skip: (int) ($paginacao['skip'] ?? $skip),
-            limit: (int) ($paginacao['limit'] ?? $limit),
-            total: (int) ($paginacao['total'] ?? count($itens)),
+            skip: $skipEfetivo,
+            limit: $limiteEfetivo,
+            total: $total,
+            next: array_key_exists('next', $paginacao)
+                ? self::offset($paginacao['next'])
+                : ($temMais ? $skipEfetivo + $limiteEfetivo : null),
+            previous: array_key_exists('previous', $paginacao)
+                ? self::offset($paginacao['previous'])
+                : ($skipEfetivo > 0 ? max(0, $skipEfetivo - $limiteEfetivo) : null),
         );
+    }
+
+    private static function offset(mixed $valor): ?int
+    {
+        return $valor === null ? null : (int) $valor;
     }
 }
