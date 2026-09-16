@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
+use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Plugin;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Exceptions\Halt;
@@ -288,6 +289,21 @@ class ControllerParAcoesTest extends TestCase
 
             $this->assertSame(1, $resposta['pagination']['next'], 'Há mais páginas a alcançar');
             $this->assertNull($resposta['pagination']['previous'], 'A primeira página não tem anterior');
+        });
+    }
+
+    /** Requisição sem paginação usa o default da fonte neutra, o mesmo que o tema entrega ao front. */
+    function testRequisicaoSemPaginacaoUsaODefaultDaFonteNeutra()
+    {
+        $this->loginComPermissao();
+
+        $corpo = self::corpo([self::acao('1.1 Fomento Cultural')]);
+
+        $this->comCatalogo(new FakeTransport(status: 200, body: $corpo), function ($controller) {
+            $resposta = $this->callJson(fn() => $controller->callGetParAcoes());
+
+            $this->assertSame(ParActionPageLimits::DEFAULT_SKIP, $resposta['pagination']['skip']);
+            $this->assertSame(ParActionPageLimits::DEFAULT_LIMIT, $resposta['pagination']['limit']);
         });
     }
 
