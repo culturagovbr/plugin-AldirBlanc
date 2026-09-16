@@ -207,7 +207,7 @@ abstract class AbstractClient
             ]);
 
             return $parsed;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $rawResponse = $this->lastResponse?->body;
 
             $this->recordExchange([
@@ -457,7 +457,7 @@ abstract class AbstractClient
         return trim((string) $valor) !== '' ? $valor : $alternativa;
     }
 
-    protected function handleError(string $criticalMessageBase, \Exception $e, bool $isIntegration = false): void
+    protected function handleError(string $criticalMessageBase, \Throwable $e, bool $isIntegration = false): void
     {
         $app = App::i();
         $endpoint = $this->endpoint ?? 'N/A';
