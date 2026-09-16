@@ -4,6 +4,8 @@ namespace Tests\AldirBlanc\Doubles;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Jobs\GestorCultJob;
 use MapasCulturais\Entities\Opportunity;
 
@@ -19,6 +21,7 @@ class TestableController extends Controller
     private int $syncCalls = 0;
     private ?\Throwable $controlPermissionException = null;
     private ?\Throwable $saveAfterPostGenerateException = null;
+    private ?Transport $parAcaoTransport = null;
 
     public function callForceResyncOpportunities(): void
     {
@@ -152,6 +155,21 @@ class TestableController extends Controller
     public function callGetIntegrationFederativeEntityOpportunities(): void
     {
         $this->_getIntegrationFederativeEntityOpportunities();
+    }
+
+    public function setParAcaoTransport(Transport $transport): void
+    {
+        $this->parAcaoTransport = $transport;
+    }
+
+    protected function createParAcaoClient(int $skip, int $limit): ParAcaoClient
+    {
+        return new ParAcaoClient($skip, $limit, $this->parAcaoTransport);
+    }
+
+    public function callGetParAcoes(): void
+    {
+        $this->GET_parAcoes();
     }
 
     public function callRemoveDuplicatedParActions(array $actions): array
