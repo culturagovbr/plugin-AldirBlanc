@@ -7,6 +7,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Http\Transport\TransportResponse;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
@@ -90,5 +91,34 @@ class OportunidadeCultClientTest extends TestCase
 
         $this->assertFalse($capturado->hasCriticalRecords(), 'O alerta do envio é do job');
         $this->assertTrue($capturado->hasErrorRecords(), 'A falha continua registrada');
+    }
+
+    /** Um \Error escapava do catch e levava embora a tentativa que a aba de logs mostraria. */
+    function testErroFatalNoTransporteAindaRegistraATentativa()
+    {
+        $transporteQuebrado = new class implements Transport {
+            public function send(string $method, string $url, array $headers, ?string $body = null): TransportResponse
+            {
+                throw new \TypeError('transporte quebrado');
+            }
+        };
+
+        $registrado = null;
+
+        $this->comEnvioReal($transporteQuebrado, function (OportunidadeCultClient $client) use (&$registrado) {
+            $client->setExchangeRecorder(function (array $exchange) use (&$registrado) {
+                $registrado = $exchange;
+            });
+
+            try {
+                $client->update($this->makePayload());
+                $this->fail('Esperava falha com o transporte quebrado');
+            } catch (IntegrationError $e) {
+                $this->assertSame(IntegrationError::KIND_PARSE, $e->kind());
+            }
+        });
+
+        $this->assertNotNull($registrado, 'A tentativa precisa sobreviver a um \Error');
+        $this->assertSame('PUT', $registrado['method']);
     }
 }
