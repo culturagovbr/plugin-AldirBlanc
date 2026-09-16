@@ -3,7 +3,6 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Dtos\OpportunityId;
-use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Provider;
@@ -11,13 +10,10 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
-use AldirBlanc\Plugin;
-use AldirBlanc\Services\CultBrRequestLogService;
-use MapasCulturais\Entities\Opportunity;
-use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
+use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
 /**
@@ -30,40 +26,12 @@ class OportunidadeCultJobLogTest extends TestCase
 {
     use UserDirector;
     use IsolatesJobQueue;
+    use SendsOpportunityThroughJob;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->clearJobQueue();
-    }
-
-    private function createOpportunity(User $user): Opportunity
-    {
-        $this->login($user);
-        $this->app->disableAccessControl();
-        $className = $user->profile->opportunityClassName;
-        $opp = new $className();
-        $opp->owner = $user->profile;
-        $opp->ownerEntity = $user->profile;
-        $opp->name = 'Oportunidade Log CultBR Test';
-        $opp->shortDescription = 'desc';
-        $opp->status = Opportunity::STATUS_DRAFT;
-        $opp->save(true);
-        $this->app->enableAccessControl();
-        return $opp;
-    }
-
-    private function enqueueUpdateJob(Opportunity $opp, array $extra = []): void
-    {
-        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
-            'opportunity' => $opp,
-            'action'      => 'update',
-        ] + $extra);
-    }
-
-    private function logs(int $opportunityId): array
-    {
-        return (new CultBrRequestLogService())->findByOpportunity($opportunityId);
     }
 
     /** O provider de cada tentativa, na ordem: findByOpportunity não expõe a coluna. */
@@ -118,40 +86,6 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertSame([Provider::Gestao->value], $this->providers($uuid));
     }
 
-    /** O bucket da Conecta não vem do override da suíte: o envio por ela precisa dele declarado. */
-    private const CONFIG_CONECTA = [
-        'mode' => 'development',
-        'host' => 'http://conecta.invalid',
-        'token' => 'token-de-teste',
-        'entesEndpoint' => 'auth/pessoa/{document}/entes',
-        'parAcoesEndpoint' => 'par/acoes',
-        'oportunidadeEndpoint' => 'oportunidades/{id}',
-        'validarTokenEndpoint' => 'validar-token',
-    ];
-
-    private function comProviderConfigurado(string $valor, callable $exercicio): void
-    {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-
-        $config = $ref->getValue($plugin);
-        $original = $config['client'];
-        $config['client']['provider'] = $valor;
-        $config['client']['conecta'] = self::CONFIG_CONECTA;
-        $ref->setValue($plugin, $config);
-        $plugin->resetIntegrationProvider();
-
-        try {
-            $exercicio();
-        } finally {
-            $config = $ref->getValue($plugin);
-            $config['client'] = $original;
-            $ref->setValue($plugin, $config);
-            $plugin->resetIntegrationProvider();
-        }
-    }
-
     /** Envio retomado sob outra configuração: cada tentativa guarda a API que a atendeu. */
     function testTentativasEmProvedoresDiferentesSaoDistinguiveisNoLog()
     {
@@ -184,36 +118,6 @@ class OportunidadeCultJobLogTest extends TestCase
 
         $this->assertCount(0, $rows[0]['attempts'], 'Sem provedor não houve chamada a registrar');
         $this->assertNotEquals(CultBrRequestLog::RESULT_SUCCESS, $rows[0]['status']);
-    }
-
-    /** Roda o exercício com o envio atendido por um provedor de teste, resolvido por nome de classe. */
-    private function comProvedorDuble(callable $aoEnviar, callable $exercicio): void
-    {
-        FakeIntegrationProvider::reset();
-        FakeIntegrationProvider::$aoEnviar = $aoEnviar;
-
-        try {
-            $this->comProviderConfigurado(FakeIntegrationProvider::class, $exercicio);
-        } finally {
-            // O que foi enviado sobrevive ao exercício: é o que o teste asserta depois.
-            FakeIntegrationProvider::$aoEnviar = null;
-        }
-    }
-
-    private function desfecho(array $trocas = []): SendOutcome
-    {
-        return new SendOutcome(
-            provider: $trocas['provider'] ?? Provider::Conecta,
-            result: $trocas['result'] ?? SendResult::Success,
-            method: 'PUT',
-            endpoint: $trocas['endpoint'] ?? 'http://conecta.invalid/oportunidades/9',
-            payload: ['id' => 9],
-            sentAt: new \DateTime(),
-            durationMs: 42,
-            response: $trocas['response'] ?? '{"id_par_edital":1249}',
-            responseHeaders: ['HTTP/2 200'],
-            httpStatus: $trocas['httpStatus'] ?? 200,
-        );
     }
 
     /**
