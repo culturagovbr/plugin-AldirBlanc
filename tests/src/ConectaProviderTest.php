@@ -9,6 +9,7 @@ use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
+use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
@@ -130,17 +131,33 @@ class ConectaProviderTest extends TestCase
 
     function testCatalogoUsaARotaSemOPrefixoSefic()
     {
+        $limite = ParActionPageLimits::DEFAULT_LIMIT;
         $json = json_encode([
-            'pagination' => ['skip' => 0, 'limit' => 1000, 'total' => 1],
+            'pagination' => ['skip' => 0, 'limit' => $limite, 'total' => 1],
             'data' => [['nome_acao' => '1.1 Fomento Cultural']],
         ]);
 
-        $this->comResposta($json, function (FakeTransport $transporte) {
-            $pagina = (new ConectaProvider($transporte))->listParActions(0, 1000);
+        $this->comResposta($json, function (FakeTransport $transporte) use ($limite) {
+            $pagina = (new ConectaProvider($transporte))->listParActions(0, $limite);
 
-            $this->assertSame(self::HOST . '/par/acoes?skip=0&limit=1000', $transporte->ultimaUrl());
+            $this->assertSame(self::HOST . "/par/acoes?skip=0&limit={$limite}", $transporte->ultimaUrl());
             $this->assertCount(1, $pagina->items);
             $this->assertFalse($pagina->hasMore());
+        });
+    }
+
+    /** A guarda de paginação vale nos dois provedores: trocar a variável não afrouxa a proteção. */
+    function testCatalogoCoageAPaginacaoComoOProvedorDaGestao()
+    {
+        $json = json_encode(['pagination' => [], 'data' => []]);
+
+        $this->comResposta($json, function (FakeTransport $transporte) {
+            (new ConectaProvider($transporte))->listParActions(-10, 50);
+
+            $this->assertSame(
+                self::HOST . '/par/acoes?skip=0&limit=' . ParActionPageLimits::DEFAULT_LIMIT,
+                $transporte->ultimaUrl()
+            );
         });
     }
 
