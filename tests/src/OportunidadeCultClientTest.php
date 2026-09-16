@@ -6,11 +6,16 @@ use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
+use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FakeTransport;
+use Tests\AldirBlanc\Traits\CapturesLog;
 
 class OportunidadeCultClientTest extends TestCase
 {
+    use CapturesLog;
+
     private function setPluginClientConfig(string $key, mixed $value): void
     {
         $plugin = Plugin::getInstance();
@@ -41,5 +46,49 @@ class OportunidadeCultClientTest extends TestCase
         } finally {
             $this->setPluginClientConfig('updateOportunidadeEndpoint', $original);
         }
+    }
+
+    /** Modo real com transporte falso: exercita o PUT sem sair da máquina. */
+    private function comEnvioReal(Transport $transport, callable $exercicio): void
+    {
+        $config = Plugin::getInstance()->config['client'];
+        $originais = [
+            'mode' => $config['mode'] ?? null,
+            'host' => $config['host'] ?? null,
+            'token' => $config['token'] ?? null,
+        ];
+
+        $this->setPluginClientConfig('mode', 'live');
+        $this->setPluginClientConfig('host', 'http://cultbr.invalid');
+        $this->setPluginClientConfig('token', 'token-de-teste');
+
+        try {
+            $exercicio(new OportunidadeCultClient(new OpportunityId(1), $transport));
+        } finally {
+            foreach ($originais as $chave => $valor) {
+                $this->setPluginClientConfig($chave, $valor);
+            }
+        }
+    }
+
+    /** Quem alerta sobre o envio é o job, único a saber se ainda resta tentativa. */
+    function testFalhaDoEnvioRegistraSemDispararAlerta()
+    {
+        $capturado = $this->capturandoLog(function () {
+            $this->comEnvioReal(
+                new FakeTransport(status: 500, body: 'Internal Server Error'),
+                function (OportunidadeCultClient $client) {
+                    try {
+                        $client->update($this->makePayload());
+                        $this->fail('Esperava falha com HTTP 500');
+                    } catch (IntegrationError $e) {
+                        $this->assertSame(500, $e->httpStatus());
+                    }
+                }
+            );
+        });
+
+        $this->assertFalse($capturado->hasCriticalRecords(), 'O alerta do envio é do job');
+        $this->assertTrue($capturado->hasErrorRecords(), 'A falha continua registrada');
     }
 }
