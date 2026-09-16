@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Plugin;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
@@ -80,6 +81,14 @@ class ParAcaoClientTest extends TestCase
             'limit=' . ParAcaoClient::DEFAULT_LIMIT,
             $this->urlPedida(0, intdiv(ParAcaoClient::DEFAULT_LIMIT, 2))
         );
+    }
+
+    /** Os dois conjuntos convivem até a fonte neutra substituir o client; divergir corta a página. */
+    function testFonteNeutraTemOsMesmosLimitesDoClient()
+    {
+        $this->assertSame(ParAcaoClient::DEFAULT_SKIP, ParActionPageLimits::DEFAULT_SKIP);
+        $this->assertSame(ParAcaoClient::DEFAULT_LIMIT, ParActionPageLimits::DEFAULT_LIMIT);
+        $this->assertSame(ParAcaoClient::ALLOWED_LIMITS, ParActionPageLimits::ALLOWED_LIMITS);
     }
 
     /** O catálogo real cabe numa página; um limite fora da lista é trocado pelo default. */
