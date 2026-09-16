@@ -6,6 +6,8 @@ namespace AldirBlanc\Integration;
 final class ParActionPageLimits
 {
     public const DEFAULT_SKIP = 0;
-    public const DEFAULT_LIMIT = 1000;
-    public const ALLOWED_LIMITS = [1000];
+
+    /** Página única: o teto tem folga sobre o catálogo real, que já passou de mil ações e cresce. */
+    public const DEFAULT_LIMIT = 2000;
+    public const ALLOWED_LIMITS = [2000];
 }
