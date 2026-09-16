@@ -4,6 +4,7 @@ namespace AldirBlanc\Integration;
 
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Plugin;
 use MapasCulturais\App;
 
 /** Escolhe a implementação ativa pela configuração, e recusa qualquer coisa que não sirva. */
@@ -62,7 +63,28 @@ final class ProviderResolver
             throw $this->configurationError("classe {$classe} não implementa " . IntegrationProvider::class);
         }
 
+        $this->logIdentification($provider);
+
         return $provider;
+    }
+
+    /**
+     * Uma linha por processo, porque a resolução é memoizada: na virada é o que confirma que
+     * php-fpm e o loop de jobs leram a variável nova, sem depender de olhar a tela.
+     */
+    private function logIdentification(IntegrationProvider $provider): void
+    {
+        $config = Plugin::getInstance()?->config['client'] ?? [];
+        $bucket = $provider->provider() === Provider::Conecta ? ($config['conecta'] ?? []) : $config;
+        $token = (string) ($bucket['token'] ?? '');
+
+        App::i()->log->info(sprintf(
+            '[CultBR] integração ativa | provedor: %s | host: %s | token: %s',
+            $provider->provider()->value,
+            $bucket['host'] ?? '(sem host)',
+            // Só o prefixo: o token inteiro no log vaza credencial para quem lê arquivo de log.
+            $token === '' ? '(sem token)' : substr($token, 0, 6) . '...'
+        ));
     }
 
     /** Valor com barra é nome de classe completo; valor curto precisa ser um provedor conhecido. */
