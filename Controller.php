@@ -302,13 +302,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $cultBrResponse = $this->createParAcaoClient($skip, $limit)->get();
 
             if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
-                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                $this->failParActionsCatalog('resposta sem a chave data', apiRespondeu: true);
                 return;
             }
 
             $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
             if (empty($data)) {
-                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+                $this->failParActionsCatalog('a API respondeu sem nenhuma ação', apiRespondeu: true);
                 return;
             }
 
@@ -323,7 +323,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             // errorJson() encerra lançando Halt; sem relançar, o erro de contrato vira erro de conexão.
             throw $halt;
         } catch (\Throwable $exception) {
-            $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
+            $this->failParActionsCatalog($exception->getMessage(), $this->apiRespondeuAoCatalogo($exception));
             return;
         }
 
@@ -337,6 +337,26 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             ],
             'data' => $normalizedData,
         ]);
+    }
+
+    /** Responde a falha do catálogo deixando no log o motivo, que a mensagem de tela não carrega. */
+    private function failParActionsCatalog(string $motivo, bool $apiRespondeu): void
+    {
+        App::i()->log->error("[CultBR] Não foi possível listar as ações do PAR: {$motivo}");
+
+        if ($apiRespondeu) {
+            $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+            return;
+        }
+
+        $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
+    }
+
+    /** Só o que nunca chegou a ter resposta é indisponibilidade; o resto a API respondeu. */
+    private function apiRespondeuAoCatalogo(\Throwable $exception): bool
+    {
+        return $exception instanceof IntegrationError
+            && $exception->kind() !== IntegrationError::KIND_TRANSPORT;
     }
 
     protected function removeDuplicatedParActions(array $actions): array
