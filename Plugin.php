@@ -72,7 +72,10 @@ class Plugin extends \MapasCulturais\Plugin
         return self::$instance;
     }
 
-    /** Resolvido sob demanda: em _init() o Plugin ainda não é acessível por getInstance(). */
+    /**
+     * Resolvido sob demanda: em _init() o Plugin ainda não é acessível por getInstance().
+     * Cada execução relê a configuração, então trocar o provedor com a fila cheia divide o lote.
+     */
     public function integrationProvider(): IntegrationProvider
     {
         $this->providerResolver ??= new ProviderResolver($this->config['client']['provider'] ?? null);
