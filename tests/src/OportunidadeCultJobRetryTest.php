@@ -9,6 +9,7 @@ use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use MapasCulturais\Entities\Job;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
@@ -20,6 +21,7 @@ use Tests\Traits\UserDirector;
 class OportunidadeCultJobRetryTest extends TestCase
 {
     use UserDirector;
+    use CapturesLog;
     use IsolatesJobQueue;
     use SendsOpportunityThroughJob;
 
@@ -152,6 +154,48 @@ class OportunidadeCultJobRetryTest extends TestCase
         $this->assertCount(OportunidadeCultJob::MAX_ATTEMPTS, $log['attempts']);
         $this->assertEquals(CultBrRequestLog::RESULT_ERROR, $log['status']);
         $this->assertSame(0, $this->retentativasNaFila(), 'O teto encerra a fila');
+    }
+
+    /**
+     * Um 5xx que se resolve na segunda tentativa não deve acordar ninguém, e um que nunca passa
+     * deve alertar uma vez, não três: LOG_HANDLERS pode incluir telegram:CRITICAL.
+     */
+    function testAlertaSaiUmaVezSo_QuandoNaoRestaTentativa()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(function () use ($opp) {
+            $this->comProvedorDuble(
+                $this->falhaDoEnvio(IntegrationError::http('Erro HTTP 500', 500, 'Internal Server Error'), 500),
+                function () use ($opp) {
+                    $this->enqueueUpdateJob($opp);
+                    $this->app->executeJob('2100-01-01 00:00');
+                }
+            );
+        });
+
+        $this->assertFalse(
+            $capturado->hasCriticalRecords(),
+            'Com retentativa pela frente o alerta ainda não se justifica'
+        );
+
+        $capturado = $this->capturandoLog(function () use ($opp) {
+            $this->comProvedorDuble(
+                $this->falhaDoEnvio(IntegrationError::http('Erro HTTP 500', 500, 'Internal Server Error'), 500),
+                function () {
+                    $this->app->executeJob('2100-01-01 00:00');
+                    $this->app->executeJob('2100-01-01 00:00');
+                }
+            );
+        });
+
+        $criticos = array_filter(
+            $capturado->getRecords(),
+            fn($registro) => $registro->level->getName() === 'CRITICAL'
+        );
+
+        $this->assertCount(1, $criticos, 'O envio encerrado alerta uma única vez');
+        $this->assertStringContainsString('envio encerrado', reset($criticos)->message);
     }
 
     /** Recusa nunca foi um desfecho que o envio produzisse: a tela não tem o que exibir. */
