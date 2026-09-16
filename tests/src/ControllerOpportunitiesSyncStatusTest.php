@@ -250,6 +250,26 @@ class ControllerOpportunitiesSyncStatusTest extends TestCase
         );
     }
 
+    /** Com dois destinos possíveis, a tela precisa dizer para qual API o envio foi. */
+    function testUltimoEnvioInformaOProvedorQueOAtendeu()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->logComTentativa(
+            (int) $opportunity->id,
+            CultBrRequestLog::RESULT_SUCCESS,
+            CultBrRequestLogAttempt::RESULT_SUCCESS,
+            Provider::Conecta->value
+        );
+
+        $this->admin();
+        $status = $this->get((string) $opportunity->id);
+
+        $this->assertSame(Provider::Conecta->value, $status[$opportunity->id]['lastSync']['provider']);
+    }
+
     /** Envio substituído por outro é estado do envelope: a tentativa bem-sucedida não o apaga. */
     function testEnvioAbandonadoContinuaAbandonadoNaTela()
     {
@@ -270,6 +290,34 @@ class ControllerOpportunitiesSyncStatusTest extends TestCase
             CultBrRequestLog::RESULT_ABANDONED,
             $status[$opportunity->id]['lastSync']['result']
         );
+    }
+
+    /** Retentativa pode trocar de destino: o que vale para a tela é onde o envio terminou. */
+    function testProvedorExibidoEhODaUltimaTentativa()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $service = new CultBrRequestLogService();
+        $log = $service->startOrResume((int) $opportunity->id, 'update');
+        $service->recordAttempt($log, [
+            'attempt' => 1,
+            'status' => CultBrRequestLogAttempt::RESULT_ERROR,
+            'provider' => Provider::Gestao->value,
+        ]);
+        $service->recordAttempt($log, [
+            'attempt' => 2,
+            'status' => CultBrRequestLogAttempt::RESULT_SUCCESS,
+            'provider' => Provider::Conecta->value,
+        ]);
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->admin();
+        $status = $this->get((string) $opportunity->id);
+
+        $this->assertSame(Provider::Conecta->value, $status[$opportunity->id]['lastSync']['provider']);
+        $this->assertSame(CultBrRequestLog::RESULT_SUCCESS, $status[$opportunity->id]['lastSync']['result']);
     }
 
     function testUltimoEnvioEhOMaisRecenteDaOportunidade()

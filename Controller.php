@@ -243,6 +243,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'reason' => $reason ? i::__($reason->label()) : null,
                 'lastSync' => $lastLog ? [
                     'result' => $lastOutcomes[$id]['result'],
+                    'provider' => $lastOutcomes[$id]['provider'],
                     'date' => $lastLog->createTimestamp?->format(\DateTime::ATOM),
                 ] : null,
             ];

@@ -306,7 +306,7 @@ class CultBrRequestLogService
      * Desfecho de cada envio como a tela deve exibi-lo, indexado pelo id da oportunidade.
      *
      * @param array<int, CultBrRequestLog> $logsByOpportunity
-     * @return array<int, array{result: string}>
+     * @return array<int, array{result: string, provider: ?string}>
      */
     public function lastOutcomeByOpportunity(array $logsByOpportunity): array
     {
@@ -318,6 +318,7 @@ class CultBrRequestLogService
 
             $outcomes[$opportunityId] = [
                 'result' => $this->displayedResult($log, $attempt),
+                'provider' => $attempt?->provider,
             ];
         }
 
