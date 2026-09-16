@@ -228,7 +228,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $opportunityService = new OpportunityService();
         $opportunities = $opportunityService->findOpportunitiesForEligibilityCheck($ids);
-        $lastLogs = (new CultBrRequestLogService())->findLastByOpportunities(array_keys($opportunities));
+
+        $logService = new CultBrRequestLogService();
+        $lastLogs = $logService->findLastByOpportunities(array_keys($opportunities));
+        $lastOutcomes = $logService->lastOutcomeByOpportunity($lastLogs);
 
         $status = [];
         foreach ($opportunities as $id => $opportunity) {
@@ -239,7 +242,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'syncable' => $reason === null,
                 'reason' => $reason ? i::__($reason->label()) : null,
                 'lastSync' => $lastLog ? [
-                    'result' => $lastLog->result,
+                    'result' => $lastOutcomes[$id]['result'],
                     'date' => $lastLog->createTimestamp?->format(\DateTime::ATOM),
                 ] : null,
             ];

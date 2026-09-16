@@ -302,6 +302,60 @@ class CultBrRequestLogService
         ];
     }
 
+    /**
+     * Desfecho de cada envio como a tela deve exibi-lo, indexado pelo id da oportunidade.
+     *
+     * @param array<int, CultBrRequestLog> $logsByOpportunity
+     * @return array<int, array{result: string}>
+     */
+    public function lastOutcomeByOpportunity(array $logsByOpportunity): array
+    {
+        $lastAttempts = $this->findLastAttemptByLog(array_values($logsByOpportunity));
+
+        $outcomes = [];
+        foreach ($logsByOpportunity as $opportunityId => $log) {
+            $attempt = $lastAttempts[$log->id] ?? null;
+
+            $outcomes[$opportunityId] = [
+                'result' => $this->displayedResult($log, $attempt),
+            ];
+        }
+
+        return $outcomes;
+    }
+
+    /**
+     * O envelope não distingue envio simulado de envio aceito pela API, e é ele que a tela lê.
+     * Só essa distinção vem da tentativa: pendente e substituído são estados que só o envelope tem.
+     */
+    private function displayedResult(CultBrRequestLog $log, ?CultBrRequestLogAttempt $lastAttempt): string
+    {
+        if ($log->result === CultBrRequestLog::RESULT_SUCCESS
+            && $lastAttempt?->result === CultBrRequestLogAttempt::RESULT_SIMULATED
+        ) {
+            return CultBrRequestLogAttempt::RESULT_SIMULATED;
+        }
+
+        return $log->result;
+    }
+
+    /**
+     * Última tentativa de cada envio, indexada pelo id do envio.
+     *
+     * @param \AldirBlanc\Entities\CultBrRequestLog[] $logs
+     * @return array<int, CultBrRequestLogAttempt>
+     */
+    private function findLastAttemptByLog(array $logs): array
+    {
+        $last = [];
+
+        foreach ($this->findAttemptsGroupedByLog($logs) as $logId => $attempts) {
+            $last[$logId] = end($attempts);
+        }
+
+        return $last;
+    }
+
     /** Momento em que o envio deixou de estar pendente; nulo enquanto está em curso. */
     private function finishedAt(CultBrRequestLog $log): ?string
     {

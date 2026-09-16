@@ -3,6 +3,8 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Entities\CultBrRequestLog;
+use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\CultBrRequestLogService;
 use Laminas\Diactoros\Response;
@@ -119,6 +121,21 @@ class ControllerOpportunitiesSyncStatusTest extends TestCase
         return $log;
     }
 
+    /** Envio cujo desfecho real (modo e provedor) vive na tentativa, como em produção. */
+    private function logComTentativa(
+        int $opportunityId,
+        string $envelope,
+        string $statusDaTentativa,
+        ?string $provider = null
+    ): CultBrRequestLog {
+        $service = new CultBrRequestLogService();
+        $log = $service->startOrResume($opportunityId, 'update');
+        $service->recordAttempt($log, ['status' => $statusDaTentativa, 'provider' => $provider]);
+        $service->finish($log, $envelope);
+
+        return $log;
+    }
+
     private function admin(): User
     {
         $user = $this->userDirector->createUser([Role::SAAS_SUPER_ADMIN]);
@@ -209,6 +226,50 @@ class ControllerOpportunitiesSyncStatusTest extends TestCase
         $status = $this->get((string) $opportunity->id);
 
         $this->assertNull($status[$opportunity->id]['lastSync']);
+    }
+
+    /** O envelope não distingue simulado de aceito, e era ele que a tela lia: 44 envios que nunca saíram apareciam como sucesso. */
+    function testEnvioSimuladoNaoApareceComoSucesso()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->logComTentativa(
+            (int) $opportunity->id,
+            CultBrRequestLog::RESULT_SUCCESS,
+            CultBrRequestLogAttempt::RESULT_SIMULATED
+        );
+
+        $this->admin();
+        $status = $this->get((string) $opportunity->id);
+
+        $this->assertSame(
+            CultBrRequestLogAttempt::RESULT_SIMULATED,
+            $status[$opportunity->id]['lastSync']['result']
+        );
+    }
+
+    /** Envio substituído por outro é estado do envelope: a tentativa bem-sucedida não o apaga. */
+    function testEnvioAbandonadoContinuaAbandonadoNaTela()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner);
+        $opportunity = $this->opportunity($owner, $subsite);
+
+        $this->logComTentativa(
+            (int) $opportunity->id,
+            CultBrRequestLog::RESULT_ABANDONED,
+            CultBrRequestLogAttempt::RESULT_SUCCESS
+        );
+
+        $this->admin();
+        $status = $this->get((string) $opportunity->id);
+
+        $this->assertSame(
+            CultBrRequestLog::RESULT_ABANDONED,
+            $status[$opportunity->id]['lastSync']['result']
+        );
     }
 
     function testUltimoEnvioEhOMaisRecenteDaOportunidade()
