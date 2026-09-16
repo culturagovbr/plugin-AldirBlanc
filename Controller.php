@@ -12,8 +12,8 @@ use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
-use AldirBlanc\Http\Clients\ParAcaoClient;
 use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
@@ -296,8 +296,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParAcaoClient::DEFAULT_SKIP;
-        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
+        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParActionPageLimits::DEFAULT_SKIP;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParActionPageLimits::DEFAULT_LIMIT;
 
         try {
             $page = $this->integrationProvider()->listParActions($skip, $limit);

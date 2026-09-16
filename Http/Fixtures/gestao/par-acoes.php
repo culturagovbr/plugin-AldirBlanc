@@ -1,9 +1,9 @@
 <?php
 
-use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Integration\ParActionPageLimits;
 
-$skip = $this->skip ?? ParAcaoClient::DEFAULT_SKIP;
-$limit = $this->limit ?? ParAcaoClient::DEFAULT_LIMIT;
+$skip = $this->skip ?? ParActionPageLimits::DEFAULT_SKIP;
+$limit = $this->limit ?? ParActionPageLimits::DEFAULT_LIMIT;
 
 $actions = [
     [

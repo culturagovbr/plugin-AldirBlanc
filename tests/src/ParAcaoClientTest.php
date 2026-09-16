@@ -48,8 +48,8 @@ class ParAcaoClientTest extends TestCase
     function testPaginacaoPedidaViajaNaQueryString()
     {
         $this->assertStringContainsString(
-            'skip=0&limit=' . ParAcaoClient::DEFAULT_LIMIT,
-            $this->urlPedida(0, ParAcaoClient::DEFAULT_LIMIT)
+            'skip=0&limit=' . ParActionPageLimits::DEFAULT_LIMIT,
+            $this->urlPedida(0, ParActionPageLimits::DEFAULT_LIMIT)
         );
     }
 
@@ -61,7 +61,7 @@ class ParAcaoClientTest extends TestCase
     {
         $this->assertGreaterThan(
             self::ACOES_MEDIDAS,
-            ParAcaoClient::DEFAULT_LIMIT,
+            ParActionPageLimits::DEFAULT_LIMIT,
             'O catálogo precisa caber inteiro numa página'
         );
     }
@@ -69,8 +69,8 @@ class ParAcaoClientTest extends TestCase
     function testPedidoAcimaDoTetoEhCoagido()
     {
         $this->assertStringContainsString(
-            'limit=' . ParAcaoClient::DEFAULT_LIMIT,
-            $this->urlPedida(0, ParAcaoClient::DEFAULT_LIMIT * 5)
+            'limit=' . ParActionPageLimits::DEFAULT_LIMIT,
+            $this->urlPedida(0, ParActionPageLimits::DEFAULT_LIMIT * 5)
         );
     }
 
@@ -78,24 +78,16 @@ class ParAcaoClientTest extends TestCase
     function testPedidoAbaixoDoTetoEhCoagido()
     {
         $this->assertStringContainsString(
-            'limit=' . ParAcaoClient::DEFAULT_LIMIT,
-            $this->urlPedida(0, intdiv(ParAcaoClient::DEFAULT_LIMIT, 2))
+            'limit=' . ParActionPageLimits::DEFAULT_LIMIT,
+            $this->urlPedida(0, intdiv(ParActionPageLimits::DEFAULT_LIMIT, 2))
         );
-    }
-
-    /** Os dois conjuntos convivem até a fonte neutra substituir o client; divergir corta a página. */
-    function testFonteNeutraTemOsMesmosLimitesDoClient()
-    {
-        $this->assertSame(ParAcaoClient::DEFAULT_SKIP, ParActionPageLimits::DEFAULT_SKIP);
-        $this->assertSame(ParAcaoClient::DEFAULT_LIMIT, ParActionPageLimits::DEFAULT_LIMIT);
-        $this->assertSame(ParAcaoClient::ALLOWED_LIMITS, ParActionPageLimits::ALLOWED_LIMITS);
     }
 
     /** O catálogo real cabe numa página; um limite fora da lista é trocado pelo default. */
     function testLimiteForaDaListaEhCoagidoParaODefault()
     {
         $this->assertStringContainsString(
-            'limit=' . ParAcaoClient::DEFAULT_LIMIT,
+            'limit=' . ParActionPageLimits::DEFAULT_LIMIT,
             $this->urlPedida(0, 50)
         );
     }
