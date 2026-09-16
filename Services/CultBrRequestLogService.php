@@ -283,6 +283,7 @@ class CultBrRequestLogService
                 'errorMessage' => $attempt->errorMessage,
                 'sentAt' => $attempt->sentAt ? $attempt->sentAt->format(\DateTime::ATOM) : null,
                 'durationMs' => $attempt->durationMs,
+                'provider' => $attempt->provider,
             ];
         }
 
