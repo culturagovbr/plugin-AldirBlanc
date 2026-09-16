@@ -13,6 +13,7 @@ use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Controller;
 
@@ -100,7 +101,7 @@ class OportunidadeCultJob extends JobType
 				$this->recordAttempt($logService, $requestLog, $e->outcome(), $attempt, $e->getMessage());
 			}
 
-			if ($attempt < self::MAX_ATTEMPTS) {
+			if ($attempt < self::MAX_ATTEMPTS && $this->shouldRetry($e)) {
 				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'] ?? 'now';
 				$app->enqueueOrReplaceJob(self::SLUG, [
 					'opportunity' => $opportunity,
@@ -122,6 +123,12 @@ class OportunidadeCultJob extends JobType
 		}
 
 		return true;
+	}
+
+	/** Repete só o que pode mudar de resultado; falha que não sabemos classificar mantém a retentativa. */
+	private function shouldRetry(\Throwable $e): bool
+	{
+		return !$e instanceof IntegrationError || $e->isRetryable();
 	}
 
 	/** Grava a tentativa juntando o desfecho do envio com o que só o job sabe: em que tentativa está. */
