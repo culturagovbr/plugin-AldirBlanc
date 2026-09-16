@@ -95,13 +95,15 @@ class OportunidadeCultJob extends JobType
 
 			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$action} para oportunidade: {$opportunity->id}");
 		} catch (\Throwable $e) {
-			$app->log->error("OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}");
-
 			if ($e instanceof SendFailed) {
 				$this->recordAttempt($logService, $requestLog, $e->outcome(), $attempt, $e->getMessage());
 			}
 
+			$failureMessage = "OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}";
+
 			if ($attempt < self::MAX_ATTEMPTS && $this->shouldRetry($e)) {
+				$app->log->error($failureMessage);
+
 				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'] ?? 'now';
 				$app->enqueueOrReplaceJob(self::SLUG, [
 					'opportunity' => $opportunity,
@@ -109,10 +111,16 @@ class OportunidadeCultJob extends JobType
 					'attempt'     => $attempt + 1,
 					'requestUuid' => $requestLog?->requestUuid,
 				], $delay);
-			} elseif ($requestLog) {
-				// Sem retentativa restante: o envio se encerra em falha.
+
+				return true;
+			}
+
+			$app->log->critical($failureMessage . ' - envio encerrado');
+
+			if ($requestLog) {
 				$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
 			}
+
 			return true;
 		}
 
