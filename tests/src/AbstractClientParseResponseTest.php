@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Exceptions\IntegrationError;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
+use Tests\AldirBlanc\Traits\CapturesLog;
 
 /**
  * Testes de AbstractClient::parseResponse.
@@ -12,6 +13,8 @@ use Tests\AldirBlanc\Doubles\TestableAbstractClient;
  */
 class AbstractClientParseResponseTest extends TestCase
 {
+    use CapturesLog;
+
     private function client(): TestableAbstractClient
     {
         return new TestableAbstractClient();
@@ -361,5 +364,38 @@ class AbstractClientParseResponseTest extends TestCase
             $this->assertSame('endpoint não configurado', $e->getMessage());
             $this->assertSame($original, $e->getPrevious());
         }
+    }
+
+    private function nivelDoAlerta(IntegrationError $erro): \Monolog\Handler\TestHandler
+    {
+        return $this->capturandoLog(function () use ($erro) {
+            try {
+                $this->client()->callHandleError($erro);
+            } catch (IntegrationError) {
+                // handleError sempre relança; aqui interessa só o nível da linha.
+            }
+        });
+    }
+
+    function testRedirecionamentoNaLeituraDisparaAlerta()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 301', 301));
+
+        $this->assertTrue($capturado->hasCriticalRecords(), 'Host mal configurado precisa gritar');
+    }
+
+    function testErroDeClienteNaLeituraNaoDisparaAlerta()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 404', 404));
+
+        $this->assertFalse($capturado->hasCriticalRecords(), 'O alerta não pode alargar para 4xx');
+        $this->assertTrue($capturado->hasErrorRecords());
+    }
+
+    function testErroDoServidorNaLeituraContinuaAlertando()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 500', 500));
+
+        $this->assertTrue($capturado->hasCriticalRecords());
     }
 }

@@ -40,6 +40,7 @@ abstract class AbstractClient
 
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_REDIRECT_MIN = 300;
+    private const HTTP_CLIENT_ERROR_MIN = 400;
     private const NO_RESPONSE_MESSAGE = 'API não retornou resposta';
 
     public function __construct(?Transport $transport = null)
@@ -493,6 +494,14 @@ abstract class AbstractClient
 
         $status = $e->httpStatus();
 
-        return $status === null || $status >= 500;
+        return $status === null || $status >= 500 || $this->isRedirect($status);
+    }
+
+    /** Redirect não é instabilidade da API: é o endereço configurado apontando para outro lugar. */
+    private function isRedirect(?int $status): bool
+    {
+        return $status !== null
+            && $status >= self::HTTP_REDIRECT_MIN
+            && $status < self::HTTP_CLIENT_ERROR_MIN;
     }
 }
