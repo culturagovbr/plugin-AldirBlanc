@@ -377,6 +377,28 @@ class AbstractClientParseResponseTest extends TestCase
         });
     }
 
+    /** Redirect não traz erro de aplicação no corpo: a mensagem precisa apontar a configuração. */
+    function testMensagemDeRedirecionamentoDizOQueConferir()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['location' => 'https://outro']), 301);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertStringContainsString('esquema do host', $e->getMessage());
+            $this->assertStringContainsString('barra final', $e->getMessage());
+        }
+    }
+
+    function testCorpoDoRedirecionamentoNaoSubstituiODiagnostico()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['detail' => 'Moved Permanently']), 307);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertStringContainsString('redirecionamento não seguido', $e->getMessage());
+        }
+    }
+
     function testRedirecionamentoNaLeituraDisparaAlerta()
     {
         $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 301', 301));

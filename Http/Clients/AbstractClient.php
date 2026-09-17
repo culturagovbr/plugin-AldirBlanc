@@ -410,6 +410,11 @@ abstract class AbstractClient
      */
     private function httpErrorMessage(mixed $decoded, int $httpCode, ?string $curlErrorMessage): string
     {
+        if ($this->isRedirect($httpCode)) {
+            return "Erro HTTP {$httpCode} — redirecionamento não seguido;"
+                . ' confira o esquema do host e a barra final do endpoint';
+        }
+
         if (is_array($decoded)) {
             $detail = $decoded['detail'] ?? null;
 
