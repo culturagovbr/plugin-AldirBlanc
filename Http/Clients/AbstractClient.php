@@ -47,7 +47,7 @@ abstract class AbstractClient
         $config = $this->getClientConfig();
 
         if (empty($config)) {
-            throw new \Exception('Configuração do cliente não encontrada');
+            throw $this->configurationError($this->envName('*'), 'nenhuma variável do provedor está definida');
         }
 
         $this->mode = (string) ($config['mode'] ?? '');

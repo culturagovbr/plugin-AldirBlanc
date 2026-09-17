@@ -114,4 +114,26 @@ class ClientConfigGuardTest extends TestCase
 
         $this->assertSame('pessoa/12345678901/entes', $endpoint);
     }
+
+    /** Bucket inteiro ausente é erro de configuração, não exceção genérica que o job retentaria. */
+    function testBucketDeConfiguracaoAusenteFalhaComoErroDeConfiguracao()
+    {
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client'] = [];
+
+                return $config;
+            },
+            function () {
+                try {
+                    new TestableAbstractClient();
+                    $this->fail('Esperava falha por configuração ausente');
+                } catch (IntegrationError $e) {
+                    $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
+                    $this->assertFalse($e->isRetryable(), 'Configuração ausente não muda com retentativa');
+                    $this->assertStringContainsString('PNAB_CULTBR_*', $e->getMessage());
+                }
+            }
+        );
+    }
 }
