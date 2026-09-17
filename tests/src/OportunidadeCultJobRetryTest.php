@@ -7,6 +7,7 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use AldirBlanc\Plugin;
 use MapasCulturais\Entities\Job;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\CapturesLog;
@@ -205,5 +206,33 @@ class OportunidadeCultJobRetryTest extends TestCase
             ['success', 'error', 'simulated'],
             array_map(fn(SendResult $result) => $result->value, SendResult::cases())
         );
+    }
+
+    /** Provedor sem configuração nenhuma não melhora na tentativa seguinte: encerra sem voltar à fila. */
+    function testConfiguracaoAusenteEncerraSemRetentativa()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+        $plugin = Plugin::getInstance();
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['provider'] = 'conecta';
+                unset($config['client']['conecta']);
+
+                return $config;
+            },
+            function () use ($opp, $plugin) {
+                $plugin->resetIntegrationProvider();
+
+                try {
+                    $this->enqueueUpdateJob($opp);
+                    $this->processJobs(number_of_jobs: 1);
+                } finally {
+                    $plugin->resetIntegrationProvider();
+                }
+            }
+        );
+
+        $this->assertSame(0, $this->retentativasNaFila(), 'Configuração ausente não muda de resultado');
     }
 }
