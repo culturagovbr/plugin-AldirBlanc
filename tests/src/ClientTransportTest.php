@@ -161,6 +161,21 @@ class ClientTransportTest extends TestCase
         }
     }
 
+    /** O recorte da Conecta vale pelo que repete: sem nome repetido, o dedupe do catálogo nunca é exercitado. */
+    function testFixtureDoCatalogoDaConectaPreservaNomesRepetidos()
+    {
+        $this->comCredencialNosDoisProvedores(function () {
+            $catalogo = (new CatalogoConecta())->get();
+            $nomes = array_column($catalogo['data'], 'nome_acao');
+
+            $this->assertGreaterThan(
+                count(array_unique($nomes)),
+                count($nomes),
+                'a fixture precisa trazer ao menos um nome que se repete',
+            );
+        });
+    }
+
     /** Duas implementações de mesmo nome curto em provedores distintos apontam para fixtures distintas. */
     function testClientsHomonimosNaoCompartilhamFixture()
     {
