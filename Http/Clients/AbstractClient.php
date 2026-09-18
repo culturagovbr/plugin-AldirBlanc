@@ -3,6 +3,7 @@
 namespace AldirBlanc\Http\Clients;
 
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Enum\Mode;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\CurlTransport;
 use AldirBlanc\Http\Transport\Transport;
@@ -18,7 +19,7 @@ abstract class AbstractClient
     /** @var string placeholder para substituir no endpoint */
     protected string $parameter;
 
-    private string $mode;
+    private Mode $mode;
 
     private string $host;
     private string $token;
@@ -54,7 +55,7 @@ abstract class AbstractClient
             throw $this->configurationError($this->envName('*'), 'nenhuma variável do provedor está definida');
         }
 
-        $this->mode = (string) ($this->clientConfig()['mode'] ?? '');
+        $this->mode = $this->resolveMode();
         $this->host = rtrim($this->requiredConfig($config, 'host', $this->envName('HOST')), '/');
         $this->token = $this->requiredConfig($config, 'token', $this->envName('TOKEN'));
         $this->parameter = self::PARAMETER_DEFAULT;
@@ -82,7 +83,16 @@ abstract class AbstractClient
 
     private function isDevelopmentMode(): bool
     {
-        return $this->mode === 'development';
+        return $this->mode === Mode::Development;
+    }
+
+    /** Sem lista fechada, qualquer valor diferente de "development" significaria modo real por acidente. */
+    private function resolveMode(): Mode
+    {
+        $declarado = trim((string) ($this->clientConfig()['mode'] ?? ''));
+
+        return Mode::tryFrom($declarado)
+            ?? throw $this->configurationError($this->envName('MODE'), 'valores aceitos: ' . implode(', ', Mode::valores()));
     }
 
     /**

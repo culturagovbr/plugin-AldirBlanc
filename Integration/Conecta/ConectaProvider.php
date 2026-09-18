@@ -10,6 +10,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Enum\Mode;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\Transport;
@@ -90,6 +91,6 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
 
     private function isSimulated(): bool
     {
-        return (Plugin::getInstance()->config['client']['mode'] ?? '') === 'development';
+        return Mode::tryFrom((string) (Plugin::getInstance()->config['client']['mode'] ?? '')) === Mode::Development;
     }
 }
