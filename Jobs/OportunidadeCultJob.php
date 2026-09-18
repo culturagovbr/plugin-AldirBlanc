@@ -104,7 +104,7 @@ class OportunidadeCultJob extends JobType
 			if ($attempt < self::MAX_ATTEMPTS && $this->shouldRetry($e)) {
 				$app->log->error($failureMessage);
 
-				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'] ?? 'now';
+				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'];
 				$app->enqueueOrReplaceJob(self::SLUG, [
 					'opportunity' => $opportunity,
 					'action'      => $action,

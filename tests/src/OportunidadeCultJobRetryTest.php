@@ -235,4 +235,15 @@ class OportunidadeCultJobRetryTest extends TestCase
 
         $this->assertSame(0, $this->retentativasNaFila(), 'Configuração ausente não muda de resultado');
     }
+
+    /** `enqueueOrReplaceJob` recebe string não-nulável: delay vazio é TypeError, não atraso. */
+    function testAConfiguracaoEntregaDelayUtilizavelParaOEnfileiramento()
+    {
+        $integracao = Plugin::getInstance()->config['integration'];
+
+        foreach (['delayJob', 'retryDelayJob'] as $chave) {
+            $this->assertIsString($integracao[$chave], "{$chave} precisa ser string");
+            $this->assertNotSame('', trim($integracao[$chave]), "{$chave} não pode chegar vazio");
+        }
+    }
 }

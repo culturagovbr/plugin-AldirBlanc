@@ -10,8 +10,9 @@ services:
       # nunca usados de fato. Os endpoints não vêm daqui: são fato sobre cada API, fixos no plugin.
       - PNAB_CULTBR_HOST=http://cultbr.invalid
       - PNAB_CULTBR_TOKEN=fake-token-de-teste
-      # Delay de retry nulo causaria TypeError em enqueueOrReplaceJob (string typed, nullable config).
-      # 'now' enfileira o retry imediatamente, permitindo testar o mecanismo sem aguardar intervalo.
+      # Os dois delays são declarados para a suíte não herdar o espaçamento de produção:
+      # 'now' enfileira imediatamente, permitindo drenar a fila no mesmo teste.
+      - ALDIRBLANC_INTEGRATION_DELAY_JOB=now
       - ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now
       # TTL=0 expira itens de cache imediatamente em algumas implementações (Symfony Cache).
       # 3600 s garante que os itens de tentativa (attempt counter) persistam durante a execução dos testes.

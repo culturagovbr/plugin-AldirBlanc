@@ -55,8 +55,8 @@ class Plugin extends \MapasCulturais\Plugin
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
                 // Zero desabilita o cache, e é intencional: não trocar por um TTL sem decisão.
                 'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 0),
-                'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
-                'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
+                'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', '+10 seconds'),
+                'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', '+15 seconds'),
             ]
         ];
 
