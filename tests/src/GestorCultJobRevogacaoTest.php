@@ -95,7 +95,8 @@ class GestorCultJobRevogacaoTest extends TestCase
             $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
             'as relações não podiam ter sido apagadas',
         );
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     /** Corpo `null` num 200 chegava ao gate como "este gestor não tem ente nenhum". */
