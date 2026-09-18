@@ -29,33 +29,20 @@ Para uma análise detalhada do fluxo completo (casos de uso, sequência passo a 
 
 ## Configuração (variáveis de ambiente)
 
-### Primeira fase — Gestor/Entes Federados
+**Seis precisam ser declaradas.** O que não aparece aqui é fato sobre a API — os caminhos de cada operação, por exemplo — e vive no `Plugin.php`, declarado por provedor.
 
 | Variável | Uso |
 |---|---|
-| `PNAB_CULTBR_MODE` | `development` (usa fixtures em `Http/Fixtures/`, sem rede real) ou qualquer outro valor para produção. Default: `development` |
-| `PNAB_CULTBR_HOST` | Host base da API CultBR (usado por todos os clients) |
-| `PNAB_CULTBR_TOKEN` | Bearer token estático usado em todas as requisições aos clients |
-| `PNAB_CULTBR_SEFIC_ENDPOINT` | Prefixo de endpoint do SEFIC (usado por `GestorClient`) |
-| `PNAB_CULTBR_GESTOR_ENDPOINT` | Endpoint de dados do gestor (`{document}` é substituído) |
+| `PNAB_CULTBR_PROVIDER` | Qual API atende: `gestao` ou `conecta`. **Sem default** — ausente, a resolução falha nomeando os valores aceitos e o login do gestor não completa |
+| `PNAB_CULTBR_MODE` | `live` ou `development`. Em `development` os clients devolvem fixture, sem tocar a rede. Default: `live`, para que ambiente mal configurado falhe em vez de simular em silêncio. Valor fora da lista falha nomeando os aceitos |
+| `PNAB_CULTBR_HOST` | Host base da API ativa |
+| `PNAB_CULTBR_TOKEN` | Bearer token, enviado em todas as requisições |
+| `ALDIRBLANC_SUBSITE_ID` | Subsite onde a integração está habilitada |
+| `ALDIRBLANC_APPLICATION_NAME` | Nome do `UserApp` que autoriza o endpoint inbound |
 
-### Segunda fase — Envio de oportunidades
+Os atrasos de enfileiramento (`ALDIRBLANC_INTEGRATION_DELAY_JOB` e `ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB`) e o TTL de cache (`ALDIRBLANC_INTEGRATION_CACHE_TTL`) têm valor declarado no `Plugin.php`; defini-los no ambiente só serve para sobrescrever. O TTL é zero por decisão — o cache está desabilitado.
 
-| Variável | Uso |
-|---|---|
-| `PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT` | Endpoint de envio (PUT/upsert) de oportunidade, `{id}` substituído (`OportunidadeCultClient::update()`) |
-| `ALDIRBLANC_SUBSITE_ID` | Subsite onde a integração de oportunidades está habilitada (`Controller`, endpoint inbound, e `IntegrationTokenHelper`) |
-| `ALDIRBLANC_APPLICATION_NAME` | Nome da aplicação registrada para o token de integração inbound ("Meus Aplicativos") — usada por `IntegrationTokenHelper` |
-| `ALDIRBLANC_INTEGRATION_CACHE_TTL` | TTL de cache, usado em três pontos: cache da resposta do endpoint inbound (`Controller::API_integrationOpportunities`), cache do `IntegrationTokenHelper`, e TTL do cache de tentativas de retry do `OportunidadeCultJob` |
-| ~~`ALDIRBLANC_INTEGRATION_MAX_REQUESTS_PER_DAY`~~ | **Não utilizada** — sobra da feature de rate limit diário do Gestor Sync, removida (`ab6a861`). Zero referências no código. Mantida comentada no `.env`. |
-| `ALDIRBLANC_INTEGRATION_DELAY_JOB` | Delay antes de enfileirar o `update` ao ativar uma oportunidade — lida **diretamente via `env()` em `Theme.php` do Pnab**, não pelo canal que o `Plugin.php` registra para ela (`config['integration']['delayJob']`, que por sua vez nunca é lido — redundância de "encanamento", não variável morta) |
-| `ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB` | Delay entre tentativas de retry do `OportunidadeCultJob` |
-
-### Dados do PAR
-
-| Variável | Uso |
-|---|---|
-| `PNAB_CULTBR_PAR_ACOES_ENDPOINT` | Endpoint de listagem de ações do PAR (`ParAcaoClient`) |
+**Trocar de API é trocar três valores:** `PROVIDER`, `HOST` e `TOKEN`.
 
 ## Como rodar os testes
 
@@ -90,7 +77,9 @@ Por que o tema Pnab é sempre habilitado junto: alguns comportamentos (hooks de 
 
 ### Modo `development` (fixtures)
 
-Com `PNAB_CULTBR_MODE=development` (o default quando a variável não está definida), os clients HTTP (`AbstractClient::get()`) retornam o conteúdo de `Http/Fixtures/<NomeDoClient>Fixture.php` em vez de fazer uma requisição real — é assim que os testes (e o ambiente de desenvolvimento local) simulam a API CultBR sem rede.
+Com `PNAB_CULTBR_MODE=development`, os clients HTTP devolvem o conteúdo da fixture que cada um declara na constante `FIXTURE`, em vez de fazer requisição real — é assim que os testes simulam a API sem rede. O layout é `Http/Fixtures/<provedor>/<operação>.php`, como `gestao/gestor.php` e `conecta/entes.php`.
+
+O default é `live`: sem a variável, a integração fala com a API de verdade.
 
 ### Testes existentes (`tests/src/`)
 
