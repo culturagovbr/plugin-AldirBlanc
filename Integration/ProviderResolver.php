@@ -45,7 +45,7 @@ final class ProviderResolver
 
     private function build(): IntegrationProvider
     {
-        $declarado = trim((string) $this->configured);
+        $declarado = is_string($this->configured) ? trim($this->configured) : '';
 
         if ($declarado === '') {
             throw $this->configurationError('sem valor — declare ' . $this->aceitos());
@@ -104,7 +104,7 @@ final class ProviderResolver
             return $declarado;
         }
 
-        $provider = Provider::tryFrom($declarado);
+        $provider = Provider::tryFrom(mb_strtolower($declarado));
 
         if ($provider === null) {
             throw $this->configurationError("valor {$declarado} desconhecido — use " . $this->aceitos());
