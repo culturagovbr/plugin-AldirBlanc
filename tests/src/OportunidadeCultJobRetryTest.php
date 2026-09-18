@@ -217,7 +217,7 @@ class OportunidadeCultJobRetryTest extends TestCase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['provider'] = 'conecta';
-                unset($config['client']['conecta']);
+                unset($config['client']['providers']['conecta']);
 
                 return $config;
             },

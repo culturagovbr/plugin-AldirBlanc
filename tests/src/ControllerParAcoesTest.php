@@ -56,14 +56,14 @@ class ControllerParAcoesTest extends TestCase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['mode'] = 'live';
-                $config['client']['host'] = self::HOST;
-                $config['client']['token'] = 'token-de-teste';
-                $config['client']['conecta'] = [
+                $config['client']['providers']['gestao']['host'] = self::HOST;
+                $config['client']['providers']['gestao']['token'] = 'token-de-teste';
+                $config['client']['providers']['conecta'] = [
                     'mode' => 'live',
                     'host' => self::HOST,
                     'token' => 'token-de-teste',
                     'parAcoesEndpoint' => 'par/acoes',
-                ] + ($config['client']['conecta'] ?? []);
+                ] + ($config['client']['providers']['conecta'] ?? []);
 
                 return $config;
             },
@@ -323,7 +323,7 @@ class ControllerParAcoesTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['client']['parAcoesEndpoint'] = '';
+                $config['client']['providers']['gestao']['parAcoesEndpoint'] = '';
 
                 return $config;
             },

@@ -65,7 +65,10 @@ trait SendsOpportunityThroughJob
         $this->comConfigDoPlugin(
             function (array $config) use ($valor) {
                 $config['client']['provider'] = $valor;
-                $config['client']['conecta'] = self::CONFIG_CONECTA;
+
+                // O modo vale para a integração inteira, não para um provedor.
+                $config['client']['mode'] = self::CONFIG_CONECTA['mode'];
+                $config['client']['providers']['conecta'] = self::CONFIG_CONECTA;
 
                 return $config;
             },

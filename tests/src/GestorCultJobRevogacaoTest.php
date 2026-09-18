@@ -32,7 +32,7 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['mode'] = 'live';
-                $config['client']['host'] = self::HOST;
+                $config['client']['providers']['gestao']['host'] = self::HOST;
 
                 return $config;
             },

@@ -28,11 +28,7 @@ class GestaoProviderTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) use ($trocas) {
-                foreach ($trocas as $chave => $valor) {
-                    $config['client'][$chave] = $valor;
-                }
-
-                return $config;
+                return $this->comValoresDoCliente($config, $trocas);
             },
             $exercicio
         );

@@ -75,7 +75,7 @@ final class ProviderResolver
     private function logIdentification(IntegrationProvider $provider): void
     {
         $config = Plugin::getInstance()?->config['client'] ?? [];
-        $bucket = $provider->provider() === Provider::Conecta ? ($config['conecta'] ?? []) : $config;
+        $bucket = $config['providers'][$provider->provider()->value] ?? [];
         $token = (string) ($bucket['token'] ?? '');
 
         App::i()->log->info(sprintf(

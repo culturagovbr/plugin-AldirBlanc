@@ -27,11 +27,7 @@ class ClientTransportTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) use ($valores) {
-                foreach ($valores as $chave => $valor) {
-                    $config['client'][$chave] = $valor;
-                }
-
-                return $config;
+                return $this->comValoresDoCliente($config, $valores);
             },
             $exercicio
         );

@@ -9,6 +9,8 @@ use AldirBlanc\Integration\OpportunitySender;
 
 class OportunidadeCultClient extends AbstractClient implements OpportunitySender
 {
+    protected const PROVIDER = 'gestao';
+
     /** @var string id da oportunidade (usado como {id} no endpoint de update no AbstractClient) */
     protected string $document;
 

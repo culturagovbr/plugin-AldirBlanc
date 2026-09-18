@@ -38,6 +38,9 @@ abstract class AbstractClient
     /** Caminho da fixture, relativo a Http/Fixtures. Declarado por client para não colidir entre provedores. */
     protected const FIXTURE = '';
 
+    /** A qual provedor o client pertence; é o que decide de qual bucket ele lê a configuração. */
+    protected const PROVIDER = '';
+
     private const PARAMETER_DEFAULT = '{document}';
     private const HTTP_REDIRECT_MIN = 300;
     private const HTTP_CLIENT_ERROR_MIN = 400;
@@ -51,7 +54,7 @@ abstract class AbstractClient
             throw $this->configurationError($this->envName('*'), 'nenhuma variável do provedor está definida');
         }
 
-        $this->mode = (string) ($config['mode'] ?? '');
+        $this->mode = (string) ($this->clientConfig()['mode'] ?? '');
         $this->host = rtrim($this->requiredConfig($config, 'host', $this->envName('HOST')), '/');
         $this->token = $this->requiredConfig($config, 'token', $this->envName('TOKEN'));
         $this->parameter = self::PARAMETER_DEFAULT;
@@ -254,8 +257,13 @@ abstract class AbstractClient
         return 'PNAB_CULTBR_' . $sufixo;
     }
 
-    /** Sobrescrevível: cada provedor pode ler o próprio bucket de configuração. */
     protected function getClientConfig(): array
+    {
+        return $this->clientConfig()['providers'][static::PROVIDER] ?? [];
+    }
+
+    /** O modo vale para a integração inteira: ou os dois provedores simulam, ou nenhum simula. */
+    private function clientConfig(): array
     {
         return Plugin::getInstance()->config['client'] ?? [];
     }

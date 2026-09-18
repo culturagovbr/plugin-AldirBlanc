@@ -34,6 +34,20 @@ trait ConfiguresPlugin
         }
     }
 
+    /** `provider` e `mode` valem para a integração inteira; o resto pertence ao bucket de um provedor. */
+    protected function comValoresDoCliente(array $config, array $valores, string $provedor = 'gestao'): array
+    {
+        foreach ($valores as $chave => $valor) {
+            if (in_array($chave, ['provider', 'mode'], true)) {
+                $config['client'][$chave] = $valor;
+            } else {
+                $config['client']['providers'][$provedor][$chave] = $valor;
+            }
+        }
+
+        return $config;
+    }
+
     private static function propriedadeDeConfig(): \ReflectionProperty
     {
         $propriedade = new \ReflectionProperty(Plugin::getInstance(), '_config');

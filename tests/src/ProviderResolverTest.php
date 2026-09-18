@@ -190,7 +190,7 @@ class ProviderResolverTest extends TestCase
         $capturado = $this->capturandoLog(function () use ($segredo) {
             $this->comConfigDoPlugin(
                 function (array $config) use ($segredo) {
-                    $config['client']['token'] = $segredo;
+                    $config['client']['providers']['gestao']['token'] = $segredo;
 
                     return $config;
                 },

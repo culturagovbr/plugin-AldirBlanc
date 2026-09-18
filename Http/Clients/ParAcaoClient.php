@@ -8,6 +8,7 @@ use AldirBlanc\Integration\ParActionPageLimits;
 class ParAcaoClient extends AbstractClient
 {
     protected const FIXTURE = 'gestao/par-acoes.php';
+    protected const PROVIDER = 'gestao';
 
     protected string $document;
 

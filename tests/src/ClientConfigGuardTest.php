@@ -22,8 +22,7 @@ class ClientConfigGuardTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) use ($chave, $valor) {
-                $config['client'][$chave] = $valor;
-                return $config;
+                return $this->comValoresDoCliente($config, [$chave => $valor]);
             },
             $exercicio
         );

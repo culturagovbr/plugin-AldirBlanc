@@ -28,8 +28,8 @@ class ParAcaoClientTest extends TestCase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['mode'] = 'live';
-                $config['client']['host'] = self::HOST;
-                $config['client']['token'] = 'token-de-teste';
+                $config['client']['providers']['gestao']['host'] = self::HOST;
+                $config['client']['providers']['gestao']['token'] = 'token-de-teste';
 
                 return $config;
             },

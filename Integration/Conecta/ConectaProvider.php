@@ -90,6 +90,6 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
 
     private function isSimulated(): bool
     {
-        return (Plugin::getInstance()->config['client']['conecta']['mode'] ?? '') === 'development';
+        return (Plugin::getInstance()->config['client']['mode'] ?? '') === 'development';
     }
 }

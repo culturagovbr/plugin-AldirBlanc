@@ -37,7 +37,12 @@ class ConectaProviderTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) use ($trocas) {
-                $config['client']['conecta'] = $trocas + self::CONFIG_BASE;
+                $bucket = $trocas + self::CONFIG_BASE;
+
+                // O modo vale para a integração inteira, não para um provedor.
+                $config['client']['mode'] = $bucket['mode'];
+                unset($bucket['mode']);
+                $config['client']['providers']['conecta'] = $bucket;
 
                 return $config;
             },

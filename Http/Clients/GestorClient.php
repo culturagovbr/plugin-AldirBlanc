@@ -8,6 +8,7 @@ use AldirBlanc\Http\Transport\Transport;
 class GestorClient extends AbstractClient
 {
     protected const FIXTURE = 'gestao/gestor.php';
+    protected const PROVIDER = 'gestao';
 
     protected string $document;
 

@@ -23,8 +23,7 @@ class OportunidadeCultClientTest extends TestCase
     private function setPluginClientConfig(string $key, mixed $value): void
     {
         $config = $this->leConfigDoPlugin();
-        $config['client'][$key] = $value;
-        $this->escreveConfigDoPlugin($config);
+        $this->escreveConfigDoPlugin($this->comValoresDoCliente($config, [$key => $value]));
     }
 
     private function makePayload(): OpportunityDto
@@ -34,7 +33,7 @@ class OportunidadeCultClientTest extends TestCase
 
     function testUpdateFalhaComoErroDeConfiguracaoQuandoEndpointNaoConfigurado()
     {
-        $original = Plugin::getInstance()->config['client']['updateOportunidadeEndpoint'];
+        $original = Plugin::getInstance()->config['client']['providers']['gestao']['updateOportunidadeEndpoint'];
         $client = new OportunidadeCultClient(new OpportunityId(1));
         $this->setPluginClientConfig('updateOportunidadeEndpoint', null);
 
@@ -53,10 +52,11 @@ class OportunidadeCultClientTest extends TestCase
     private function comEnvioReal(Transport $transport, callable $exercicio): void
     {
         $config = Plugin::getInstance()->config['client'];
+        $bucket = $config['providers']['gestao'] ?? [];
         $originais = [
             'mode' => $config['mode'] ?? null,
-            'host' => $config['host'] ?? null,
-            'token' => $config['token'] ?? null,
+            'host' => $bucket['host'] ?? null,
+            'token' => $bucket['token'] ?? null,
         ];
 
         $this->setPluginClientConfig('mode', 'live');

@@ -11,6 +11,8 @@ use AldirBlanc\Http\Transport\Transport;
  */
 class TestableAbstractClient extends AbstractClient
 {
+    protected const PROVIDER = 'gestao';
+
     public function __construct(?Transport $transport = null)
     {
         parent::__construct($transport);
