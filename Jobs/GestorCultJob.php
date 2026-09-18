@@ -7,6 +7,7 @@ use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Dtos\FederativeEntitySnapshot;
@@ -18,7 +19,7 @@ use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
-    public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
+    public const API_UNAVAILABLE_MESSAGE = SyncFailure::MENSAGEM_API_INDISPONIVEL;
     private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
@@ -86,17 +87,12 @@ class GestorCultJob
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
-            // Dispara alerta para Telegram
-            $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            
-            // Qualquer erro da API é tratado como indisponibilidade
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-            
+            $app->log->error("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Marca como concluído com erro para não travar a tela
             $_SESSION['gestor_cult_sync_completed'] = true;
-            
-            // Re-lança a exceção para ser capturada pelo try/catch externo
+
+            // Quem classifica a causa é o controller, que conhece os dois lados da exceção.
             throw $e;
         }
 
@@ -150,15 +146,12 @@ class GestorCultJob
             $_SESSION['gestor_cult_sync_completed'] = true;
             $app->log->info("[Gestores CultBR] Sync concluído com sucesso | Usuário ID: {$userId} | Agente ID: {$agent->id} | Entes federados associados: " . count($federativeEntities));
         } catch (\Throwable $e) {
-            // Dispara alerta para Telegram
-            $app->log->critical("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            
-            // Em caso de erro ao associar entes federados, trata como indisponibilidade da API
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-            
+            $app->log->error("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Marca como concluído com erro
             $_SESSION['gestor_cult_sync_completed'] = true;
+
+            throw $e;
         }
     }
 

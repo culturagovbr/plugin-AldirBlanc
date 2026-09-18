@@ -455,26 +455,22 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         } catch (\Throwable $e) {
             $falha = $this->syncFailureFor($e);
 
-            // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
-            // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
-            if (!isset($_SESSION['gestor_cult_sync_error'])) {
-                $userId = $app->user->id ?? 'N/A';
-                $app->log->critical("[Gestores CultBR] Erro ao iniciar sincronização | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            }
-            
+            $mensagem = $falha->message();
+            $userId = $app->user->id ?? 'N/A';
+
+            // Único alerta da falha: o job registra o contexto, mas não sabe classificar a causa.
+            $app->log->critical("[Gestores CultBR] Sincronização falhou ({$falha->value}) | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Em caso de erro, marca como concluído para não travar
             $_SESSION['gestor_cult_sync_completed'] = true;
-            
-            if (!isset($_SESSION['gestor_cult_sync_error'])) {
-                $_SESSION['gestor_cult_sync_error'] = $falha->value;
-                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
-            }
+            $_SESSION['gestor_cult_sync_error'] = $falha->value;
+            $_SESSION['gestor_cult_sync_error_message'] = $mensagem;
 
             $this->json([
                 'started' => false,
                 'error' => true,
                 'retryable' => $falha->isRetryable(),
-                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                'errorMessage' => $mensagem,
             ]);
             return;
         }
@@ -484,13 +480,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
-     * Classifica a falha para a sessão e para o log. O gestor vê sempre o mesmo texto — ele não
-     * pode agir sobre nenhuma dessas causas —, mas só espera e tenta de novo quando faz sentido.
+     * Classifica a falha para a sessão, para o log e para o texto da tela. O gestor não pode agir
+     * sobre nenhuma dessas causas, mas só espera e tenta de novo quando faz sentido.
      */
     protected function syncFailureFor(\Throwable $e): SyncFailure
     {
         if ($e instanceof IntegrationError && $e->kind() === IntegrationError::KIND_CONFIGURATION) {
             return SyncFailure::ConfigurationError;
+        }
+
+        // As duas APIs divergem aqui: credencial recusada é 403 na Gestão e 401 na Conecta.
+        if ($e instanceof IntegrationError && in_array($e->httpStatus(), [401, 403], true)) {
+            return SyncFailure::CredentialRefused;
         }
 
         $foraDoContrato = $e instanceof \UnexpectedValueException
