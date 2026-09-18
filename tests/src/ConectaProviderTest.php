@@ -128,6 +128,34 @@ class ConectaProviderTest extends TestCase
         });
     }
 
+    /** A captura real da homologação precisa estar sob teste, não só guardada. */
+    function testSnapshotEmModoSimuladoVemDaCapturaRealDaHomologacao()
+    {
+        $this->comConfig(['mode' => 'development'], function () {
+            $snapshot = (new ConectaProvider())->fetchManager(new GestorDocument(self::DOCUMENTO));
+
+            $documentos = array_map(fn($ente) => $ente->document, $snapshot->entities());
+
+            $this->assertCount(17, $documentos, 'vinte e um entes colapsam em dezessete documentos');
+            $this->assertSame(count($documentos), count(array_unique($documentos)), 'nenhum documento sobrevive duas vezes');
+
+            $comArvore = array_filter($snapshot->entities(), fn($ente) => $ente->hasParData());
+            $this->assertCount(1, $comArvore, 'a homologação devolvia um ente com árvore em 18/09');
+        });
+    }
+
+    /** Os campos da pessoa vêm nulos por neutralização; presente-e-nulo não pode virar ausente. */
+    function testCampoPresenteENuloNaCapturaNaoViraCampoAusente()
+    {
+        $this->comConfig(['mode' => 'development'], function () {
+            $snapshot = (new ConectaProvider())->fetchManager(new GestorDocument(self::DOCUMENTO));
+
+            $this->assertTrue($snapshot->hasCellphone(), 'a chave existe na resposta');
+            $this->assertNull($snapshot->cellphone(), 'e o valor dela é nulo');
+            $this->assertNotEmpty($snapshot->entities(), 'nada disso pode derrubar o restante do snapshot');
+        });
+    }
+
     function testCatalogoUsaARotaSemOPrefixoSefic()
     {
         $limite = ParActionPageLimits::DEFAULT_LIMIT;
