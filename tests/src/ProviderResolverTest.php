@@ -10,6 +10,7 @@ use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Doubles\NotAProvider;
+use Tests\AldirBlanc\Doubles\ProviderAbstrato;
 
 /** Quem atende a integração é decidido por configuração, e valor ruim falha alto. */
 class ProviderResolverTest extends TestCase
@@ -93,9 +94,88 @@ class ProviderResolverTest extends TestCase
     /** Classe que existe mas não cumpre o contrato não pode ser devolvida como se cumprisse. */
     function testClasseQueNaoImplementaOContratoEhRecusada()
     {
+        NotAProvider::$construcoes = 0;
+
         $this->esperaFalhaDeConfiguracao(
             fn() => $this->resolverCom(NotAProvider::class)->resolve(),
             'não implementa',
+        );
+
+        $this->assertSame(0, NotAProvider::$construcoes, 'o contrato é conferido antes de construir');
+    }
+
+    /** Classe abstrata passa no contrato e estoura no `new`; isso não é API fora do ar. */
+    function testClasseQueNaoPodeSerConstruidaViraErroDeConfiguracao()
+    {
+        $this->esperaFalhaDeConfiguracao(
+            fn() => $this->resolverCom(ProviderAbstrato::class)->resolve(),
+            'não pôde ser construída',
+        );
+    }
+
+    /** Falha de construção também é memoizada: num lote de envios seria um alerta por item. */
+    function testFalhaDeConstrucaoEhMemoizadaEAlertaUmaVezSo()
+    {
+        $resolver = $this->resolverCom(ProviderAbstrato::class);
+
+        $capturado = $this->capturandoLog(function () use ($resolver) {
+            for ($i = 0; $i < 3; $i++) {
+                try {
+                    $resolver->resolve();
+                } catch (IntegrationError) {
+                }
+            }
+        });
+
+        $criticos = array_filter(
+            $capturado->getRecords(),
+            fn($registro) => $registro['level_name'] === 'CRITICAL',
+        );
+
+        $this->assertCount(1, $criticos, 'três tentativas, um alerta');
+    }
+
+    /** Modo inválido impede a integração inteira; sumir sem alerta foi o que este teste trava. */
+    function testModoInvalidoFalhaComAlerta()
+    {
+        $config = $this->leConfigDoPlugin();
+        $original = $config['client']['mode'] ?? null;
+        $this->escreveConfigDoPlugin($this->comValoresDoCliente($config, ['mode' => 'quase-live']));
+
+        try {
+            $capturado = $this->capturandoLog(function () {
+                try {
+                    Plugin::modoDaIntegracao();
+                    $this->fail('Esperava falha com modo fora da lista');
+                } catch (IntegrationError $e) {
+                    $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
+                    $this->assertStringContainsString('PNAB_CULTBR_MODE', $e->getMessage());
+                }
+            });
+
+            $this->assertTrue($capturado->hasCriticalRecords(), 'modo inválido precisa alertar');
+        } finally {
+            $config = $this->leConfigDoPlugin();
+            $this->escreveConfigDoPlugin($this->comValoresDoCliente($config, ['mode' => $original]));
+        }
+    }
+
+    /** Na virada o valor é digitado à mão, e a caixa das letras não pode decidir o resultado. */
+    function testCaixaDoValorNaoImportaNaResolucao()
+    {
+        foreach (['Conecta', 'CONECTA', ' conecta '] as $declarado) {
+            $provider = $this->resolverCom($declarado)->resolve();
+
+            $this->assertSame('conecta', $provider->provider()->value, $declarado);
+        }
+    }
+
+    /** Configuração que chega como array não pode virar a string "Array" por coerção silenciosa. */
+    function testValorQueNaoEhTextoFalhaComoAusente()
+    {
+        $this->esperaFalhaDeConfiguracao(
+            fn() => $this->resolverCom(['conecta'])->resolve(),
+            'sem valor',
         );
     }
 
