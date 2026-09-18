@@ -57,15 +57,25 @@ final class ProviderResolver
             throw $this->configurationError("classe {$classe} não existe");
         }
 
-        $provider = new $classe();
-
-        if (!$provider instanceof IntegrationProvider) {
+        if (!is_subclass_of($classe, IntegrationProvider::class)) {
             throw $this->configurationError("classe {$classe} não implementa " . IntegrationProvider::class);
         }
+
+        $provider = $this->instanciar($classe);
 
         $this->logIdentification($provider);
 
         return $provider;
+    }
+
+    /** Classe abstrata ou construtor com argumento é erro de configuração, não API fora do ar. */
+    private function instanciar(string $classe): IntegrationProvider
+    {
+        try {
+            return new $classe();
+        } catch (\Throwable $e) {
+            throw $this->configurationError("classe {$classe} não pôde ser construída: " . $e->getMessage());
+        }
     }
 
     /**
