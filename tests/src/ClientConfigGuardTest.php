@@ -43,6 +43,21 @@ class ClientConfigGuardTest extends TestCase
         });
     }
 
+    /** O caminho de cada operação é fato sobre a API, e trocá-lo por engano muda a URL em silêncio. */
+    function testCadaProvedorDeclaraOCaminhoDaPropriaApi()
+    {
+        $providers = Plugin::getInstance()->config['client']['providers'];
+
+        $this->assertSame('par/sefic/pessoa/{document}', $providers['gestao']['entesEndpoint']);
+        $this->assertSame('par/sefic/acoes', $providers['gestao']['parAcoesEndpoint']);
+        $this->assertSame('integracao/oportunidades/{id}', $providers['gestao']['oportunidadeEndpoint']);
+
+        $this->assertSame('auth/pessoa/{document}/entes', $providers['conecta']['entesEndpoint']);
+        $this->assertSame('par/acoes', $providers['conecta']['parAcoesEndpoint']);
+        $this->assertSame('oportunidades/{id}', $providers['conecta']['oportunidadeEndpoint']);
+        $this->assertSame('validar-token', $providers['conecta']['validarTokenEndpoint']);
+    }
+
     function testEndpointDoCatalogoVazioTambemFalha()
     {
         $this->comConfig('parAcoesEndpoint', '', function () {
