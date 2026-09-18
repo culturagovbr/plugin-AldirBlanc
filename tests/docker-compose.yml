@@ -7,18 +7,9 @@ services:
       - PNAB_CULTBR_PROVIDER=gestao
       - PNAB_CULTBR_MODE=development
       # host e token são exigidos na construção do client mesmo em modo fixture. Valores fictícios,
-      # nunca usados de fato.
+      # nunca usados de fato. Os endpoints não vêm daqui: são fato sobre cada API, fixos no plugin.
       - PNAB_CULTBR_HOST=http://cultbr.invalid
       - PNAB_CULTBR_TOKEN=fake-token-de-teste
-      # Endpoints: o código passou a exigi-los na construção do client, mesmo em modo fixture,
-      # pelo mesmo motivo de host e token. Valores fictícios.
-      - PNAB_CULTBR_PAR_ACOES_ENDPOINT=par/acoes
-      - PNAB_CULTBR_SEFIC_ENDPOINT=par/sefic
-      - PNAB_CULTBR_GESTOR_ENDPOINT=pessoa/{document}
-      # Endpoint fictício para OportunidadeCultClient::update() — apenas satisfaz o
-      # guard `empty($endpoint)` antes de chamar put(). Em modo 'development', o put()
-      # de AbstractClient faz short-circuit e retorna o payload sem nenhuma chamada HTTP.
-      - PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT=oportunidade/{id}/update
       # Delay de retry nulo causaria TypeError em enqueueOrReplaceJob (string typed, nullable config).
       # 'now' enfileira o retry imediatamente, permitindo testar o mecanismo sem aguardar intervalo.
       - ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now

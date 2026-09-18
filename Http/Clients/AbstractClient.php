@@ -251,7 +251,6 @@ abstract class AbstractClient
         return $erroDeTransporte !== '' ? $erroDeTransporte : $e->getMessage();
     }
 
-    /** Sobrescrevível junto do bucket: a mensagem precisa nomear a variável que de fato falta. */
     protected function envName(string $sufixo): string
     {
         return 'PNAB_CULTBR_' . $sufixo;
@@ -316,6 +315,18 @@ abstract class AbstractClient
     }
 
     /** Configuração ausente precisa dizer qual variável falta, não estourar TypeError. */
+    /** Endpoint é fato sobre a API, não configuração de ambiente: faltar é erro de programação. */
+    protected function requiredEndpoint(string $chave): string
+    {
+        $valor = trim((string) ($this->getClientConfig()[$chave] ?? ''));
+
+        if ($valor === '') {
+            throw $this->configurationError(static::PROVIDER . '.' . $chave, 'endpoint não declarado para este provedor');
+        }
+
+        return $valor;
+    }
+
     protected function requiredConfig(array $config, string $chave, string $variavel): string
     {
         $valor = trim((string) ($config[$chave] ?? ''));

@@ -208,7 +208,7 @@ class GestaoProviderTest extends TestCase
      */
     function testEnvioComErroDoServidorPropagaExcecaoComODesfecho()
     {
-        $this->emModoReal(['updateOportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
+        $this->emModoReal(['oportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
             $transporte = new FakeTransport(500, 'Internal Server Error');
 
             try {
@@ -232,7 +232,7 @@ class GestaoProviderTest extends TestCase
 
     function testEnvioDevolveODesfechoComOProvedorEOStatus()
     {
-        $this->emModoReal(['updateOportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
+        $this->emModoReal(['oportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
             $transporte = new FakeTransport(200, '{"ok":true}');
 
             $outcome = (new GestaoProvider($transporte))

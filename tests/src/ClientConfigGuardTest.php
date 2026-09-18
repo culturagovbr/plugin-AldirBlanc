@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Plugin;
 use AldirBlanc\Http\Clients\ParAcaoClient;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
@@ -28,15 +29,16 @@ class ClientConfigGuardTest extends TestCase
         );
     }
 
-    function testEndpointDoCatalogoAusenteFalhaNomeandoAVariavel()
+    /** Endpoint não vem do ambiente: faltar a chave é erro de programação, e a mensagem diz onde. */
+    function testEndpointDoCatalogoAusenteFalhaNomeandoOProvedorEAChave()
     {
         $this->comConfig('parAcoesEndpoint', null, function () {
             try {
                 new ParAcaoClient();
-                $this->fail('Esperava falha por configuração ausente');
+                $this->fail('Esperava falha por endpoint não declarado');
             } catch (IntegrationError $e) {
                 $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
-                $this->assertStringContainsString('PNAB_CULTBR_PAR_ACOES_ENDPOINT', $e->getMessage());
+                $this->assertStringContainsString('gestao.parAcoesEndpoint', $e->getMessage());
             }
         });
     }
@@ -74,15 +76,15 @@ class ClientConfigGuardTest extends TestCase
         });
     }
 
-    function testEndpointDoGestorAusenteFalhaNomeandoAVariavel()
+    function testEndpointDoGestorAusenteFalhaNomeandoOProvedorEAChave()
     {
-        $this->comConfig('gestorEndpoint', null, function () {
+        $this->comConfig('entesEndpoint', null, function () {
             try {
                 new GestorClient(new GestorDocument('12345678901'));
-                $this->fail('Esperava falha por endpoint do gestor ausente');
+                $this->fail('Esperava falha por endpoint do gestor não declarado');
             } catch (IntegrationError $e) {
                 $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
-                $this->assertStringContainsString('PNAB_CULTBR_GESTOR_ENDPOINT', $e->getMessage());
+                $this->assertStringContainsString('gestao.entesEndpoint', $e->getMessage());
             }
         });
     }

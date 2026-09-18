@@ -14,11 +14,8 @@ class GestorClient extends AbstractClient
 
     public function __construct(GestorDocument $gestorDocument, ?Transport $transport = null)
     {
-        $config = $this->getClientConfig();
-
         $this->document = $gestorDocument->document;
-        $this->endpoint = $this->requiredConfig($config, 'seficEndpoint', 'PNAB_CULTBR_SEFIC_ENDPOINT')
-            . '/' . $this->requiredConfig($config, 'gestorEndpoint', 'PNAB_CULTBR_GESTOR_ENDPOINT');
+        $this->endpoint = $this->requiredEndpoint('entesEndpoint');
 
         parent::__construct($transport);
     }

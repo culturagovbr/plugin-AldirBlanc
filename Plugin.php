@@ -30,22 +30,22 @@ class Plugin extends \MapasCulturais\Plugin
                 // Sem declaração, modo real: fixture silenciosa em produção é pior que falhar.
                 'mode' => env('PNAB_CULTBR_MODE', 'live'),
 
+                // Endpoint é fato sobre a API: só host e token mudam por instalação.
                 'providers' => [
                     'gestao' => [
                         'host' => env('PNAB_CULTBR_HOST', null),
                         'token' => env('PNAB_CULTBR_TOKEN', null),
-                        'seficEndpoint' => env('PNAB_CULTBR_SEFIC_ENDPOINT', null),
-                        'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
-                        'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', null),
-                        'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
+                        'entesEndpoint' => 'par/sefic/pessoa/{document}',
+                        'parAcoesEndpoint' => 'par/sefic/acoes',
+                        'oportunidadeEndpoint' => 'integracao/oportunidades/{id}',
                     ],
                     'conecta' => [
-                        'host' => env('PNAB_CULTBR_CONECTA_HOST', null),
-                        'token' => env('PNAB_CULTBR_CONECTA_TOKEN', null),
-                        'entesEndpoint' => env('PNAB_CULTBR_CONECTA_ENTES_ENDPOINT', null),
-                        'parAcoesEndpoint' => env('PNAB_CULTBR_CONECTA_PAR_ACOES_ENDPOINT', null),
-                        'oportunidadeEndpoint' => env('PNAB_CULTBR_CONECTA_OPORTUNIDADE_ENDPOINT', null),
-                        'validarTokenEndpoint' => env('PNAB_CULTBR_CONECTA_VALIDAR_TOKEN_ENDPOINT', null),
+                        'host' => env('PNAB_CULTBR_HOST', null),
+                        'token' => env('PNAB_CULTBR_TOKEN', null),
+                        'entesEndpoint' => 'auth/pessoa/{document}/entes',
+                        'parAcoesEndpoint' => 'par/acoes',
+                        'oportunidadeEndpoint' => 'oportunidades/{id}',
+                        'validarTokenEndpoint' => 'validar-token',
                     ],
                 ],
             ], 

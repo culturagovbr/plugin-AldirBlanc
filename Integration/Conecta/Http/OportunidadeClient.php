@@ -4,11 +4,14 @@ namespace AldirBlanc\Integration\Conecta\Http;
 
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Http\Clients\AbstractClient;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\OpportunitySender;
 
-class OportunidadeClient extends ConectaClient implements OpportunitySender
+class OportunidadeClient extends AbstractClient implements OpportunitySender
 {
+    protected const PROVIDER = 'conecta';
+
     private const PARAMETER_DEFAULT = '{id}';
 
     protected string $document;
@@ -25,11 +28,7 @@ class OportunidadeClient extends ConectaClient implements OpportunitySender
 
     public function update(OpportunityDto $payload)
     {
-        $this->endpoint = $this->requiredConfig(
-            $this->getClientConfig(),
-            'oportunidadeEndpoint',
-            $this->envName('OPORTUNIDADE_ENDPOINT'),
-        );
+        $this->endpoint = $this->requiredEndpoint('oportunidadeEndpoint');
 
         return $this->put($payload->toArray());
     }

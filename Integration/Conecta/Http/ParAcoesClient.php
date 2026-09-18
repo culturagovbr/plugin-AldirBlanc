@@ -2,11 +2,14 @@
 
 namespace AldirBlanc\Integration\Conecta\Http;
 
+use AldirBlanc\Http\Clients\AbstractClient;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\ParActionPageLimits;
 
-class ParAcoesClient extends ConectaClient
+class ParAcoesClient extends AbstractClient
 {
+    protected const PROVIDER = 'conecta';
+
     protected const FIXTURE = 'conecta/par-acoes.php';
 
     protected string $document;
@@ -22,11 +25,7 @@ class ParAcoesClient extends ConectaClient
             ? $limit
             : ParActionPageLimits::DEFAULT_LIMIT;
 
-        $endpoint = $this->requiredConfig(
-            $this->getClientConfig(),
-            'parAcoesEndpoint',
-            $this->envName('PAR_ACOES_ENDPOINT'),
-        );
+        $endpoint = $this->requiredEndpoint('parAcoesEndpoint');
         $this->endpoint = rtrim($endpoint, '?') . '?' . http_build_query([
             'skip' => $this->skip,
             'limit' => $this->limit,

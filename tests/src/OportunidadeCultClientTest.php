@@ -33,18 +33,18 @@ class OportunidadeCultClientTest extends TestCase
 
     function testUpdateFalhaComoErroDeConfiguracaoQuandoEndpointNaoConfigurado()
     {
-        $original = Plugin::getInstance()->config['client']['providers']['gestao']['updateOportunidadeEndpoint'];
+        $original = Plugin::getInstance()->config['client']['providers']['gestao']['oportunidadeEndpoint'];
         $client = new OportunidadeCultClient(new OpportunityId(1));
-        $this->setPluginClientConfig('updateOportunidadeEndpoint', null);
+        $this->setPluginClientConfig('oportunidadeEndpoint', null);
 
         try {
             $client->update($this->makePayload());
             $this->fail('Esperava falha ao chamar update() sem endpoint configurado');
         } catch (IntegrationError $e) {
             $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
-            $this->assertStringContainsString('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', $e->getMessage());
+            $this->assertStringContainsString('gestao.oportunidadeEndpoint', $e->getMessage());
         } finally {
-            $this->setPluginClientConfig('updateOportunidadeEndpoint', $original);
+            $this->setPluginClientConfig('oportunidadeEndpoint', $original);
         }
     }
 

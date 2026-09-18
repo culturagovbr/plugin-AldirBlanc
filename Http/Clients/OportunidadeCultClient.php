@@ -27,11 +27,7 @@ class OportunidadeCultClient extends AbstractClient implements OpportunitySender
 
     public function update(OpportunityDto $payload)
     {
-        $this->endpoint = $this->requiredConfig(
-            $this->getClientConfig(),
-            'updateOportunidadeEndpoint',
-            'PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT',
-        );
+        $this->endpoint = $this->requiredEndpoint('oportunidadeEndpoint');
         return $this->put($payload->toArray());
     }
 }

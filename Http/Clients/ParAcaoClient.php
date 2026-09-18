@@ -27,7 +27,7 @@ class ParAcaoClient extends AbstractClient
             ? $limit
             : ParActionPageLimits::DEFAULT_LIMIT;
 
-        $endpoint = $this->requiredConfig($this->getClientConfig(), 'parAcoesEndpoint', 'PNAB_CULTBR_PAR_ACOES_ENDPOINT');
+        $endpoint = $this->requiredEndpoint('parAcoesEndpoint');
         $this->endpoint = rtrim($endpoint, '?') . '?' . http_build_query([
             'skip' => $this->skip,
             'limit' => $this->limit,
