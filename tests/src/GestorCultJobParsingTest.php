@@ -100,22 +100,52 @@ class GestorCultJobParsingTest extends TestCase
         $this->assertCount(2, $this->job()->callNormalizeFederativeEntities($entes));
     }
 
-    /** O critério é a ordem da API: o primeiro vence, mesmo quando é o de árvore vazia. */
-    function testNormalizeMantemOPrimeiroDaOrdemDaApi()
+    /** Descartar o irmão que traz a árvore apagaria o que o gestor precisa para criar oportunidade. */
+    function testNormalizePrefereOIrmaoQueTrazAArvore()
     {
         $entes = [
-            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => []],
-            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => [['id' => 1]]],
+            ['document' => '1612689000178', 'name' => 'SEM ARVORE', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'COM ARVORE', 'exercicios' => [['id' => 1]]],
         ];
 
         $unidos = $this->job()->callNormalizeFederativeEntities($entes);
 
         $this->assertCount(1, $unidos);
-        $this->assertSame('PRIMEIRO', $unidos[0]['name']);
-        $this->assertSame([], $unidos[0]['exercicios']);
+        $this->assertSame('COM ARVORE', $unidos[0]['name']);
+        $this->assertSame([['id' => 1]], $unidos[0]['exercicios']);
+        $this->assertSame('01612689000178', $unidos[0]['document'], 'o documento sobrevive normalizado');
     }
 
-    /** Item torto segue adiante: quem descarta e registra o motivo é a validação de contrato. */
+    /** A ordem da API só decide quando ela não traz árvore em nenhum dos lados. */
+    function testNormalizeMantemOPrimeiroQuandoAArvoreNaoDesempata()
+    {
+        $ambosVazios = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => []],
+        ]);
+
+        $ambosComArvore = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => [['id' => 1]]],
+            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => [['id' => 2]]],
+        ]);
+
+        $this->assertSame('PRIMEIRO', $ambosVazios[0]['name'], 'nenhum dos dois traz árvore');
+        $this->assertSame('PRIMEIRO', $ambosComArvore[0]['name'], 'sem critério para trocar, não se troca');
+    }
+
+    /** O irmão com árvore pode vir antes; nesse caso não há nada a fazer. */
+    function testNormalizeNaoTrocaQuandoOPrimeiroJaTrazAArvore()
+    {
+        $unidos = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '01612689000178', 'name' => 'COM ARVORE', 'exercicios' => [['id' => 1]]],
+            ['document' => '1612689000178', 'name' => 'SEM ARVORE', 'exercicios' => []],
+        ]);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('COM ARVORE', $unidos[0]['name']);
+    }
+
+    /** Item torto segue adiante: quem descarta com motivo é a validação de contrato, não o dedupe. */
     function testNormalizeNaoEngoleItemSemDocumento()
     {
         $entes = [['name' => 'sem documento'], 'nem array'];
