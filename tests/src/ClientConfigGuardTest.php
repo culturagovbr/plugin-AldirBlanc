@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Enum\Mode;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Http\Clients\GestorClient;
@@ -151,5 +152,43 @@ class ClientConfigGuardTest extends TestCase
                 }
             }
         );
+    }
+
+    /** Sem lista fechada, "!development" e qualquer erro de digitação virariam modo real em silêncio. */
+    function testModoForaDaListaFalhaNomeandoOsValoresAceitos()
+    {
+        $this->comConfig('mode', '!development', function () {
+            try {
+                new TestableAbstractClient();
+                $this->fail('Esperava falha por modo fora da lista');
+            } catch (IntegrationError $e) {
+                $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
+                $this->assertStringContainsString('PNAB_CULTBR_MODE', $e->getMessage());
+                $this->assertStringContainsString('live', $e->getMessage());
+                $this->assertStringContainsString('development', $e->getMessage());
+            }
+        });
+    }
+
+    function testModoVazioNaoViraModoRealPorOmissao()
+    {
+        $this->comConfig('mode', '', function () {
+            $this->expectException(IntegrationError::class);
+
+            new TestableAbstractClient();
+        });
+    }
+
+    function testOsDoisModosDeclaradosSaoAceitos()
+    {
+        foreach (Mode::valores() as $valor) {
+            $this->comConfig('mode', $valor, function () use ($valor) {
+                $this->assertInstanceOf(
+                    TestableAbstractClient::class,
+                    new TestableAbstractClient(),
+                    "O modo {$valor} precisa ser aceito"
+                );
+            });
+        }
     }
 }
