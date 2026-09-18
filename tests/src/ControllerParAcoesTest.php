@@ -249,6 +249,40 @@ class ControllerParAcoesTest extends TestCase
         $this->assertStringContainsString('/par/acoes?', (string) $transporteConecta->ultimaUrl());
     }
 
+    /** Uma ação aparece uma vez por cadastro do PAR; o catálogo mostra o nome, não a repetição. */
+    function testNomesRepetidosDoCatalogoViramUmaOpcaoSo()
+    {
+        $this->loginComPermissao();
+
+        $corpo = json_encode([
+            'pagination' => ['skip' => 0, 'limit' => 2000, 'total' => 4, 'next' => null, 'previous' => null],
+            'data' => [
+                ['id_par_acao_meta_acao' => 1, 'nome_acao' => '1.1 Fomento Cultural', 'excluido' => false],
+                ['id_par_acao_meta_acao' => 5, 'nome_acao' => '1.1 Fomento Cultural', 'excluido' => false],
+                ['id_par_acao_meta_acao' => 3, 'nome_acao' => '2.1 Fomento a projetos de Pontos de Cultura', 'excluido' => false],
+                ['id_par_acao_meta_acao' => 7, 'nome_acao' => '2.1 Fomento a projetos de Pontos de Cultura', 'excluido' => false],
+            ],
+        ]);
+
+        $transport = new FakeTransport(status: 200, body: $corpo);
+        $payload = null;
+        $this->comProvedorDoCatalogo(
+            fn() => new ConectaProvider($transport),
+            $transport,
+            function ($controller) use (&$payload) {
+                $payload = $this->callJson(fn() => $controller->callGetParAcoes());
+            }
+        );
+
+        $this->assertCount(2, $payload['data'], 'quatro linhas, dois nomes, duas opções');
+        $this->assertEqualsCanonicalizing(
+            ['1.1 Fomento Cultural', '2.1 Fomento a projetos de Pontos de Cultura'],
+            array_column($payload['data'], 'label'),
+            'a ordem é da ordenação, não do dedupe',
+        );
+        $this->assertSame(4, $payload['pagination']['total'], 'o dedupe encurta a lista, não o total que a API declarou');
+    }
+
     /** O que a API declara na paginação é o que o front recebe, sem recálculo nosso. */
     function testPaginacaoDaApiEhPreservada()
     {
