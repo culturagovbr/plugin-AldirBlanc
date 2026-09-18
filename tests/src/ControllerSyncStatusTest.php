@@ -2,16 +2,19 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\GestorCultJob;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Exceptions\Halt;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableController;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 class ControllerSyncStatusTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
 
     private const SYNC_KEYS = [
@@ -129,26 +132,89 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(0, $controller->getSyncCalls());
     }
 
-    function testStartSyncComErroRelancadoPeloJobPreservaMensagemDaSessao()
+    /** Classificação parcial deixada na sessão não pode vencer a do controller, que vê a exceção. */
+    function testStartSyncComErroRelancadoIgnoraClassificacaoJaGravadaNaSessao()
     {
         $controller = $this->controller();
         $controller->setSyncCallback(function () {
             $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = 'Mensagem segura do job';
-            throw new \RuntimeException('Detalhe interno');
+            $_SESSION['gestor_cult_sync_error_message'] = 'Mensagem antiga';
+            throw IntegrationError::http('Credencial recusada', 401);
         });
 
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
-        $this->assertSame('Mensagem segura do job', $payload['errorMessage']);
+        $this->assertSame('credential_refused', $_SESSION['gestor_cult_sync_error']);
+        $this->assertSame(SyncFailure::CredentialRefused->message(), $payload['errorMessage']);
+        $this->assertFalse($payload['retryable']);
     }
 
-    /**
-     * O gestor vê sempre o mesmo texto — nenhuma dessas causas depende dele. O que muda é a
-     * classificação, que fica na sessão e no log, e o direito de tentar de novo.
-     */
+    /** 401 na Conecta e 403 na Gestão são a mesma causa: credencial que nenhuma espera conserta. */
+    function testCredencialRecusadaNaoEhRetentavelNosDoisStatus()
+    {
+        foreach ([401, 403] as $status) {
+            $controller = $this->controller();
+            $controller->setSyncCallback(function () use ($status) {
+                throw IntegrationError::http('Credencial recusada', $status);
+            });
+
+            $payload = $this->callJson(fn() => $controller->callStartSync());
+
+            $this->assertSame('credential_refused', $_SESSION['gestor_cult_sync_error'], "status {$status}");
+            $this->assertFalse($payload['retryable'], "status {$status}");
+            $this->assertStringNotContainsString('Tente novamente', $payload['errorMessage'], "status {$status}");
+        }
+    }
+
+    /** O job falha antes do próprio catch quando o cache cai; nenhuma falha pode passar calada. */
+    function testQualquerFalhaDoSyncAlertaUmaVezComACausaClassificada()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::http('Credencial recusada', 401);
+        });
+
+        $capturado = $this->capturandoLog(function () use ($controller) {
+            $this->callJson(fn() => $controller->callStartSync());
+        });
+
+        $criticos = array_filter(
+            $capturado->getRecords(),
+            fn($registro) => $registro['level_name'] === 'CRITICAL',
+        );
+
+        $this->assertCount(1, $criticos, 'a falha precisa alertar, e uma vez só');
+        $this->assertStringContainsString('credential_refused', reset($criticos)['message']);
+    }
+
+    /** A tela desiste na hora diante de falha permanente; o texto não pode pedir o contrário. */
+    function testNenhumaFalhaPermanenteConvidaARepetir()
+    {
+        $permanentes = array_filter(SyncFailure::cases(), fn(SyncFailure $falha) => !$falha->isRetryable());
+
+        $this->assertNotEmpty($permanentes);
+
+        foreach ($permanentes as $falha) {
+            $this->assertStringNotContainsString('Tente novamente', $falha->message(), $falha->value);
+            $this->assertStringContainsString('repetir não resolve', $falha->message(), $falha->value);
+        }
+    }
+
+    /** 404 não é credencial: continua no ramo genérico, para a mudança não endurecer demais. */
+    function testOutroErroHttpNaoViraCredencialRecusada()
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::http('Não encontrado', 404);
+        });
+
+        $this->callJson(fn() => $controller->callStartSync());
+
+        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+    }
+
+    /** Nenhuma dessas causas depende do gestor, mas cada uma diz a sua, e nenhuma pede repetição. */
     function testFalhaDeConfiguracaoNaoEhRetentavelETemMensagemPropria()
     {
         $controller = $this->controller();
@@ -159,7 +225,8 @@ class ControllerSyncStatusTest extends TestCase
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
         $this->assertFalse($payload['retryable']);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame(SyncFailure::ConfigurationError->message(), $payload['errorMessage']);
+        $this->assertStringContainsString('mal configurada', $payload['errorMessage']);
         $this->assertSame('configuration_error', $_SESSION['gestor_cult_sync_error']);
     }
 
@@ -173,7 +240,8 @@ class ControllerSyncStatusTest extends TestCase
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
         $this->assertFalse($payload['retryable']);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame(SyncFailure::UnexpectedResponse->message(), $payload['errorMessage']);
+        $this->assertStringContainsString('fora do esperado', $payload['errorMessage']);
         $this->assertSame('unexpected_response', $_SESSION['gestor_cult_sync_error']);
     }
 
