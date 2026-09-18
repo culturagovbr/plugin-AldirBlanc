@@ -6,6 +6,8 @@ use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
+use AldirBlanc\Enum\Mode;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Jobs\OportunidadeCultJob;
@@ -83,6 +85,24 @@ class Plugin extends \MapasCulturais\Plugin
         $this->providerResolver ??= new ProviderResolver($this->config['client']['provider'] ?? null);
 
         return $this->providerResolver->resolve();
+    }
+
+    /** O modo vale para a integração inteira: ou os dois provedores simulam, ou nenhum simula. */
+    public static function modoDaIntegracao(): Mode
+    {
+        $config = self::getInstance()?->config['client']['mode'] ?? '';
+        $declarado = is_string($config) ? trim($config) : '';
+
+        $modo = Mode::tryFrom($declarado);
+
+        if ($modo !== null) {
+            return $modo;
+        }
+
+        $erro = IntegrationError::configuration('PNAB_CULTBR_MODE', 'valores aceitos: ' . implode(', ', Mode::valores()));
+        App::i()->log->critical('[CultBR] ' . $erro->getMessage());
+
+        throw $erro;
     }
 
     public function resetIntegrationProvider(): void

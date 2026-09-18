@@ -55,7 +55,7 @@ abstract class AbstractClient
             throw $this->configurationError($this->envName('*'), 'nenhuma variável do provedor está definida');
         }
 
-        $this->mode = $this->resolveMode();
+        $this->mode = Plugin::modoDaIntegracao();
         $this->host = rtrim($this->requiredConfig($config, 'host', $this->envName('HOST')), '/');
         $this->token = $this->requiredConfig($config, 'token', $this->envName('TOKEN'));
         $this->parameter = self::PARAMETER_DEFAULT;
@@ -84,15 +84,6 @@ abstract class AbstractClient
     private function isDevelopmentMode(): bool
     {
         return $this->mode === Mode::Development;
-    }
-
-    /** Sem lista fechada, qualquer valor diferente de "development" significaria modo real por acidente. */
-    private function resolveMode(): Mode
-    {
-        $declarado = trim((string) ($this->clientConfig()['mode'] ?? ''));
-
-        return Mode::tryFrom($declarado)
-            ?? throw $this->configurationError($this->envName('MODE'), 'valores aceitos: ' . implode(', ', Mode::valores()));
     }
 
     /**
