@@ -53,7 +53,8 @@ class Plugin extends \MapasCulturais\Plugin
             'integration' => [
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
-                'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
+                // Zero desabilita o cache, e é intencional: não trocar por um TTL sem decisão.
+                'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 0),
                 'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
                 'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
             ]
