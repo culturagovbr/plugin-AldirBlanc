@@ -176,6 +176,32 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertCount(1, $relations, 'Não deve criar uma segunda relation para o mesmo agente/documento');
     }
 
+    /** O dedupe roda antes da gravação: descartar o irmão com árvore sobrescreveria a do banco com vazio. */
+    function testArvoreJaGravadaSobreviveAoDedupeDeIrmaos()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $arvore = [['id' => 574, 'ano' => 2027, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('01612689000178', 'MUNICIPIO DE MATUREIA', $arvore);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+
+        // Os dois irmãos como a homologação os devolve: o de árvore vazia vem primeiro.
+        $daApi = [
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => $arvore],
+        ];
+
+        $job = $this->job();
+        $job->callAssociateFederativeEntities($agent, $job->callNormalizeFederativeEntities($daApi));
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($arvore, $updated->exercices, 'o irmão sem árvore não pode apagar a que já estava gravada');
+    }
+
     function testEnteQueSaiuDaRespostaTemRelationRemovida()
     {
         $user = $this->userDirector->createUser();
