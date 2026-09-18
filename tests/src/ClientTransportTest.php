@@ -27,10 +27,19 @@ class ClientTransportTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) use ($valores) {
-                return $this->comValoresDoCliente($config, $valores);
+                // Os dois buckets recebem os mesmos valores: há dublê de client em cada provedor.
+                $config = $this->comValoresDoCliente($config, $valores);
+
+                return $this->comValoresDoCliente($config, $valores, 'conecta');
             },
             $exercicio
         );
+    }
+
+    /** Cada dublê lê o bucket do próprio provedor, então os dois precisam ter credencial. */
+    private function comCredencialNosDoisProvedores(callable $exercicio): void
+    {
+        $this->comConfigDoCliente(['host' => self::HOST, 'token' => 'token-de-teste'], $exercicio);
     }
 
     /** Modo real com transporte falso: exercita o caminho de rede sem sair da máquina. */
@@ -135,8 +144,10 @@ class ClientTransportTest extends TestCase
     /** Com as duas fixtures existindo, a prova passa a ser que cada uma carrega a sua. */
     function testCadaClientHomonimoCarregaAPropriaFixture()
     {
-        $this->assertArrayHasKey('data', (new CatalogoGestao())->get());
-        $this->assertArrayHasKey('data', (new CatalogoConecta())->get());
+        $this->comCredencialNosDoisProvedores(function () {
+            $this->assertArrayHasKey('data', (new CatalogoGestao())->get());
+            $this->assertArrayHasKey('data', (new CatalogoConecta())->get());
+        });
     }
 
     function testClientSemFixtureDeclaradaFalhaEmVezDeIncluirODiretorio()
@@ -153,11 +164,13 @@ class ClientTransportTest extends TestCase
     /** Duas implementações de mesmo nome curto em provedores distintos apontam para fixtures distintas. */
     function testClientsHomonimosNaoCompartilhamFixture()
     {
-        $gestao = (new CatalogoGestao())->callGetFixturePath();
-        $conecta = (new CatalogoConecta())->callGetFixturePath();
+        $this->comCredencialNosDoisProvedores(function () {
+            $gestao = (new CatalogoGestao())->callGetFixturePath();
+            $conecta = (new CatalogoConecta())->callGetFixturePath();
 
-        $this->assertNotSame($gestao, $conecta);
-        $this->assertStringEndsWith('gestao/par-acoes.php', $gestao);
-        $this->assertStringEndsWith('conecta/par-acoes.php', $conecta);
+            $this->assertNotSame($gestao, $conecta);
+            $this->assertStringEndsWith('gestao/par-acoes.php', $gestao);
+            $this->assertStringEndsWith('conecta/par-acoes.php', $conecta);
+        });
     }
 }
