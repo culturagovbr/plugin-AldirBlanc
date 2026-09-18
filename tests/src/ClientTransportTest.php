@@ -2,8 +2,11 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Integration\Conecta\Http\EntesClient;
+use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\Conecta\CatalogoClient as CatalogoConecta;
@@ -159,6 +162,40 @@ class ClientTransportTest extends TestCase
             $this->assertSame(IntegrationError::KIND_CONFIGURATION, $e->kind());
             $this->assertStringContainsString('não declara arquivo de simulação', $e->getMessage());
         }
+    }
+
+    /** O que a captura tem de entrada importa tanto quanto o que sai dela: é a entrada que alimenta o dedupe. */
+    function testFixtureDeEntesTemAsVinteEUmaEntradasDaCaptura()
+    {
+        $this->comConfigDoCliente(
+            ['host' => self::HOST, 'token' => 'token-de-teste', 'mode' => 'development'],
+            function () {
+                $resposta = (new EntesClient(new GestorDocument('06575305300')))->get();
+                $documentos = array_column($resposta['entes_federados'], 'document');
+
+                $this->assertCount(21, $documentos, 'a captura de 18/09 trouxe vinte e uma entradas');
+                $this->assertCount(
+                    17,
+                    array_unique(array_map(fn($doc) => ltrim($doc, '0'), $documentos)),
+                    'quatro pares diferem só pelo zero à esquerda',
+                );
+            }
+        );
+    }
+
+    /** O provedor curto-circuita o modo simulado antes de construir este client; pelo client, a fixture é alcançável. */
+    function testFixtureDeValidarTokenEhAlcancavelPeloClient()
+    {
+        $this->comConfigDoCliente(
+            ['host' => self::HOST, 'token' => 'token-de-teste', 'mode' => 'development'],
+            function () {
+                $resposta = (new ValidarTokenClient())->get();
+
+                $this->assertTrue($resposta['valido']);
+                $this->assertSame('SISTEMA', $resposta['tipo']);
+                $this->assertArrayHasKey('cnpj', $resposta, 'o cnpj vem na resposta, ainda que nada o leia hoje');
+            }
+        );
     }
 
     /** O recorte da Conecta vale pelo que repete: sem nome repetido, o dedupe do catálogo nunca é exercitado. */
