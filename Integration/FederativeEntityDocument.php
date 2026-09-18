@@ -23,33 +23,45 @@ final class FederativeEntityDocument
     }
 
     /**
-     * Mantém o primeiro de cada identidade, nunca agrupando por nome — há homônimos com CNPJ distinto.
+     * Uma identidade por documento normalizado, nunca agrupando por nome — há homônimos com CNPJ distinto.
+     * Entre irmãos, sobrevive o que traz a árvore do PAR: descartá-la apagaria o que o gestor precisa.
      * @param list<mixed> $entes
      * @return list<mixed>
      */
     public static function dedupe(array $entes): array
     {
         $resultado = [];
-        $vistos = [];
+        $posicaoPorDocumento = [];
 
         foreach ($entes as $ente) {
-            // Item torto segue adiante: quem descarta e registra o motivo é a validação de contrato.
+            // Item torto segue adiante: quem descarta com motivo é a validação de contrato, não o dedupe.
             if (!is_array($ente) || !isset($ente['document']) || trim((string) $ente['document']) === '') {
                 $resultado[] = $ente;
                 continue;
             }
 
             $documento = self::normalize((string) $ente['document']);
+            $ente['document'] = $documento;
 
-            if (isset($vistos[$documento])) {
+            if (!isset($posicaoPorDocumento[$documento])) {
+                $posicaoPorDocumento[$documento] = count($resultado);
+                $resultado[] = $ente;
                 continue;
             }
 
-            $vistos[$documento] = true;
-            $ente['document'] = $documento;
-            $resultado[] = $ente;
+            $posicao = $posicaoPorDocumento[$documento];
+
+            if (self::temArvore($ente) && !self::temArvore($resultado[$posicao])) {
+                $resultado[$posicao] = $ente;
+            }
         }
 
         return $resultado;
+    }
+
+    /** @param array<string, mixed> $ente */
+    private static function temArvore(array $ente): bool
+    {
+        return !empty($ente['exercicios']);
     }
 }
