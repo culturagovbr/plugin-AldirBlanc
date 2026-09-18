@@ -14,6 +14,7 @@ use MapasCulturais\Exceptions\Halt;
 use MapasCulturais\Request;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\CapturesLog;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\Traits\UserDirector;
 
 /**
@@ -24,6 +25,7 @@ use Tests\Traits\UserDirector;
 class ThemeGenerateOpportunityHooksTest extends TestCase
 {
     use CapturesLog;
+    use ConfiguresPlugin;
     use UserDirector;
 
     protected function setUp(): void
@@ -621,25 +623,30 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         );
     }
 
-    /**
-     * O delay de enfileiramento do job de update é configurável via ALDIRBLANC_INTEGRATION_DELAY_JOB.
-     * Com "+5 minutes", o nextExecutionTimestamp deve ser posterior ao momento atual.
-     */
-    function testDelayDeEnfileiramentoEhConfiguravelPorVariavelDeAmbiente(): void
+    /** O espaçamento do envio vem da configuração do plugin, e o ambiente apenas a sobrescreve. */
+    function testDelayDeEnfileiramentoVemDaConfiguracao(): void
     {
         $user = $this->userDirector->createUser();
         $opportunity = $this->opportunity($user);
         $subsite = $this->subsite($user, 'Subsite Pnab Delay');
         $_ENV['ALDIRBLANC_SUBSITE_ID'] = (string) $subsite->id;
-        $_ENV['ALDIRBLANC_INTEGRATION_DELAY_JOB'] = '+5 minutes';
 
-        $this->app->disableAccessControl();
-        $opportunity->subsite = $subsite;
-        $opportunity->setMetadata('federativeEntityId', 1);
-        $this->setPar($opportunity);
-        $opportunity->status = Opportunity::STATUS_ENABLED;
-        $opportunity->save(true);
-        $this->app->enableAccessControl();
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['delayJob'] = '+5 minutes';
+
+                return $config;
+            },
+            function () use ($opportunity, $subsite) {
+                $this->app->disableAccessControl();
+                $opportunity->subsite = $subsite;
+                $opportunity->setMetadata('federativeEntityId', 1);
+                $this->setPar($opportunity);
+                $opportunity->status = Opportunity::STATUS_ENABLED;
+                $opportunity->save(true);
+                $this->app->enableAccessControl();
+            }
+        );
 
         $job = $this->findJob($opportunity->id, 'update');
         $this->assertNotNull($job, 'Job de update deve ser enfileirado');
@@ -648,7 +655,5 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
             $job->nextExecutionTimestamp,
             'Com delay de +5 minutes, nextExecutionTimestamp deve ser posterior ao momento atual'
         );
-
-        unset($_ENV['ALDIRBLANC_INTEGRATION_DELAY_JOB']);
     }
 }
