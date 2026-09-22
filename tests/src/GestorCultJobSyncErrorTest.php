@@ -5,7 +5,9 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\User;
@@ -17,9 +19,21 @@ class GestorCultJobSyncErrorTest extends TestCase
 {
     use UserDirector;
 
-    private function jobWithResponse(mixed $response): TestableGestorCultJob
+    private static int $proximoDocumento = 91000000001;
+
+    /** O lock do sync vive no cache, que não tem rollback: cada chamada precisa de documento próprio. */
+    private function documentoNovo(): string
     {
-        $job = new TestableGestorCultJob(new GestorDocument('12345678901'));
+        return (string) self::$proximoDocumento++;
+    }
+
+    private function jobWithResponse(
+        mixed $response,
+        Provider $provedor = Provider::Gestao,
+        string $documento = '12345678901',
+    ): TestableGestorCultJob {
+        $job = new TestableGestorCultJob(new GestorDocument($documento));
+        $job->useProvider($provedor);
         $job->setGestorResponse($response);
         return $job;
     }
@@ -84,6 +98,29 @@ class GestorCultJobSyncErrorTest extends TestCase
     }
 
     // ===== descarte de ente fora do contrato =====
+
+    /** Sem transporte, a semântica do parse ainda é do provedor: só a Gestão tolera a lista sem envelope. */
+    function testListaSemEnvelopeSegueASemanticaDoProvedorMesmoSemTransporte()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $listaPlana = [$this->enteValido('86666666666666', 'Ente Sem Envelope')];
+
+        $this->jobWithResponse($listaPlana, Provider::Gestao, $this->documentoNovo())->sync();
+        $this->assertNotNull(
+            $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '86666666666666']),
+            'a Gestão aceita a lista sem envelope',
+        );
+
+        try {
+            $this->jobWithResponse($listaPlana, Provider::Conecta, $this->documentoNovo())->sync();
+            $this->fail('Esperava erro de contrato ao dar lista sem envelope à Conecta');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
+            $this->assertStringContainsString('entes_federados ausente', $e->getMessage());
+        }
+    }
 
     function testEnteMalformadoEntreValidosNaoDerrubaOSync()
     {
