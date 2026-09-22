@@ -206,4 +206,24 @@ class GestorCultJobRevogacaoTest extends TestCase
             $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, $provedor->value);
         });
     }
+
+    /** A Gestão tolera a lista sem envelope; para a Conecta ela é erro de contrato, e não revoga. */
+    function testListaSemEnvelopeSoRevogaOndeElaEhContrato()
+    {
+        $this->comModoReal(function () {
+            $this->gestorLogadoComUmEnte();
+            $falha = $this->sincronizarCom(new FakeTransport(200, '[]'), Provider::Gestao);
+
+            $this->assertNull($falha, 'a Gestão aceita a lista sem envelope');
+            $this->assertFalse(UserAccessService::isGestorCultBr(), 'e zero entes revoga');
+        });
+
+        $this->comModoReal(function () {
+            $user = $this->gestorLogadoComUmEnte();
+            $falha = $this->sincronizarCom(new FakeTransport(200, '[]'), Provider::Conecta);
+
+            $this->assertNotNull($falha, 'a Conecta recusa a lista sem envelope');
+            $this->assertPapelERelacoesIntactos($user, Provider::Conecta);
+        });
+    }
 }
