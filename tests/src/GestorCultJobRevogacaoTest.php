@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\UserAccessService;
 use Tests\Abstract\TestCase;
@@ -32,12 +33,24 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['mode'] = 'live';
-                $config['client']['providers']['gestao']['host'] = self::HOST;
+
+                foreach (Provider::cases() as $provedor) {
+                    $config['client']['providers'][$provedor->value]['host'] = self::HOST;
+                    $config['client']['providers'][$provedor->value]['token'] = 'token-de-teste';
+                }
 
                 return $config;
             },
             $exercicio
         );
+    }
+
+    /** A revogação é destrutiva demais para valer só num provedor: cada caminho corre nos dois. */
+    private function emCadaProvedor(callable $cenario): void
+    {
+        foreach (Provider::cases() as $provedor) {
+            $this->comModoReal(fn() => $cenario($provedor));
+        }
     }
 
     private function gestorLogadoComUmEnte(): object
@@ -70,9 +83,10 @@ class GestorCultJobRevogacaoTest extends TestCase
      * O sync relança depois de marcar a sessão; quem trata é POST_startSync, no controller.
      * Documento distinto por chamada: o lock do sync vive no cache, que não tem rollback.
      */
-    private function sincronizarCom(FakeTransport $transporte): ?\Throwable
+    private function sincronizarCom(FakeTransport $transporte, Provider $provedor = Provider::Gestao): ?\Throwable
     {
         $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->useProvider($provedor);
         $job->useTransport($transporte);
         $falha = null;
 
@@ -87,13 +101,15 @@ class GestorCultJobRevogacaoTest extends TestCase
         return $falha;
     }
 
-    private function assertPapelERelacoesIntactos(object $user): void
+    private function assertPapelERelacoesIntactos(object $user, ?Provider $provedor = null): void
     {
-        $this->assertTrue(UserAccessService::isGestorCultBr(), 'o papel não podia ter sido revogado');
+        $onde = $provedor === null ? '' : " ({$provedor->value})";
+
+        $this->assertTrue(UserAccessService::isGestorCultBr(), "o papel não podia ter sido revogado{$onde}");
         $this->assertCount(
             1,
             $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
-            'as relações não podiam ter sido apagadas',
+            "as relações não podiam ter sido apagadas{$onde}",
         );
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
@@ -102,53 +118,53 @@ class GestorCultJobRevogacaoTest extends TestCase
     /** Corpo `null` num 200 chegava ao gate como "este gestor não tem ente nenhum". */
     function testCorpoNuloNaoRevoga()
     {
-        $this->comModoReal(function () {
+        $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(200, 'null'));
+            $falha = $this->sincronizarCom(new FakeTransport(200, 'null'), $provedor);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('corpo da resposta é null', $falha->getMessage());
-            $this->assertPapelERelacoesIntactos($user);
+            $this->assertStringContainsString('corpo da resposta é null', $falha->getMessage(), $provedor->value);
+            $this->assertPapelERelacoesIntactos($user, $provedor);
         });
     }
 
     function testDocumentoNaoEncontradoNaoRevoga()
     {
-        $this->comModoReal(function () {
+        $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'));
+            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'), $provedor);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage());
-            $this->assertPapelERelacoesIntactos($user);
+            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage(), $provedor->value);
+            $this->assertPapelERelacoesIntactos($user, $provedor);
         });
     }
 
     function testFalhaDeTransporteNaoRevoga()
     {
-        $this->comModoReal(function () {
+        $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(FakeTransport::falhaDeTransporte());
+            $falha = $this->sincronizarCom(FakeTransport::falhaDeTransporte(), $provedor);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('Connection timed out', $falha->getMessage());
-            $this->assertPapelERelacoesIntactos($user);
+            $this->assertStringContainsString('Connection timed out', $falha->getMessage(), $provedor->value);
+            $this->assertPapelERelacoesIntactos($user, $provedor);
         });
     }
 
     function testCorpoIlegivelNaoRevoga()
     {
-        $this->comModoReal(function () {
+        $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(200, '<html>erro do proxy</html>'));
+            $falha = $this->sincronizarCom(new FakeTransport(200, '<html>erro do proxy</html>'), $provedor);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('não é um JSON válido', $falha->getMessage());
-            $this->assertPapelERelacoesIntactos($user);
+            $this->assertStringContainsString('não é um JSON válido', $falha->getMessage(), $provedor->value);
+            $this->assertPapelERelacoesIntactos($user, $provedor);
         });
     }
 
@@ -176,17 +192,18 @@ class GestorCultJobRevogacaoTest extends TestCase
     /** O caminho legítimo continua revogando: a API respondeu, e não há ente nenhum. */
     function testListaVaziaBemFormadaRevoga()
     {
-        $this->comModoReal(function () {
+        $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(200, '{"entes_federados":[]}'));
+            $this->sincronizarCom(new FakeTransport(200, '{"entes_federados":[]}'), $provedor);
 
-            $this->assertFalse(UserAccessService::isGestorCultBr());
+            $this->assertFalse(UserAccessService::isGestorCultBr(), $provedor->value);
             $this->assertCount(
                 0,
                 $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
+                $provedor->value,
             );
-            $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
+            $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, $provedor->value);
         });
     }
 }
