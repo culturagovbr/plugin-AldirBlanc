@@ -16,6 +16,22 @@ class GestorCultJobAssociationTest extends TestCase
 {
     use UserDirector;
 
+    private const SYNC_KEYS = [
+        'gestor_cult_sync_started',
+        'gestor_cult_sync_completed',
+        'gestor_cult_sync_started_at',
+        'gestor_cult_sync_error',
+        'gestor_cult_sync_error_message',
+    ];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        foreach (self::SYNC_KEYS as $key) {
+            unset($_SESSION[$key]);
+        }
+    }
+
     private function job(): TestableGestorCultJob
     {
         return new TestableGestorCultJob(new GestorDocument('12345678901'));

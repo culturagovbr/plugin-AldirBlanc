@@ -24,9 +24,25 @@ class GestorCultJobRevogacaoTest extends TestCase
 
     use UserDirector;
 
+    private const SYNC_KEYS = [
+        'gestor_cult_sync_started',
+        'gestor_cult_sync_completed',
+        'gestor_cult_sync_started_at',
+        'gestor_cult_sync_error',
+        'gestor_cult_sync_error_message',
+    ];
+
     private const HOST = 'http://cultbr.invalid';
 
     private static int $proximoDocumento = 90000000001;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        foreach (self::SYNC_KEYS as $key) {
+            unset($_SESSION[$key]);
+        }
+    }
 
     private function comModoReal(callable $exercicio): void
     {
