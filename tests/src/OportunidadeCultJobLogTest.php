@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Controller;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
@@ -10,6 +11,7 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
+use MapasCulturais\Entities\Opportunity;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
@@ -42,6 +44,33 @@ class OportunidadeCultJobLogTest extends TestCase
             ->findBy(['log' => $log], ['attempt' => 'ASC']);
 
         return array_map(fn(CultBrRequestLogAttempt $attempt) => $attempt->provider, $attempts);
+    }
+
+    /** @return string|false o valor, ou false quando a chave não existe */
+    private function meta(int $opportunityId, string $key): string|false
+    {
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opportunityId, 'key' => $key]
+        );
+
+        return $row === false ? false : (string) $row['value'];
+    }
+
+    /** Envio cujo provedor devolve erro sem lançar — o estado que nenhum client real produz hoje. */
+    private function enviarComDesfechoDeErro(): Opportunity
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            fn() => $this->desfecho(['result' => SendResult::Error, 'httpStatus' => 502]),
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        return $opp;
     }
 
     /** Ver OportunidadeCultJobUpdateTest: apaga a linha mantendo o objeto na identity map. */
@@ -262,6 +291,17 @@ class OportunidadeCultJobLogTest extends TestCase
 
         $rows = $this->logs($oppId);
         $this->assertEquals($user->id, $rows[0]['user']['id'] ?? null, 'Retentativa não pode perder o autor');
+    }
+
+    /** Quem decide o fecho é o desfecho, não a ausência de exceção: erro sem lançar fecha em erro. */
+    function testDesfechoDeErroSemExcecaoFechaOEnvioEmErro()
+    {
+        $opp = $this->enviarComDesfechoDeErro();
+
+        $rows = $this->logs($opp->id);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_ERROR, $rows[0]['status']);
+        $this->assertEquals(SendResult::Error->value, $rows[0]['attempts'][0]['status']);
     }
 
     /** Esgotadas as 3 tentativas, o envio fecha como falha — hoje o job engole a exceção. */

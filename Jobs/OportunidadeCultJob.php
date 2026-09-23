@@ -13,6 +13,7 @@ use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Controller;
@@ -88,12 +89,19 @@ class OportunidadeCultJob extends JobType
 		try {
 			$outcome = $this->{$method}($opportunity);
 			$this->recordAttempt($logService, $requestLog, $outcome, $attempt);
+			$falhou = $outcome->result === SendResult::Error;
 
 			if ($action === 'update') {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 			}
 
-			$app->log->info("OportunidadeCultJob executado com sucesso para ação: {$action} para oportunidade: {$opportunity->id}");
+			$alvo = "para ação: {$action} para oportunidade: {$opportunity->id}";
+
+			if ($falhou) {
+				$app->log->critical("OportunidadeCultJob falhou sem lançar exceção {$alvo} - envio encerrado");
+			} else {
+				$app->log->info("OportunidadeCultJob executado com sucesso {$alvo}");
+			}
 		} catch (\Throwable $e) {
 			if ($e instanceof SendFailed) {
 				$this->recordAttempt($logService, $requestLog, $e->outcome(), $attempt, $e->getMessage());
@@ -127,7 +135,9 @@ class OportunidadeCultJob extends JobType
 		// Fora do try: uma falha ao gravar o log não pode cair no catch acima e
 		// reenfileirar um PUT que já foi aceito pelo CultBR.
 		if ($requestLog) {
-			$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_SUCCESS));
+			$resultado = $falhou ? CultBrRequestLog::RESULT_ERROR : CultBrRequestLog::RESULT_SUCCESS;
+
+			$this->recordLog(fn() => $logService->finish($requestLog, $resultado));
 		}
 
 		return true;
