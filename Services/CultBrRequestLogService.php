@@ -133,9 +133,19 @@ class CultBrRequestLogService
 
         $app = App::i();
 
-        if ($result === CultBrRequestLog::RESULT_SUCCESS && !$this->hasAttempt($log)) {
-            $app->log->critical("[CultBR] Envio {$log->requestUuid} fecharia como sucesso sem nenhuma tentativa registrada");
-            $result = CultBrRequestLog::RESULT_ERROR;
+        if ($result === CultBrRequestLog::RESULT_SUCCESS) {
+            $ultima = $this->lastAttempt($log);
+
+            $recusa = match (true) {
+                !$ultima => 'sem nenhuma tentativa registrada',
+                $ultima->result === CultBrRequestLogAttempt::RESULT_ERROR => 'com a última tentativa em erro',
+                default => null,
+            };
+
+            if ($recusa) {
+                $app->log->critical("[CultBR] Envio {$log->requestUuid} fecharia como sucesso {$recusa}");
+                $result = CultBrRequestLog::RESULT_ERROR;
+            }
         }
 
         $log->result = $result;
@@ -145,9 +155,9 @@ class CultBrRequestLogService
         $app->em->flush();
     }
 
-    private function hasAttempt(CultBrRequestLog $log): bool
+    private function lastAttempt(CultBrRequestLog $log): ?CultBrRequestLogAttempt
     {
-        return App::i()->repo(CultBrRequestLogAttempt::class)->findOneBy(['log' => $log]) !== null;
+        return App::i()->repo(CultBrRequestLogAttempt::class)->findOneBy(['log' => $log], ['attempt' => 'DESC']);
     }
 
     /**

@@ -209,6 +209,31 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $log->result);
     }
 
+    /** A guarda vale para qualquer chamador de finish, não só para o job que hoje decide certo. */
+    function testEnvioCujaUltimaTentativaFalhouNaoFechaComoSucesso()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        $service->recordAttempt($log, ['status' => CultBrRequestLogAttempt::RESULT_ERROR, 'attempt' => 1]);
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_ERROR, $log->result);
+    }
+
+    /** Erro numa tentativa intermediária é retentativa que deu certo depois, e fecha em sucesso. */
+    function testEnvioQueErrouEDepoisAcertouFechaComoSucesso()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        $service->recordAttempt($log, ['status' => CultBrRequestLogAttempt::RESULT_ERROR, 'attempt' => 1]);
+        $service->recordAttempt($log, ['status' => CultBrRequestLogAttempt::RESULT_SUCCESS, 'attempt' => 2]);
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $log->result);
+    }
+
     /**
      * O job de retry é descartado quando um novo save enfileira o mesmo id: sem fechar o envio
      * anterior, ele apareceria "em andamento" para sempre na aba.
