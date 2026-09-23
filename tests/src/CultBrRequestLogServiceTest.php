@@ -209,6 +209,18 @@ class CultBrRequestLogServiceTest extends TestCase
         $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $log->result);
     }
 
+    /** O envelope aprendeu a dizer simulado: a tela não precisa mais deduzir isso da tentativa. */
+    function testEnvioCujaUltimaTentativaFoiSimuladaFechaComoSimulado()
+    {
+        $service = $this->service();
+        $log = $service->startOrResume($this->opportunityId(), 'update');
+        $service->recordAttempt($log, ['status' => CultBrRequestLogAttempt::RESULT_SIMULATED, 'attempt' => 1]);
+
+        $service->finish($log, CultBrRequestLog::RESULT_SUCCESS);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_SIMULATED, $log->result);
+    }
+
     /** A guarda vale para qualquer chamador de finish, não só para o job que hoje decide certo. */
     function testEnvioCujaUltimaTentativaFalhouNaoFechaComoSucesso()
     {

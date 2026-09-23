@@ -136,16 +136,12 @@ class CultBrRequestLogService
         if ($result === CultBrRequestLog::RESULT_SUCCESS) {
             $ultima = $this->lastAttempt($log);
 
-            $recusa = match (true) {
-                !$ultima => 'sem nenhuma tentativa registrada',
-                $ultima->result === CultBrRequestLogAttempt::RESULT_ERROR => 'com a última tentativa em erro',
-                default => null,
+            $result = match (true) {
+                !$ultima => $this->recusaSucesso($log, 'sem nenhuma tentativa registrada'),
+                $ultima->result === CultBrRequestLogAttempt::RESULT_ERROR => $this->recusaSucesso($log, 'com a última tentativa em erro'),
+                $ultima->result === CultBrRequestLogAttempt::RESULT_SIMULATED => CultBrRequestLog::RESULT_SIMULATED,
+                default => CultBrRequestLog::RESULT_SUCCESS,
             };
-
-            if ($recusa) {
-                $app->log->critical("[CultBR] Envio {$log->requestUuid} fecharia como sucesso {$recusa}");
-                $result = CultBrRequestLog::RESULT_ERROR;
-            }
         }
 
         $log->result = $result;
@@ -155,9 +151,16 @@ class CultBrRequestLogService
         $app->em->flush();
     }
 
+    private function recusaSucesso(CultBrRequestLog $log, string $motivo): string
+    {
+        App::i()->log->critical("[CultBR] Envio {$log->requestUuid} fecharia como sucesso {$motivo}");
+
+        return CultBrRequestLog::RESULT_ERROR;
+    }
+
     private function lastAttempt(CultBrRequestLog $log): ?CultBrRequestLogAttempt
     {
-        return App::i()->repo(CultBrRequestLogAttempt::class)->findOneBy(['log' => $log], ['attempt' => 'DESC']);
+        return App::i()->repo(CultBrRequestLogAttempt::class)->findOneBy(['log' => $log], ['attempt' => 'DESC', 'id' => 'DESC']);
     }
 
     /**
@@ -234,7 +237,7 @@ class CultBrRequestLogService
 
         $rows = App::i()->repo(CultBrRequestLogAttempt::class)->findBy(
             ['log' => $logs],
-            ['attempt' => 'ASC']
+            ['attempt' => 'ASC', 'id' => 'ASC']
         );
 
         $grouped = [];

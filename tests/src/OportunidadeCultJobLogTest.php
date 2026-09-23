@@ -82,7 +82,7 @@ class OportunidadeCultJobLogTest extends TestCase
         );
     }
 
-    function testEnvioBemSucedidoRegistraUmLogComUmaTentativa()
+    function testEnvioSimuladoRegistraUmLogComUmaTentativa()
     {
         $opp = $this->createOpportunity($this->userDirector->createUser());
 
@@ -92,7 +92,11 @@ class OportunidadeCultJobLogTest extends TestCase
         $rows = $this->logs($opp->id);
 
         $this->assertCount(1, $rows, 'Deve haver um envio registrado');
-        $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $rows[0]['status']);
+        $this->assertEquals(
+            CultBrRequestLog::RESULT_SIMULATED,
+            $rows[0]['status'],
+            'O envelope diz o que houve, em vez de chamar de sucesso o envio que não saiu'
+        );
         $this->assertCount(1, $rows[0]['attempts']);
         $this->assertEquals(1, $rows[0]['attempts'][0]['attempt']);
         $this->assertEquals(
