@@ -91,7 +91,7 @@ class OportunidadeCultJob extends JobType
 			$this->recordAttempt($logService, $requestLog, $outcome, $attempt);
 			$falhou = $outcome->result === SendResult::Error;
 
-			if ($action === 'update') {
+			if ($action === 'update' && !$falhou) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 			}
 

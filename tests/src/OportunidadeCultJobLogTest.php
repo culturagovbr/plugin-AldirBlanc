@@ -304,6 +304,16 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertEquals(SendResult::Error->value, $rows[0]['attempts'][0]['status']);
     }
 
+    function testDesfechoDeErroSemExcecaoNaoCarimbaOUltimoEnvio()
+    {
+        $opp = $this->enviarComDesfechoDeErro();
+
+        $this->assertFalse(
+            $this->meta((int) $opp->id, Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT),
+            'envio que falhou não carimba a data do último envio',
+        );
+    }
+
     /** Esgotadas as 3 tentativas, o envio fecha como falha — hoje o job engole a exceção. */
     function testEnvioFechaComoFalhaAoEsgotarTentativas()
     {
