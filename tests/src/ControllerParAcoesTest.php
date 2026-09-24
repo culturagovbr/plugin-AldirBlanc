@@ -254,14 +254,14 @@ class ControllerParAcoesTest extends TestCase
     {
         $this->loginComPermissao();
 
+        // O recorte real da homologação, não uma cópia dele: redigitar deixaria o teste verde depois
+        // de a fixture perder a repetição que ele existe para exercitar.
+        $plugin = dirname((new \ReflectionClass(\AldirBlanc\Plugin::class))->getFileName());
+        $acoes = require "{$plugin}/Http/Fixtures/conecta/par-acoes-dados.php";
+
         $corpo = json_encode([
-            'pagination' => ['skip' => 0, 'limit' => 2000, 'total' => 4, 'next' => null, 'previous' => null],
-            'data' => [
-                ['id_par_acao_meta_acao' => 1, 'nome_acao' => '1.1 Fomento Cultural', 'excluido' => false],
-                ['id_par_acao_meta_acao' => 5, 'nome_acao' => '1.1 Fomento Cultural', 'excluido' => false],
-                ['id_par_acao_meta_acao' => 3, 'nome_acao' => '2.1 Fomento a projetos de Pontos de Cultura', 'excluido' => false],
-                ['id_par_acao_meta_acao' => 7, 'nome_acao' => '2.1 Fomento a projetos de Pontos de Cultura', 'excluido' => false],
-            ],
+            'pagination' => ['skip' => 0, 'limit' => 2000, 'total' => count($acoes), 'next' => null, 'previous' => null],
+            'data' => $acoes,
         ]);
 
         $transport = new FakeTransport(status: 200, body: $corpo);
