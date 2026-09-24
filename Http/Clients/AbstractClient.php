@@ -470,11 +470,18 @@ abstract class AbstractClient
         return trim((string) $valor) !== '' ? $valor : $alternativa;
     }
 
+    /** Criação não leva o identificador na URL, mas o erro precisa dizer de qual registro se trata. */
+    protected function logIdentifier(): string
+    {
+        // isset e não ??: $document é tipada nas subclasses, e ?? não cobre não-inicializada.
+        return isset($this->document) && $this->document !== '' ? $this->document : 'N/A';
+    }
+
     protected function handleError(string $criticalMessageBase, \Throwable $e, bool $isIntegration = false): void
     {
         $app = App::i();
         $endpoint = $this->endpoint ?? 'N/A';
-        $document = $this->document ?? 'N/A';
+        $document = $this->logIdentifier();
 
         $documentPlaceholder = $isIntegration ? 'ID da oportunidade' : 'Documento';
         $mensagem = "{$criticalMessageBase} | Endpoint: {$endpoint} | {$documentPlaceholder}: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode();
