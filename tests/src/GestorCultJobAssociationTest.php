@@ -10,10 +10,12 @@ use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 class GestorCultJobAssociationTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
 
     private const SYNC_KEYS = [
@@ -216,6 +218,37 @@ class GestorCultJobAssociationTest extends TestCase
 
         $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
         $this->assertSame($arvore, $updated->exercices, 'o irmão sem árvore não pode apagar a que já estava gravada');
+    }
+
+    /** A Conecta devolve a maioria dos entes sem árvore, e o gestor sem árvore não cria oportunidade. */
+    function testRespostaSemExerciciosNaoApagaArvoreJaGravada()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $arvore = [['id' => 91, 'ano' => 2026, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('77777777777777', 'MUNICIPIO COM ARVORE', $arvore);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+
+        $capturado = $this->capturandoLog(function () use ($agent) {
+            $this->job()->callAssociateFederativeEntities($agent, [
+                ['document' => '77777777777777', 'name' => 'MUNICIPIO COM ARVORE', 'exercicios' => []],
+            ]);
+        });
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($arvore, $updated->exercices, 'resposta sem árvore não pode apagar a que já estava gravada');
+
+        $avisos = array_filter(
+            $capturado->getRecords(),
+            fn($registro) => str_contains($registro['message'], 'Árvore do PAR preservada'),
+        );
+
+        $this->assertCount(1, $avisos, 'preservar em silêncio esconderia a origem devolvendo menos do que tem');
+        $this->assertStringContainsString('77777777777777', reset($avisos)['message']);
     }
 
     function testEnteQueSaiuDaRespostaTemRelationRemovida()
