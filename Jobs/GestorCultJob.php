@@ -493,7 +493,7 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
-            $app->log->critical("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
+            $app->log->error("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
@@ -606,7 +606,7 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
-            $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
+            $app->log->error("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
