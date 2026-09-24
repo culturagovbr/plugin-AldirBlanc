@@ -47,6 +47,7 @@ class Plugin extends \MapasCulturais\Plugin
                         'entesEndpoint' => 'auth/pessoa/{document}/entes',
                         'parAcoesEndpoint' => 'par/acoes',
                         'oportunidadeEndpoint' => 'oportunidades/{id}',
+                        'criarOportunidadeEndpoint' => 'oportunidades',
                         'validarTokenEndpoint' => 'validar-token',
                     ],
                 ],

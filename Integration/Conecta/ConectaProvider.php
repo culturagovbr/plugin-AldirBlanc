@@ -64,7 +64,9 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
         OpportunityDto $payload,
         SendAction $action = SendAction::Update,
     ): SendOutcome {
-        return RecordedSend::perform(new OportunidadeClient($id, $this->transport), $payload, $this->provider());
+        $client = new OportunidadeClient($id, $this->transport, $action);
+
+        return RecordedSend::perform($client, $payload, $this->provider());
     }
 
     public function validateCredential(): CredentialCheck
