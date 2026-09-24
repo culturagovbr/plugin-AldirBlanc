@@ -140,36 +140,23 @@ abstract class AbstractClient
 
     public final function post(array $data)
     {
-        if ($this->isDevelopmentMode()) {
-            return $data;
-        }
-
-        $fullUrl = $this->prepareUrl();
-        $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
-
-        try {
-            $resposta = $this->send('POST', $fullUrl, $jsonPayload);
-
-            return $this->parseResponse(
-                $resposta->body,
-                $resposta->status,
-                $resposta->hasError,
-                $resposta->errorMessage,
-                $resposta->errorCode,
-            );
-        } catch (\Exception $e) {
-            $this->handleError('[CultBR] Erro na API ao enviar dados (POST)', $e);
-        }
+        return $this->sendRecorded('POST', $data, '[CultBR] Erro na API ao enviar dados (POST)');
     }
 
     public final function put(array $data)
+    {
+        return $this->sendRecorded('PUT', $data, '[CultBR] Erro na API ao atualizar dados (PUT)');
+    }
+
+    /** Todo envio registra o que aconteceu, inclusive simulado e falho: é do exchange que sai o log de integração. */
+    private function sendRecorded(string $metodo, array $data, string $mensagemErro)
     {
         $sentAt = new \DateTime();
         $startedAt = microtime(true);
 
         if ($this->isDevelopmentMode()) {
             $this->recordExchange([
-                'method' => 'PUT',
+                'method' => $metodo,
                 // isset e não prepareUrl() direto: as propriedades são tipadas e podem não estar
                 // inicializadas numa subclasse, e o erro aqui derrubaria o envio, não só o log.
                 'endpoint' => isset($this->endpoint, $this->document) ? $this->prepareUrl() : ($this->endpoint ?? ''),
@@ -185,12 +172,12 @@ abstract class AbstractClient
         $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         $app = App::i();
-        $app->log->info("[CultBR] PUT payload | URL: {$fullUrl} | Body: {$jsonPayload}");
+        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl} | Body: {$jsonPayload}");
 
         try {
-            $resposta = $this->send('PUT', $fullUrl, $jsonPayload);
+            $resposta = $this->send($metodo, $fullUrl, $jsonPayload);
             $rawResponse = $resposta->body;
-            $app->log->info("[CultBR] PUT response | HTTP: {$resposta->status} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
+            $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
             $parsed = $this->parseResponse(
                 $rawResponse,
                 $resposta->status,
@@ -200,7 +187,7 @@ abstract class AbstractClient
             );
 
             $this->recordExchange([
-                'method' => 'PUT',
+                'method' => $metodo,
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
@@ -216,7 +203,7 @@ abstract class AbstractClient
             $rawResponse = $this->lastResponse?->body;
 
             $this->recordExchange([
-                'method' => 'PUT',
+                'method' => $metodo,
                 'endpoint' => $fullUrl,
                 'payload' => $data,
                 'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
@@ -228,7 +215,7 @@ abstract class AbstractClient
                 'durationMs' => $this->elapsedMs($startedAt),
             ]);
 
-            $this->handleError('[CultBR] Erro na API ao atualizar dados (PUT)', $e, true);
+            $this->handleError($mensagemErro, $e, true);
         }
     }
 
