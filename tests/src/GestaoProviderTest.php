@@ -6,6 +6,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
@@ -244,6 +245,21 @@ class GestaoProviderTest extends TestCase
             $this->assertSame(200, $outcome->httpStatus);
             $this->assertSame(self::HOST . '/integracao/oportunidades/7', $outcome->endpoint);
             $this->assertSame(['PUT'], $transporte->metodos());
+        });
+    }
+
+    /** Aqui o PUT cria o que não existe, então pedir criação não pode virar um POST. */
+    function testCriacaoContinuaSaindoPeloPut()
+    {
+        $this->emModoReal(['oportunidadeEndpoint' => 'integracao/oportunidades/{id}'], function () {
+            $transporte = new FakeTransport(200, '{"ok":true}');
+
+            $outcome = (new GestaoProvider($transporte))
+                ->sendOpportunity(new OpportunityId(7), new OpportunityDto(id: 7), SendAction::Create);
+
+            $this->assertSame(['PUT'], $transporte->metodos());
+            $this->assertSame('PUT', $outcome->method);
+            $this->assertSame(self::HOST . '/integracao/oportunidades/7', $outcome->endpoint);
         });
     }
 }

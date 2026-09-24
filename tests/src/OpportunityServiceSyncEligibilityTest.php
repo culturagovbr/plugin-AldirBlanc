@@ -2,6 +2,8 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Controller;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Services\OpportunityService;
 use MapasCulturais\Entities\Opportunity;
@@ -99,6 +101,28 @@ class OpportunityServiceSyncEligibilityTest extends TestCase
         $this->app->enableAccessControl();
 
         return $opportunity;
+    }
+
+    /** Oportunidade que nunca foi enviada precisa nascer na origem: o PUT da Conecta não cria. */
+    function testOportunidadeSemCarimboDeEnvioEhCriacao()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+
+        $this->assertSame(SendAction::Create, (new OpportunityService())->sendActionFor($opportunity));
+    }
+
+    function testOportunidadeJaEnviadaEhAtualizacao()
+    {
+        $user = $this->userDirector->createUser();
+        $opportunity = $this->opportunity($user);
+
+        $this->app->disableAccessControl();
+        $opportunity->setMetadata(Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT, '2026-09-24 12:00:00');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertSame(SendAction::Update, (new OpportunityService())->sendActionFor($opportunity));
     }
 
     /**
