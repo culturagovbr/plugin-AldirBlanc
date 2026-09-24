@@ -34,7 +34,7 @@ final class FederativeEntityDocument
         $posicaoPorDocumento = [];
 
         foreach ($entes as $ente) {
-            // Item torto segue adiante: quem descarta com motivo é a validação de contrato, não o dedupe.
+            // Item torto segue adiante: quem descarta com motivo vem depois — o mapper, se não for array; a validação de contrato, se faltar document.
             if (!is_array($ente) || !isset($ente['document']) || trim((string) $ente['document']) === '') {
                 $resultado[] = $ente;
                 continue;

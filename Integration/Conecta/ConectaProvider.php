@@ -48,7 +48,7 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
     {
         $resposta = (new EntesClient($document, $this->transport))->get();
 
-        return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: false);
+        return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: false, documento: $document->document);
     }
 
     public function listParActions(int $skip, int $limit): ParActionPage

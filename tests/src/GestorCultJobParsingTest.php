@@ -145,7 +145,7 @@ class GestorCultJobParsingTest extends TestCase
         $this->assertSame('COM ARVORE', $unidos[0]['name']);
     }
 
-    /** Item torto segue adiante: quem descarta com motivo é a validação de contrato, não o dedupe. */
+    /** O dedupe não filtra nada: descartar com motivo é de quem vem depois, o mapper e a validação. */
     function testNormalizeNaoEngoleItemSemDocumento()
     {
         $entes = [['name' => 'sem documento'], 'nem array'];

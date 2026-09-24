@@ -40,7 +40,7 @@ final class GestaoProvider implements IntegrationProvider
         $resposta = (new GestorClient($document, $this->transport))->get();
 
         // A lista nua é forma antiga e legítima da Gestão.
-        return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: true);
+        return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: true, documento: $document->document);
     }
 
     public function listParActions(int $skip, int $limit): ParActionPage
