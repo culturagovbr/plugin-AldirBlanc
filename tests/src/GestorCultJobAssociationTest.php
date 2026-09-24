@@ -251,6 +251,27 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertStringContainsString('77777777777777', reset($avisos)['message']);
     }
 
+    /** A guarda protege o que está gravado, não congela o ente: árvore nova continua entrando. */
+    function testArvoreGravadaEhSubstituidaQuandoARespostaTrazOutra()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $entity = $this->persistFederativeEntity('88888888888888', 'MUNICIPIO', [['id' => 1, 'ano' => 2025, 'metas' => []]]);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+        $novaArvore = [['id' => 2, 'ano' => 2026, 'metas' => []]];
+
+        $this->job()->callAssociateFederativeEntities($agent, [
+            ['document' => '88888888888888', 'name' => 'MUNICIPIO', 'exercicios' => $novaArvore],
+        ]);
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($novaArvore, $updated->exercices);
+    }
+
     function testEnteQueSaiuDaRespostaTemRelationRemovida()
     {
         $user = $this->userDirector->createUser();
