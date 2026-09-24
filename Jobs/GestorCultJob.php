@@ -341,6 +341,26 @@ class GestorCultJob
         return is_array($data['exercicios']) ? $data['exercicios'] : [];
     }
 
+    /** Resposta sem exercicios não apaga a árvore gravada: sem ela o gestor não cria oportunidade. */
+    private function applyEntityExercises(FederativeEntity $entity, array $exercicios): bool
+    {
+        $gravada = $entity->exercices;
+
+        if ($exercicios === [] && $gravada !== null && $gravada !== []) {
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: resposta sem exercicios");
+
+            return false;
+        }
+
+        if (($gravada === null ? null : json_encode($gravada)) === json_encode($exercicios)) {
+            return false;
+        }
+
+        $entity->exercices = $exercicios;
+
+        return true;
+    }
+
     private function validateFederativeEntitiesContract(array $federativeEntities): void
     {
         [, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
@@ -565,10 +585,7 @@ class GestorCultJob
                         $changed = true;
                     }
 
-                    $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
-                    $newJson = json_encode($exercicios);
-                    if ($currentJson !== $newJson) {
-                        $entity->exercices = $exercicios;
+                    if ($this->applyEntityExercises($entity, $exercicios)) {
                         $changed = true;
                     }
                     if ($changed) {

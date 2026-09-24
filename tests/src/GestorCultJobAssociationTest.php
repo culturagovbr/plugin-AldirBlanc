@@ -388,11 +388,12 @@ class GestorCultJobAssociationTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
 
-        $entity = $this->persistFederativeEntity('66777777777777', 'Perdeu PAR', $this->parMinimo());
+        $arvore = $this->parMinimo();
+        $entity = $this->persistFederativeEntity('66777777777777', 'Sem PAR na resposta', $arvore);
         $this->persistRelation($user->profile, $entity);
 
         $this->job()->callAssociateFederativeEntities($user->profile, [
-            ['document' => '66777777777777', 'name' => 'Perdeu PAR', 'exercicios' => []],
+            ['document' => '66777777777777', 'name' => 'Sem PAR na resposta', 'exercicios' => []],
         ]);
         $this->app->em->clear();
 
@@ -400,7 +401,7 @@ class GestorCultJobAssociationTest extends TestCase
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
 
         $this->assertNotNull($entityStillExists);
-        $this->assertEmpty($entityStillExists->exercices);
+        $this->assertSame($arvore, $entityStillExists->exercices);
         $this->assertCount(1, $relations);
     }
 
