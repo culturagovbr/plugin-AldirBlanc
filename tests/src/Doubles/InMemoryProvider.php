@@ -10,6 +10,7 @@ use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Integration\IntegrationProvider;
 
@@ -48,8 +49,11 @@ class InMemoryProvider implements IntegrationProvider
         );
     }
 
-    public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
-    {
+    public function sendOpportunity(
+        OpportunityId $id,
+        OpportunityDto $payload,
+        SendAction $action = SendAction::Update,
+    ): SendOutcome {
         return new SendOutcome(
             provider: $this->provider(),
             result: SendResult::Simulated,

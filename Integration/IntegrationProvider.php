@@ -9,6 +9,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Exceptions\IntegrationError;
 
 /** As operações da integração, sem que o consumidor saiba qual API as atende. */
@@ -33,5 +34,9 @@ interface IntegrationProvider
      * Envia a oportunidade e devolve o que aconteceu, para o log de integração.
      * @throws IntegrationError
      */
-    public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome;
+    public function sendOpportunity(
+        OpportunityId $id,
+        OpportunityDto $payload,
+        SendAction $action = SendAction::Update,
+    ): SendOutcome;
 }

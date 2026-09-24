@@ -9,6 +9,7 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Integration\IntegrationProvider;
 
 /**
@@ -44,8 +45,11 @@ class FakeIntegrationProvider implements IntegrationProvider
         throw new \LogicException('dublê só cobre o envio');
     }
 
-    public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
-    {
+    public function sendOpportunity(
+        OpportunityId $id,
+        OpportunityDto $payload,
+        SendAction $action = SendAction::Update,
+    ): SendOutcome {
         self::$enviados[] = (int) $id->id;
 
         return (self::$aoEnviar)($id, $payload);

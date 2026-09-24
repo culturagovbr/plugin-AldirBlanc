@@ -12,6 +12,7 @@ use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Mode;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Conecta\Http\EntesClient;
@@ -58,8 +59,11 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
         return ParActionPageMapper::fromResponse($resposta, $skip, $limit);
     }
 
-    public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
-    {
+    public function sendOpportunity(
+        OpportunityId $id,
+        OpportunityDto $payload,
+        SendAction $action = SendAction::Update,
+    ): SendOutcome {
         return RecordedSend::perform(new OportunidadeClient($id, $this->transport), $payload, $this->provider());
     }
 

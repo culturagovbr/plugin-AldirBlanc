@@ -10,6 +10,7 @@ use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Http\Clients\ParAcaoClient;
@@ -50,8 +51,12 @@ final class GestaoProvider implements IntegrationProvider
         return ParActionPageMapper::fromResponse($resposta, $skip, $limit);
     }
 
-    public function sendOpportunity(OpportunityId $id, OpportunityDto $payload): SendOutcome
-    {
+    /** A ação não muda nada aqui: o PUT desta API cria o que não existe. */
+    public function sendOpportunity(
+        OpportunityId $id,
+        OpportunityDto $payload,
+        SendAction $action = SendAction::Update,
+    ): SendOutcome {
         return RecordedSend::perform(new OportunidadeCultClient($id, $this->transport), $payload, $this->provider());
     }
 }
