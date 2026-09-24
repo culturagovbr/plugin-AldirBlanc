@@ -120,9 +120,9 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         ]);
     }
 
-    private function findJob(int $opportunityId, string $action)
+    private function findJob(int $opportunityId)
     {
-        $internalId = "oportunidade-cult-{$action}:{$opportunityId}";
+        $internalId = "oportunidade-cult:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
@@ -461,9 +461,8 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
-        $job = $this->findJob($opportunity->id, 'update');
+        $job = $this->findJob($opportunity->id);
         $this->assertNotNull($job);
-        $this->assertSame('update', $job->action);
     }
 
     /**
@@ -485,7 +484,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNull(
-            $this->findJob($opportunity->id, 'update'),
+            $this->findJob($opportunity->id),
             'Oportunidade sem os dados do PAR não deve enfileirar job de update'
         );
     }
@@ -510,7 +509,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNotNull(
-            $this->findJob($opportunity->id, 'update'),
+            $this->findJob($opportunity->id),
             'Rascunho elegível também deve enfileirar o job de update'
         );
     }
@@ -538,7 +537,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNull(
-            $this->findJob($opportunity->id, 'update'),
+            $this->findJob($opportunity->id),
             'PAR incompleto (3 de 4) não deve enfileirar job de update'
         );
     }
@@ -563,7 +562,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity->save(true);
         $this->app->enableAccessControl();
 
-        $this->assertNull($this->findJob($opportunity->id, 'update'));
+        $this->assertNull($this->findJob($opportunity->id));
     }
 
     /**
@@ -586,7 +585,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNull(
-            $this->findJob($opportunity->id, 'update'),
+            $this->findJob($opportunity->id),
             'Oportunidade sem federativeEntityId não deve enfileirar job de update'
         );
     }
@@ -618,7 +617,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNull(
-            $this->findJob($child->id, 'update'),
+            $this->findJob($child->id),
             'Oportunidade com parent não deve enfileirar job de update'
         );
     }
@@ -648,7 +647,7 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
             }
         );
 
-        $job = $this->findJob($opportunity->id, 'update');
+        $job = $this->findJob($opportunity->id);
         $this->assertNotNull($job, 'Job de update deve ser enfileirado');
         $this->assertGreaterThan(
             new \DateTime(),

@@ -60,7 +60,7 @@ class OportunidadeCultJobUpdateTest extends TestCase
 
     private function findUpdateJob(int $opportunityId): ?Job
     {
-        $internalId = "oportunidade-cult-update:{$opportunityId}";
+        $internalId = "oportunidade-cult:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
@@ -208,35 +208,4 @@ class OportunidadeCultJobUpdateTest extends TestCase
         $this->assertNotEquals($first['value'], $rows[0]['value'], 'Timestamp deve ser atualizado na segunda execução');
     }
 
-    /**
-     * Ação desconhecida (ex.: 'create', removida do fluxo) não existe em ACTIONS:
-     * o job lança "Method not found" antes do try/catch, então não enfileira retry.
-     */
-    function testAcaoDesconhecidaLancaExcecaoSemRetry()
-    {
-        $user = $this->userDirector->createUser();
-        $opp = $this->createOpportunity($user);
-
-        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
-            'opportunity' => $opp,
-            'action'      => 'create',
-        ]);
-
-        $jobId = md5("oportunidade-cult:oportunidade-cult-create:{$opp->id}");
-        $jobEntity = $this->app->repo('Job')->findOneBy(['id' => $jobId]);
-        $this->assertNotNull($jobEntity, 'Job com ação desconhecida deve existir antes de executar');
-
-        try {
-            (new OportunidadeCultJob(OportunidadeCultJob::SLUG))->_execute($jobEntity);
-            $this->fail('Esperava Exception "Method not found" para ação desconhecida');
-        } catch (\Exception $e) {
-            $this->assertStringContainsString('Method not found: create', $e->getMessage());
-        }
-
-        // O retry (attempt+1) fica dentro do catch de _execute, que não é alcançado.
-        $this->assertNull(
-            $this->findUpdateJob($opp->id),
-            'Ação desconhecida não deve enfileirar job de update'
-        );
-    }
 }

@@ -13,6 +13,7 @@ use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
@@ -26,15 +27,11 @@ class OportunidadeCultJob extends JobType
 
 	const MAX_ATTEMPTS = 3;
 
-	private const ACTIONS = [
-		'update' => 'updateInCult',
-	];
-
 	protected function _generateId(array $data, string $start_string, string $interval_string, int $iterations)
 	{
 		$opportunity = $data['opportunity'];
-		$action = $data['action'];
-        return "oportunidade-cult-{$action}:{$opportunity->id}";
+
+        return "oportunidade-cult:{$opportunity->id}";
     }
 
 	private function initServices(): void
@@ -66,15 +63,14 @@ class OportunidadeCultJob extends JobType
 		$this->initServices();
 
 		$opportunity = $job->opportunity;
-		$action = $job->action;
 		$attempt = (int) ($job->attempt ?? 1);
 
-		$app->log->info("OportunidadeCultJob executando tentativa {$attempt}/" . self::MAX_ATTEMPTS . " para ação: {$action} para oportunidade: {$opportunity->id}");
+		// O verbo sai do carimbo na hora de executar, não de quem enfileirou: entre uma coisa e outra
+		// o edital pode ter passado a existir na origem, e repetir o POST criaria outro.
+		$sendAction = $this->opportunityService->sendActionFor($opportunity);
+		$action = $sendAction->value;
 
-		$method = self::ACTIONS[$action] ?? null;
-		if (!$method) {
-			throw new \Exception("Method not found: {$action}");
-		}
+		$app->log->info("OportunidadeCultJob executando tentativa {$attempt}/" . self::MAX_ATTEMPTS . " para ação: {$action} para oportunidade: {$opportunity->id}");
 
 		// Histórico da aba "Logs CultBr": o uuid nasce na primeira tentativa e viaja no payload
 		// do job, de modo que as retentativas entrem como tentativas do mesmo envio.
@@ -87,11 +83,11 @@ class OportunidadeCultJob extends JobType
 			$job->user ?? null
 		));
 		try {
-			$outcome = $this->{$method}($opportunity);
+			$outcome = $this->sendToCult($opportunity, $sendAction);
 			$this->recordAttempt($logService, $requestLog, $outcome, $attempt);
 			$falhou = $outcome->result === SendResult::Error;
 
-			if ($action === 'update' && !$falhou) {
+			if (!$falhou) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 			}
 
@@ -115,7 +111,6 @@ class OportunidadeCultJob extends JobType
 				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'];
 				$app->enqueueOrReplaceJob(self::SLUG, [
 					'opportunity' => $opportunity,
-					'action'      => $action,
 					'attempt'     => $attempt + 1,
 					'requestUuid' => $requestLog?->requestUuid,
 				], $delay);
@@ -219,7 +214,7 @@ class OportunidadeCultJob extends JobType
 		}
 	}
 
-	private function updateInCult(Opportunity $opportunity): SendOutcome
+	private function sendToCult(Opportunity $opportunity, SendAction $action): SendOutcome
 	{
 		$opportunityId = $opportunity->id;
 
@@ -236,7 +231,8 @@ class OportunidadeCultJob extends JobType
 
 		return Plugin::getInstance()->integrationProvider()->sendOpportunity(
 			new OpportunityId((int) $opportunityId),
-			$opportunityDto
+			$opportunityDto,
+			$action
 		);
 	}
 }
