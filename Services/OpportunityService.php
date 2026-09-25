@@ -2,12 +2,15 @@
 
 namespace AldirBlanc\Services;
 
+use AldirBlanc\Controller;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Enum\MultiselectField;
 use AldirBlanc\Enum\OpportunityStatus;
+use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SpecialOption;
 use AldirBlanc\Enum\SyncIneligibilityReason;
 use AldirBlanc\Enum\TipoProponenteEnum;
+use AldirBlanc\Integration\FederativeEntityDocument;
 use MapasCulturais\App;
 use MapasCulturais\Entity;
 use MapasCulturais\Entities\Opportunity;
@@ -17,6 +20,21 @@ class OpportunityService
 {
     private const NOT_APPLICABLE_KEY = '__edital_nao_se_direciona__';
     private const ALL_OPTIONS_KEY = '__todas_opcoes__';
+
+    /**
+     * Oportunidade que nunca foi enviada precisa ser criada na origem; a Conecta não cria pelo PUT.
+     * Lê do banco, e não da entidade: o carimbo é gravado por SQL direto, e a entidade em memória
+     * continua sem ele — uma retentativa de criação bem-sucedida criaria o edital outra vez.
+     */
+    public function sendActionFor(Opportunity $opportunity): SendAction
+    {
+        $carimbo = App::i()->em->getConnection()->fetchOne(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => (int) $opportunity->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT],
+        );
+
+        return trim((string) $carimbo) === '' ? SendAction::Create : SendAction::Update;
+    }
 
     /** Labels "Edital não se direciona a..." por campo (para envio à API em formato label). */
     private const NOT_APPLICABLE_LABELS = [
@@ -380,7 +398,8 @@ class OpportunityService
             return null;
         }
         $name = $this->normalizeString($ente->name ?? '') ?? '';
-        $document = $this->normalizeString($ente->document) ?? '';
+        // O payload precisa sair na mesma grafia, qualquer que seja a gravada na linha.
+        $document = FederativeEntityDocument::normalize($this->normalizeString($ente->document));
         if ($document === '') {
             return null;
         }

@@ -10,9 +10,12 @@ use MapasCulturais\Entities\Opportunity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
-use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Jobs\GestorCultJob;
@@ -225,7 +228,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $opportunityService = new OpportunityService();
         $opportunities = $opportunityService->findOpportunitiesForEligibilityCheck($ids);
-        $lastLogs = (new CultBrRequestLogService())->findLastByOpportunities(array_keys($opportunities));
+
+        $logService = new CultBrRequestLogService();
+        $lastLogs = $logService->findLastByOpportunities(array_keys($opportunities));
+        $lastOutcomes = $logService->lastOutcomeByOpportunity($lastLogs);
 
         $status = [];
         foreach ($opportunities as $id => $opportunity) {
@@ -236,7 +242,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'syncable' => $reason === null,
                 'reason' => $reason ? i::__($reason->label()) : null,
                 'lastSync' => $lastLog ? [
-                    'result' => $lastLog->result,
+                    'result' => $lastOutcomes[$id]['result'],
+                    'provider' => $lastOutcomes[$id]['provider'],
                     'date' => $lastLog->createTimestamp?->format(\DateTime::ATOM),
                 ] : null,
             ];
@@ -293,45 +300,58 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParAcaoClient::DEFAULT_SKIP;
-        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParAcaoClient::DEFAULT_LIMIT;
+        $skip = isset($this->data['skip']) ? (int) $this->data['skip'] : ParActionPageLimits::DEFAULT_SKIP;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : ParActionPageLimits::DEFAULT_LIMIT;
 
         try {
-            $cultBrResponse = (new ParAcaoClient($skip, $limit))->get();
-
-            if (!is_array($cultBrResponse) || !array_key_exists('data', $cultBrResponse)) {
-                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
-                return;
-            }
-
-            $data = is_array($cultBrResponse['data'] ?? null) ? $cultBrResponse['data'] : [];
-            if (empty($data)) {
-                $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
-                return;
-            }
-
-            $pagination = is_array($cultBrResponse['pagination'] ?? null) ? $cultBrResponse['pagination'] : [];
-            $normalizedData = array_values(array_filter(array_map(function (array $actionData) {
-                $action = ParAction::fromArray($actionData);
-                return $action->label !== '' ? $action->toArray() : null;
-            }, $data)));
-            $normalizedData = $this->removeDuplicatedParActions($normalizedData);
-            $normalizedData = $this->sortParActionsByLabel($normalizedData);
+            $page = $this->integrationProvider()->listParActions($skip, $limit);
         } catch (\Throwable $exception) {
-            $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
+            $this->failParActionsCatalog($exception->getMessage(), $this->apiRespondeuAoCatalogo($exception));
             return;
         }
 
+        if (!$page->items) {
+            $this->failParActionsCatalog('a API respondeu sem nenhuma ação', apiRespondeu: true);
+            return;
+        }
+
+        $normalizedData = array_values(array_filter(array_map(
+            fn(ParAction $action) => $action->label !== '' ? $action->toArray() : null,
+            $page->items
+        )));
+        $normalizedData = $this->removeDuplicatedParActions($normalizedData);
+        $normalizedData = $this->sortParActionsByLabel($normalizedData);
+
         $this->json([
             'pagination' => [
-                'skip' => isset($pagination['skip']) ? (int) $pagination['skip'] : $skip,
-                'limit' => isset($pagination['limit']) ? (int) $pagination['limit'] : $limit,
-                'total' => isset($pagination['total']) ? (int) $pagination['total'] : count($data),
-                'next' => isset($pagination['next']) && $pagination['next'] !== null ? (int) $pagination['next'] : null,
-                'previous' => isset($pagination['previous']) && $pagination['previous'] !== null ? (int) $pagination['previous'] : null,
+                'skip' => $page->skip,
+                'limit' => $page->limit,
+                'total' => $page->total,
+                'next' => $page->next,
+                'previous' => $page->previous,
             ],
             'data' => $normalizedData,
         ]);
+    }
+
+    /** Responde a falha do catálogo deixando no log o motivo, que a mensagem de tela não carrega. */
+    private function failParActionsCatalog(string $motivo, bool $apiRespondeu): void
+    {
+        App::i()->log->error("[CultBR] Não foi possível listar as ações do PAR: {$motivo}");
+
+        if ($apiRespondeu) {
+            $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+            return;
+        }
+
+        $this->errorJson(i::__('Não conseguimos estabelecer conexão com a API CultBr'), 504);
+    }
+
+    /** Só o que nunca chegou a ter resposta é indisponibilidade; o resto a API respondeu. */
+    private function apiRespondeuAoCatalogo(\Throwable $exception): bool
+    {
+        return $exception instanceof IntegrationError
+            && $exception->kind() !== IntegrationError::KIND_TRANSPORT;
     }
 
     protected function removeDuplicatedParActions(array $actions): array
@@ -406,10 +426,14 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             $gestorDocument = new GestorDocument($this->getGestorCpf());
             $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
 
+            // Só o lock devolve false, e lock ativo é concorrência local: o sync está em curso
+            // em outra requisição, ou acabou de terminar. Dizer "sem conexão" com a API no ar
+            // mandaria o gestor esperar por nada — o caminho é consultar o status.
             if (!$syncExecuted) {
-                $_SESSION['gestor_cult_sync_completed'] = true;
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+                $app->log->info("[Gestores CultBR] startSync concorrente, delegando ao status | Usuário ID: {$userId}");
+
+                $this->json(['started' => true]);
+                return;
             }
 
             if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
@@ -418,6 +442,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 $this->json([
                     'started' => false,
                     'error' => true,
+                    'retryable' => true,
                     'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
                 ]);
                 return;
@@ -428,26 +453,24 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         } catch (Halt $e) {
             throw $e;
         } catch (\Throwable $e) {
-            // Dispara alerta para Telegram apenas se não foi já disparado pelo GestorCultJob
-            // (se a flag de erro não está definida, significa que o erro ocorreu antes do sync ou em outro lugar)
-            if (!isset($_SESSION['gestor_cult_sync_error'])) {
-                $userId = $app->user->id ?? 'N/A';
-                $app->log->critical("[Gestores CultBR] Erro ao iniciar sincronização | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            }
-            
+            $falha = $this->syncFailureFor($e);
+
+            $mensagem = $falha->message();
+            $userId = $app->user->id ?? 'N/A';
+
+            // Único alerta da falha: o job registra o contexto, mas não sabe classificar a causa.
+            $app->log->critical("[Gestores CultBR] Sincronização falhou ({$falha->value}) | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Em caso de erro, marca como concluído para não travar
             $_SESSION['gestor_cult_sync_completed'] = true;
-            
-            // Se não há mensagem de erro específica na sessão, trata como indisponibilidade da API
-            if (!isset($_SESSION['gestor_cult_sync_error'])) {
-                $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-                $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
-            }
-            
+            $_SESSION['gestor_cult_sync_error'] = $falha->value;
+            $_SESSION['gestor_cult_sync_error_message'] = $mensagem;
+
             $this->json([
                 'started' => false,
                 'error' => true,
-                'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
+                'retryable' => $falha->isRetryable(),
+                'errorMessage' => $mensagem,
             ]);
             return;
         }
@@ -456,9 +479,35 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json(['started' => true]);
     }
 
+    /**
+     * Classifica a falha para a sessão, para o log e para o texto da tela. O gestor não pode agir
+     * sobre nenhuma dessas causas, mas só espera e tenta de novo quando faz sentido.
+     */
+    protected function syncFailureFor(\Throwable $e): SyncFailure
+    {
+        if ($e instanceof IntegrationError && $e->kind() === IntegrationError::KIND_CONFIGURATION) {
+            return SyncFailure::ConfigurationError;
+        }
+
+        // As duas APIs divergem aqui: credencial recusada é 403 na Gestão e 401 na Conecta.
+        if ($e instanceof IntegrationError && in_array($e->httpStatus(), [401, 403], true)) {
+            return SyncFailure::CredentialRefused;
+        }
+
+        $foraDoContrato = $e instanceof \UnexpectedValueException
+            || ($e instanceof IntegrationError && in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true));
+
+        return $foraDoContrato ? SyncFailure::UnexpectedResponse : SyncFailure::ApiUnavailable;
+    }
+
     protected function getGestorCpf(): string
     {
         return (new UserService())->getCpf();
+    }
+
+    protected function integrationProvider(): IntegrationProvider
+    {
+        return Plugin::getInstance()->integrationProvider();
     }
 
     protected function createGestorCultJob(GestorDocument $gestorDocument): GestorCultJob

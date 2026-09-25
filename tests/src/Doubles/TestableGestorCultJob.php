@@ -2,6 +2,14 @@
 
 namespace Tests\AldirBlanc\Doubles;
 
+use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Dtos\ManagerSnapshot;
+use AldirBlanc\Enum\Provider;
+use AldirBlanc\Http\Transport\Transport;
+use AldirBlanc\Integration\Conecta\ConectaProvider;
+use AldirBlanc\Integration\Gestao\GestaoProvider;
+use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Jobs\GestorCultJob;
 use MapasCulturais\Entities\Agent;
 
@@ -11,6 +19,10 @@ use MapasCulturais\Entities\Agent;
  */
 class TestableGestorCultJob extends GestorCultJob
 {
+    private ?GestorDocument $documento = null;
+    private ?Transport $transport = null;
+    private Provider $provedor = Provider::Gestao;
+
     private mixed $gestorResponse = null;
     private bool $hasGestorResponse = false;
     private ?\Throwable $gestorException = null;
@@ -19,6 +31,26 @@ class TestableGestorCultJob extends GestorCultJob
     private ?\Throwable $grantRoleException = null;
     private ?\Throwable $beforeFlushException = null;
 
+    public function __construct(GestorDocument $gestorDocument)
+    {
+        parent::__construct($gestorDocument);
+
+        $this->documento = $gestorDocument;
+    }
+
+    /** Liga o provedor de verdade ao job, para exercitar o parse junto com o gate de revogação. */
+    public function useTransport(Transport $transport): void
+    {
+        $this->transport = $transport;
+    }
+
+    /** Qual API o job atende: decide a implementação construída e se a lista plana é aceita. */
+    public function useProvider(Provider $provedor): void
+    {
+        $this->provedor = $provedor;
+    }
+
+    /** Guarda a resposta crua; o parse espera o provedor, que o teste pode trocar depois disto. */
     public function setGestorResponse(mixed $response): void
     {
         $this->gestorResponse = $response;
@@ -50,14 +82,20 @@ class TestableGestorCultJob extends GestorCultJob
         $this->beforeFlushException = $exception;
     }
 
-    protected function fetchGestorData()
+    protected function fetchGestorData(): ?ManagerSnapshot
     {
         if ($this->gestorException) {
             throw $this->gestorException;
         }
 
         if ($this->hasGestorResponse) {
-            return $this->gestorResponse;
+            return is_array($this->gestorResponse)
+                ? ManagerSnapshotMapper::fromResponse($this->gestorResponse, acceptFlatList: $this->aceitaListaPlana())
+                : $this->gestorResponse;
+        }
+
+        if ($this->transport !== null) {
+            return $this->provedorReal()->fetchManager($this->documento);
         }
 
         return parent::fetchGestorData();
@@ -72,13 +110,13 @@ class TestableGestorCultJob extends GestorCultJob
         parent::associateFederativeEntities($agent, $federativeEntities, $beforeFlush);
     }
 
-    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, ManagerSnapshot $snapshot): void
     {
         if ($this->updateAgentException) {
             throw $this->updateAgentException;
         }
 
-        parent::updateAgentFromGestorResponse($agent, $apiResponse);
+        parent::updateAgentFromGestorResponse($agent, $snapshot);
     }
 
     protected function grantGestorCultBrRole($userId, Agent $agent): void
@@ -117,8 +155,29 @@ class TestableGestorCultJob extends GestorCultJob
         $this->associateFederativeEntities($agent, $federativeEntities);
     }
 
+    /** Recebe a resposta como a API a devolve e monta o snapshot, para o teste ler igual ao real. */
     public function callUpdateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
     {
-        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+        $this->updateAgentFromGestorResponse($agent, ManagerSnapshotMapper::fromResponse(
+            $apiResponse + ['entes_federados' => []],
+            acceptFlatList: false,
+        ));
+    }
+
+    private function provedorReal(): IntegrationProvider
+    {
+        return match ($this->provedor) {
+            Provider::Conecta => new ConectaProvider($this->transport),
+            Provider::Gestao => new GestaoProvider($this->transport),
+        };
+    }
+
+    /** Só a Gestão tolera a lista sem envelope; a Conecta a recusa como erro de contrato. */
+    private function aceitaListaPlana(): bool
+    {
+        return match ($this->provedor) {
+            Provider::Gestao => true,
+            Provider::Conecta => false,
+        };
     }
 }

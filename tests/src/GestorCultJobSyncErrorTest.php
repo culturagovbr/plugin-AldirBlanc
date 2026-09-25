@@ -5,8 +5,9 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
-use AldirBlanc\Jobs\GestorCultJob;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\User;
@@ -18,9 +19,37 @@ class GestorCultJobSyncErrorTest extends TestCase
 {
     use UserDirector;
 
-    private function jobWithResponse(mixed $response): TestableGestorCultJob
+    private const SYNC_KEYS = [
+        'gestor_cult_sync_started',
+        'gestor_cult_sync_completed',
+        'gestor_cult_sync_started_at',
+        'gestor_cult_sync_error',
+        'gestor_cult_sync_error_message',
+    ];
+
+    private static int $proximoDocumento = 91000000001;
+
+    protected function setUp(): void
     {
-        $job = new TestableGestorCultJob(new GestorDocument('12345678901'));
+        parent::setUp();
+        foreach (self::SYNC_KEYS as $key) {
+            unset($_SESSION[$key]);
+        }
+    }
+
+    /** O lock do sync vive no cache, que não tem rollback: cada chamada precisa de documento próprio. */
+    private function documentoNovo(): string
+    {
+        return (string) self::$proximoDocumento++;
+    }
+
+    private function jobWithResponse(
+        mixed $response,
+        Provider $provedor = Provider::Gestao,
+        string $documento = '12345678901',
+    ): TestableGestorCultJob {
+        $job = new TestableGestorCultJob(new GestorDocument($documento));
+        $job->useProvider($provedor);
         $job->setGestorResponse($response);
         return $job;
     }
@@ -86,6 +115,29 @@ class GestorCultJobSyncErrorTest extends TestCase
 
     // ===== descarte de ente fora do contrato =====
 
+    /** Sem transporte, a semântica do parse ainda é do provedor: só a Gestão tolera a lista sem envelope. */
+    function testListaSemEnvelopeSegueASemanticaDoProvedorMesmoSemTransporte()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $listaPlana = [$this->enteValido('86666666666666', 'Ente Sem Envelope')];
+
+        $this->jobWithResponse($listaPlana, Provider::Gestao, $this->documentoNovo())->sync();
+        $this->assertNotNull(
+            $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '86666666666666']),
+            'a Gestão aceita a lista sem envelope',
+        );
+
+        try {
+            $this->jobWithResponse($listaPlana, Provider::Conecta, $this->documentoNovo())->sync();
+            $this->fail('Esperava erro de contrato ao dar lista sem envelope à Conecta');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
+            $this->assertStringContainsString('entes_federados ausente', $e->getMessage());
+        }
+    }
+
     function testEnteMalformadoEntreValidosNaoDerrubaOSync()
     {
         $user = $this->userDirector->createUser();
@@ -147,7 +199,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->app->em->clear();
 
         $this->assertTrue(UserAccessService::isGestorCultBr());
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
@@ -184,7 +236,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
-    function testErroAoBuscarDadosMarcaSessaoERelancaExcecao()
+    function testErroAoBuscarDadosDestravaATelaERelancaExcecao()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -199,9 +251,8 @@ class GestorCultJobSyncErrorTest extends TestCase
             $this->assertSame('Timeout de conexão', $e->getMessage());
         }
 
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $_SESSION['gestor_cult_sync_error_message'] ?? null);
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     function testLockEhRemovidoAposSyncComSucesso()
@@ -235,7 +286,21 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertFalse($this->app->cache->contains($lockKey));
     }
 
-    function testErroAoAssociarDadosMarcaSessaoSemRelancarExcecao()
+    /** O job deixou de nomear a causa: ele alerta, destrava a tela e devolve a exceção ao controller. */
+    private function sincronizarEsperandoFalha(TestableGestorCultJob $job, string $mensagem): void
+    {
+        try {
+            $job->sync();
+            $this->fail("Esperava a falha subir ao controller: {$mensagem}");
+        } catch (\RuntimeException $e) {
+            $this->assertSame($mensagem, $e->getMessage());
+        }
+
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
+    }
+
+    function testErroAoAssociarDadosDestravaATelaEDevolveAFalha()
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -252,12 +317,9 @@ class GestorCultJobSyncErrorTest extends TestCase
         ]);
         $job->setAssociateException(new \RuntimeException('Falha controlada na associação'));
 
-        $job->sync();
+        $this->sincronizarEsperandoFalha($job, 'Falha controlada na associação');
         $this->app->em->clear();
 
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $_SESSION['gestor_cult_sync_error_message'] ?? null);
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77222222222222']));
         $this->assertFalse(UserAccessService::isGestorCultBr());
     }
@@ -279,12 +341,9 @@ class GestorCultJobSyncErrorTest extends TestCase
         ]);
         $job->setUpdateAgentException(new \RuntimeException('Falha controlada no agente'));
 
-        $job->sync();
+        $this->sincronizarEsperandoFalha($job, 'Falha controlada no agente');
         $this->app->em->clear();
 
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $_SESSION['gestor_cult_sync_error_message'] ?? null);
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77233333333333']));
         $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
         $this->assertFalse(UserAccessService::isGestorCultBr());
@@ -307,12 +366,9 @@ class GestorCultJobSyncErrorTest extends TestCase
         ]);
         $job->setGrantRoleException(new \RuntimeException('Falha controlada na role'));
 
-        $job->sync();
+        $this->sincronizarEsperandoFalha($job, 'Falha controlada na role');
         $this->app->em->clear();
 
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $_SESSION['gestor_cult_sync_error_message'] ?? null);
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77244444444444']));
         $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
         $this->assertFalse(UserAccessService::isGestorCultBr());
@@ -356,11 +412,10 @@ class GestorCultJobSyncErrorTest extends TestCase
             ],
         ]);
         $job->setBeforeFlushException(new \RuntimeException('Falha antes do flush'));
-        $job->sync();
 
+        $this->sincronizarEsperandoFalha($job, 'Falha antes do flush');
         $this->app->em->clear();
 
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error'] ?? null);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77444444444444']));
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77555555555555']));
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));

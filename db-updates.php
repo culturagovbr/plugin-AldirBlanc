@@ -123,5 +123,12 @@ return [
             __try("CREATE INDEX IDX_cultbr_request_log_user_id ON cultbr_request_log (user_id)");
             __try("ALTER TABLE cultbr_request_log ADD CONSTRAINT FK_cultbr_request_log_user FOREIGN KEY (user_id) REFERENCES usr(id) ON DELETE SET NULL");
         }
+    },
+
+    'add provider column to cultbr_request_log_attempt' => function () {
+        if (__table_exists('cultbr_request_log_attempt')) {
+            // Na tentativa, não no cabeçalho: o envio é retomado pelo uuid e pode trocar de provedor.
+            __try("ALTER TABLE cultbr_request_log_attempt ADD COLUMN provider VARCHAR(20) NULL");
+        }
     }
 ];

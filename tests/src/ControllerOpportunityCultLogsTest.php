@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\CultBrRequestLogService;
 use Laminas\Diactoros\Response;
@@ -125,5 +126,28 @@ class ControllerOpportunityCultLogsTest extends TestCase
         $this->assertEquals($log->requestUuid, $payload['data'][0]['requestUuid']);
         $this->assertCount(1, $payload['data'][0]['attempts']);
         $this->assertEquals(['nome' => 'Edital'], $payload['data'][0]['attempts'][0]['payload']);
+    }
+
+    /** A aba mostra tentativa a tentativa: sem o provedor, não dá para saber qual API atendeu cada uma. */
+    function testCadaTentativaInformaOProvedorQueAAtendeu()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN]);
+        $this->login($admin);
+        $opp = $this->opportunity($admin);
+
+        $service = new CultBrRequestLogService();
+        $log = $service->startOrResume((int) $opp->id, 'update');
+        $service->recordAttempt($log, ['attempt' => 1, 'status' => 'error', 'provider' => Provider::Gestao->value]);
+        $service->recordAttempt($log, ['attempt' => 2, 'status' => 'success', 'provider' => Provider::Conecta->value]);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opp->id];
+
+        $payload = $this->callJson(fn() => $controller->callGetOpportunityCultLogs());
+
+        $this->assertSame(
+            [Provider::Gestao->value, Provider::Conecta->value],
+            array_column($payload['data'][0]['attempts'], 'provider')
+        );
     }
 }

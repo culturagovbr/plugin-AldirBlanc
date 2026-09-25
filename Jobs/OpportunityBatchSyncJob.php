@@ -27,7 +27,7 @@ class OpportunityBatchSyncJob extends JobType
         foreach ($opportunities as $opp) {
             $app->enqueueOrReplaceJob(
                 OportunidadeCultJob::SLUG,
-                ['opportunity' => $opp, 'action' => 'update'],
+                ['opportunity' => $opp],
                 'now',
             );
         }

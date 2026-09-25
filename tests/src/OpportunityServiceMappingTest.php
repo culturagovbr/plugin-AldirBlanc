@@ -1001,6 +1001,23 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('12345678000195', $result['document']);
     }
 
+    /** A linha pode estar gravada na grafia curta; o payload sai sempre com quatorze dígitos. */
+    function testGetEnteFederadoNormalizaODocumentoDaLinhaGravada()
+    {
+        $opp = $this->createOpportunity();
+        $ente = $this->persistFederativeEntity('1612689000178', 'MUNICIPIO DE MATUREIA');
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('federativeEntityId', (string) $ente->id);
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertSame(
+            '01612689000178',
+            $this->service->publicGetEnteFederadoByOpportunity($opp)['document'],
+        );
+    }
+
     function testGetEnteFederadoComDocumentoApenasEspacosRetornaNul()
     {
         $opp = $this->createOpportunity();
@@ -1025,6 +1042,32 @@ class OpportunityServiceMappingTest extends TestCase
         $this->app->enableAccessControl();
 
         $this->assertNull($this->service->publicGetEnteFederadoByOpportunity($opp));
+    }
+
+    /**
+     * O metadado aponta para um ente que não resolve — apagado, ou com documento vazio — e a
+     * elegibilidade só exige que ele não esteja em branco. Decidiu-se deixar enviar assim: o
+     * contrato aceita `ente_federado` anulável, e o CultBR pode receber edital sem ente identificado.
+     */
+    function testOportunidadeComEnteIrresolvivelContinuaEnviavelComEnteNulo()
+    {
+        $opp = $this->createOpportunity();
+
+        $this->app->disableAccessControl();
+        $opp->setMetadata('federativeEntityId', '999999999');
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($opp->id)
+        );
+
+        $this->assertArrayHasKey('ente_federado', $payload, 'A chave sai no payload mesmo sem ente');
+        $this->assertNull($payload['ente_federado']);
+        $this->assertNull(
+            (new OpportunityDto(id: (int) $opp->id))->toArray()['ente_federado'],
+            'E o DTO não inventa um ente vazio no lugar do nulo'
+        );
     }
 
     // ======================= mapOpportunityToIntegrationPayload (integração) =======================

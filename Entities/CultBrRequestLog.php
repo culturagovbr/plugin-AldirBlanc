@@ -34,6 +34,9 @@ class CultBrRequestLog extends \MapasCulturais\Entity
     /** Todas as tentativas falharam (limite de retentativas atingido). */
     const RESULT_ERROR = 'error';
 
+    /** Modo simulado: o envio não saiu pela rede, e o envelope diz isso em vez de dizer sucesso. */
+    const RESULT_SIMULATED = 'simulated';
+
     /**
      * Substituído por um envio mais novo antes de terminar: enqueueOrReplaceJob usa id
      * determinístico sem o número da tentativa, então o retry pendente é descartado.

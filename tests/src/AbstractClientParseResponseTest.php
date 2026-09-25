@@ -2,9 +2,10 @@
 
 namespace Tests\AldirBlanc;
 
-use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Exceptions\IntegrationError;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableAbstractClient;
+use Tests\AldirBlanc\Traits\CapturesLog;
 
 /**
  * Testes de AbstractClient::parseResponse.
@@ -12,6 +13,8 @@ use Tests\AldirBlanc\Doubles\TestableAbstractClient;
  */
 class AbstractClientParseResponseTest extends TestCase
 {
+    use CapturesLog;
+
     private function client(): TestableAbstractClient
     {
         return new TestableAbstractClient();
@@ -26,13 +29,13 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame($payload, $result);
     }
 
-    function testRespostaStringVaziaSemCurlErrorMessageUsaErroHttpNaMensagem()
+    function testCorpoVazioComStatusDeSucessoLancaAusenciaDeResposta()
     {
         try {
             $this->client()->callParseResponse('', 200);
             $this->fail('Esperava uma exceção');
         } catch (\Exception $e) {
-            $this->assertSame('Erro HTTP 200', $e->getMessage());
+            $this->assertSame('API não retornou resposta', $e->getMessage());
             $this->assertSame(200, $e->getCode());
         }
     }
@@ -56,61 +59,39 @@ class AbstractClientParseResponseTest extends TestCase
         $this->client()->callParseResponse('{json invalido', 200);
     }
 
-    function testHttp404ComDetailNaoEncontradoRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'Pessoa não encontrada']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailRealDaCultBrRetornaArrayVazio()
+    /** `detail` real das duas APIs quando o CPF não existe na base do CultBR. */
+    function testHttp404ComDetailDeNegocioLancaExcecao()
     {
         $response = json_encode(['detail' => 'Pessoa com o CPF fornecido não encontrada no sistema.']);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
 
-        $this->assertSame([], $result);
+        $this->client()->callParseResponse($response, 404);
     }
 
-    function testHttp404ComDetailNotFoundEmInglesRetornaArrayVazio()
+    /** É o corpo que a Conecta devolve para rota inexistente, e o que mais se parece com ausência de dados. */
+    function testHttp404NotFoundGenericoLancaExcecao()
     {
-        $response = json_encode(['detail' => 'Resource not found']);
+        $response = json_encode(['detail' => 'Not Found']);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $this->expectException(\Exception::class);
+        $this->expectExceptionCode(404);
 
-        $this->assertSame([], $result);
+        $this->client()->callParseResponse($response, 404);
     }
 
-    function testHttp404ComDetailNaoEncontradaFormaFemininaRetornaArrayVazio()
+    function testHttp200ComEntesVaziosRetornaRespostaIntacta()
     {
-        $response = json_encode(['detail' => 'Entidade não encontrada']);
+        $response = json_encode(['entes_federados' => []]);
 
-        $result = $this->client()->callParseResponse($response, 404);
+        $result = $this->client()->callParseResponse($response, 200);
 
-        $this->assertSame([], $result);
+        $this->assertSame(['entes_federados' => []], $result);
     }
 
-    function testHttp404ComDetailCaseInsensitiveAsciiRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'RESOURCE NOT FOUND']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailMaiusculoAcentuadoRetornaArrayVazio()
-    {
-        $response = json_encode(['detail' => 'PESSOA NÃO ENCONTRADA']);
-
-        $result = $this->client()->callParseResponse($response, 404);
-
-        $this->assertSame([], $result);
-    }
-
-    function testHttp404ComDetailNaoStringNaoAtivaCasoDeAusencia()
+    /** `detail` em lista é a forma do 422 do FastAPI; num 404 continua sendo erro. */
+    function testHttp404ComDetailEmListaLancaExcecao()
     {
         $response = json_encode(['detail' => ['motivo' => 'algo']]);
 
@@ -120,12 +101,6 @@ class AbstractClientParseResponseTest extends TestCase
         $this->client()->callParseResponse($response, 404);
     }
 
-    /**
-     * Nuance real do código: a checagem de $httpCode >= 400 só é alcançada quando $response
-     * já é array/objeto (não uma string JSON) — dentro do bloco is_string(), qualquer JSON válido
-     * sem chave error/message/erro retorna antes de chegar nesse check (ver branch abaixo:
-     * testHttp404ComDetailNaoRelacionadoEStringRetornaComoSucesso).
-     */
     function testHttp404ComArrayJaDecodificadoLancaExcecaoComCodigo()
     {
         try {
@@ -199,21 +174,26 @@ class AbstractClientParseResponseTest extends TestCase
         }
     }
 
-    function testChaveErrorComValorNullLancaExcecaoGenerica()
+    function testChaveErrorComValorNullUsaOStatusNaMensagem()
     {
         $response = json_encode(['error' => null, 'rg' => '123']);
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('Erro na resposta da API');
+        $this->expectExceptionMessage('Erro HTTP 400');
 
         $this->client()->callParseResponse($response, 400);
     }
 
-    function testJsonStringNullRetornaArrayVazio()
+    /** Devolver [] aqui faria a resposta sem conteúdo ser lida como "gestor sem nenhum ente". */
+    function testJsonStringNullViraErroDeContrato()
     {
-        $result = $this->client()->callParseResponse('null', 200);
-
-        $this->assertSame([], $result);
+        try {
+            $this->client()->callParseResponse('null', 200);
+            $this->fail('Esperava erro de contrato para corpo null');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
+            $this->assertSame(200, $e->httpStatus());
+        }
     }
 
     function testJsonStringNullComErroHttpLancaExcecao()
@@ -275,44 +255,169 @@ class AbstractClientParseResponseTest extends TestCase
         $this->assertSame($response, $this->client()->callParseResponse($response, 200));
     }
 
-    /**
-     * 404 com `detail` de "não encontrado" é aceito pelo parseResponse como ausência de dados.
-     * No histórico da aba isso não pode virar sucesso — seria um registro contraditório
-     * (sucesso com HTTP 404).
-     */
-    function testRespostaAceitaComHttpDeErroNaoEhRegistradaComoSucesso()
+
+    function testHttp422ComDetailEmListaTrazOsCamposNaMensagem()
     {
-        $client = $this->client();
+        $response = json_encode(['detail' => [
+            ['type' => 'int_parsing', 'loc' => ['path', 'id_mapas'], 'msg' => 'Input should be a valid integer'],
+        ]]);
 
-        $this->assertSame([], $client->callParseResponse(json_encode(['detail' => 'Oportunidade não encontrada']), 404));
-        $this->assertSame(
-            CultBrRequestLogAttempt::RESULT_REJECTED,
-            $client->callExchangeResultForAcceptedResponse(404)
-        );
-    }
-
-    function testRespostaAceitaComHttpDeSucessoEhRegistradaComoSucesso()
-    {
-        $this->assertSame(
-            CultBrRequestLogAttempt::RESULT_SUCCESS,
-            $this->client()->callExchangeResultForAcceptedResponse(200)
-        );
-    }
-
-    /**
-     * Só o 404 é recusa. Se um dia o parseResponse passar a aceitar outro status de erro,
-     * ele não pode entrar no histórico rotulado como recusa do CultBR.
-     */
-    function testOutrosStatusDeErroNaoSaoClassificadosComoRecusa()
-    {
-        $client = $this->client();
-
-        foreach ([400, 409, 422, 500, 502] as $httpStatus) {
-            $this->assertNotSame(
-                CultBrRequestLogAttempt::RESULT_REJECTED,
-                $client->callExchangeResultForAcceptedResponse($httpStatus),
-                "HTTP {$httpStatus} não pode ser classificado como recusa"
-            );
+        try {
+            $this->client()->callParseResponse($response, 422);
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertStringContainsString('path.id_mapas', $e->getMessage());
+            $this->assertStringContainsString('valid integer', $e->getMessage());
+            $this->assertSame(422, $e->getCode());
         }
+    }
+
+    function testHttp401ComDetailStringTrazAMensagemDaApi()
+    {
+        $response = json_encode(['detail' => 'Token expirado']);
+
+        try {
+            $this->client()->callParseResponse($response, 401);
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertSame('Token expirado', $e->getMessage());
+            $this->assertSame(401, $e->getCode());
+        }
+    }
+
+    /** A lib de curl entrega string vazia, não null: sem isso a exceção sairia sem texto. */
+    function testMensagemNaoFicaVaziaQuandoOCurlNaoTrazTexto()
+    {
+        try {
+            $this->client()->callParseResponse('Internal Server Error', 500, true, '');
+            $this->fail('Esperava uma exceção');
+        } catch (\Exception $e) {
+            $this->assertSame('Erro HTTP 500', $e->getMessage());
+        }
+    }
+
+    function testCorpoNaoJsonComStatusDeErroPreservaStatusECorpo()
+    {
+        try {
+            $this->client()->callParseResponse('Internal Server Error', 500);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(500, $e->httpStatus());
+            $this->assertSame('Internal Server Error', $e->rawBody());
+            $this->assertSame(IntegrationError::KIND_HTTP, $e->kind());
+        }
+    }
+
+    /** Trocar host é onde redirect aparece, e sem FOLLOWLOCATION ele chegaria como resposta boa. */
+    function testRespostaDeRedirecionamentoNaoEhSucesso()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['location' => 'https://outro']), 301);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(301, $e->httpStatus());
+            $this->assertSame(IntegrationError::KIND_HTTP, $e->kind());
+        }
+    }
+
+    function testChaveMessageComStatusDeSucessoNaoLancaExcecao()
+    {
+        $payload = ['message' => 'planilha gerada', 'url' => 'https://exemplo'];
+
+        $this->assertSame($payload, $this->client()->callParseResponse(json_encode($payload), 200));
+    }
+
+    function testErroDeTransporteEhClassificadoComoTal()
+    {
+        try {
+            $this->client()->callParseResponse('', 0, true, 'Connection timed out', 28);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_TRANSPORT, $e->kind());
+            $this->assertSame(28, $e->getCode());
+            $this->assertNull($e->httpStatus());
+        }
+    }
+
+    function testHandleErrorPreservaOErroOriginal()
+    {
+        $original = IntegrationError::http('Token inválido', 401, '{"detail":"Token inválido"}');
+
+        try {
+            $this->client()->callHandleError($original);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame($original, $e);
+            $this->assertSame(401, $e->httpStatus());
+            $this->assertSame('{"detail":"Token inválido"}', $e->rawBody());
+        }
+    }
+
+    function testHandleErrorEnvolveErroDesconhecidoSemPerderACausa()
+    {
+        $original = new \RuntimeException('endpoint não configurado');
+
+        try {
+            $this->client()->callHandleError($original);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertSame('endpoint não configurado', $e->getMessage());
+            $this->assertSame($original, $e->getPrevious());
+        }
+    }
+
+    private function nivelDoAlerta(IntegrationError $erro): \Monolog\Handler\TestHandler
+    {
+        return $this->capturandoLog(function () use ($erro) {
+            try {
+                $this->client()->callHandleError($erro);
+            } catch (IntegrationError) {
+                // handleError sempre relança; aqui interessa só o nível da linha.
+            }
+        });
+    }
+
+    /** Redirect não traz erro de aplicação no corpo: a mensagem precisa apontar a configuração. */
+    function testMensagemDeRedirecionamentoDizOQueConferir()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['location' => 'https://outro']), 301);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertStringContainsString('esquema do host', $e->getMessage());
+            $this->assertStringContainsString('barra final', $e->getMessage());
+        }
+    }
+
+    function testCorpoDoRedirecionamentoNaoSubstituiODiagnostico()
+    {
+        try {
+            $this->client()->callParseResponse(json_encode(['detail' => 'Moved Permanently']), 307);
+            $this->fail('Esperava uma exceção');
+        } catch (IntegrationError $e) {
+            $this->assertStringContainsString('redirecionamento não seguido', $e->getMessage());
+        }
+    }
+
+    function testRedirecionamentoNaLeituraDisparaAlerta()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 301', 301));
+
+        $this->assertTrue($capturado->hasCriticalRecords(), 'Host mal configurado precisa gritar');
+    }
+
+    function testErroDeClienteNaLeituraNaoDisparaAlerta()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 404', 404));
+
+        $this->assertFalse($capturado->hasCriticalRecords(), 'O alerta não pode alargar para 4xx');
+        $this->assertTrue($capturado->hasErrorRecords());
+    }
+
+    function testErroDoServidorNaLeituraContinuaAlertando()
+    {
+        $capturado = $this->nivelDoAlerta(IntegrationError::http('Erro HTTP 500', 500));
+
+        $this->assertTrue($capturado->hasCriticalRecords());
     }
 }

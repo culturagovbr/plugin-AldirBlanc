@@ -103,7 +103,7 @@ class OpportunityForceResyncJobTest extends TestCase
 
     private function findSyncJob(int $opportunityId): ?Job
     {
-        $id = md5('oportunidade-cult:oportunidade-cult-update:' . $opportunityId);
+        $id = md5('oportunidade-cult:oportunidade-cult:' . $opportunityId);
 
         return $this->app->repo('Job')->findOneBy(['id' => $id]);
     }
@@ -207,7 +207,7 @@ class OpportunityForceResyncJobTest extends TestCase
         $this->login($owner);
         $this->app->enqueueOrReplaceJob(
             OportunidadeCultJob::SLUG,
-            ['opportunity' => $opportunity, 'action' => 'update'],
+            ['opportunity' => $opportunity],
             '+1 hour'
         );
 
@@ -218,6 +218,7 @@ class OpportunityForceResyncJobTest extends TestCase
         $envio = $this->findSyncJob((int) $opportunity->id);
 
         $this->assertNotNull($envio, 'A oportunidade continua com envio na fila');
+
         $this->assertSame(
             (int) $administrador->id,
             (int) $envio->user->id,

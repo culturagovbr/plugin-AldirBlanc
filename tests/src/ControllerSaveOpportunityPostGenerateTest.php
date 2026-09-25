@@ -70,7 +70,7 @@ class ControllerSaveOpportunityPostGenerateTest extends TestCase
      */
     private function findUpdateJob(int $opportunityId)
     {
-        $internalId = "oportunidade-cult-update:{$opportunityId}";
+        $internalId = "oportunidade-cult:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }

@@ -10,11 +10,29 @@ use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 class GestorCultJobAssociationTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
+
+    private const SYNC_KEYS = [
+        'gestor_cult_sync_started',
+        'gestor_cult_sync_completed',
+        'gestor_cult_sync_started_at',
+        'gestor_cult_sync_error',
+        'gestor_cult_sync_error_message',
+    ];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        foreach (self::SYNC_KEYS as $key) {
+            unset($_SESSION[$key]);
+        }
+    }
 
     private function job(): TestableGestorCultJob
     {
@@ -174,6 +192,84 @@ class GestorCultJobAssociationTest extends TestCase
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $updated]);
         $this->assertCount(1, $relations, 'Não deve criar uma segunda relation para o mesmo agente/documento');
+    }
+
+    /** O dedupe roda antes da gravação: descartar o irmão com árvore sobrescreveria a do banco com vazio. */
+    function testArvoreJaGravadaSobreviveAoDedupeDeIrmaos()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $arvore = [['id' => 574, 'ano' => 2027, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('01612689000178', 'MUNICIPIO DE MATUREIA', $arvore);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+
+        // Os dois irmãos como a homologação os devolve: o de árvore vazia vem primeiro.
+        $daApi = [
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => $arvore],
+        ];
+
+        $job = $this->job();
+        $job->callAssociateFederativeEntities($agent, $job->callNormalizeFederativeEntities($daApi));
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($arvore, $updated->exercices, 'o irmão sem árvore não pode apagar a que já estava gravada');
+    }
+
+    /** A Conecta devolve a maioria dos entes sem árvore, e o gestor sem árvore não cria oportunidade. */
+    function testRespostaSemExerciciosNaoApagaArvoreJaGravada()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $arvore = [['id' => 91, 'ano' => 2026, 'metas' => []]];
+        $entity = $this->persistFederativeEntity('77777777777777', 'MUNICIPIO COM ARVORE', $arvore);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+
+        $capturado = $this->capturandoLog(function () use ($agent) {
+            $this->job()->callAssociateFederativeEntities($agent, [
+                ['document' => '77777777777777', 'name' => 'MUNICIPIO COM ARVORE', 'exercicios' => []],
+            ]);
+        });
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($arvore, $updated->exercices, 'resposta sem árvore não pode apagar a que já estava gravada');
+
+        $avisos = array_filter(
+            $capturado->getRecords(),
+            fn($registro) => str_contains($registro['message'], 'Árvore do PAR preservada'),
+        );
+
+        $this->assertCount(1, $avisos, 'preservar em silêncio esconderia a origem devolvendo menos do que tem');
+        $this->assertStringContainsString('77777777777777', reset($avisos)['message']);
+    }
+
+    /** A guarda protege o que está gravado, não congela o ente: árvore nova continua entrando. */
+    function testArvoreGravadaEhSubstituidaQuandoARespostaTrazOutra()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $entity = $this->persistFederativeEntity('88888888888888', 'MUNICIPIO', [['id' => 1, 'ano' => 2025, 'metas' => []]]);
+        $this->persistRelation($agent, $entity);
+        $entityId = $entity->id;
+        $novaArvore = [['id' => 2, 'ano' => 2026, 'metas' => []]];
+
+        $this->job()->callAssociateFederativeEntities($agent, [
+            ['document' => '88888888888888', 'name' => 'MUNICIPIO', 'exercicios' => $novaArvore],
+        ]);
+        $this->app->em->clear();
+
+        $updated = $this->app->repo(FederativeEntity::class)->find($entityId);
+        $this->assertSame($novaArvore, $updated->exercices);
     }
 
     function testEnteQueSaiuDaRespostaTemRelationRemovida()
@@ -346,11 +442,12 @@ class GestorCultJobAssociationTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
 
-        $entity = $this->persistFederativeEntity('66777777777777', 'Perdeu PAR', $this->parMinimo());
+        $arvore = $this->parMinimo();
+        $entity = $this->persistFederativeEntity('66777777777777', 'Sem PAR na resposta', $arvore);
         $this->persistRelation($user->profile, $entity);
 
         $this->job()->callAssociateFederativeEntities($user->profile, [
-            ['document' => '66777777777777', 'name' => 'Perdeu PAR', 'exercicios' => []],
+            ['document' => '66777777777777', 'name' => 'Sem PAR na resposta', 'exercicios' => []],
         ]);
         $this->app->em->clear();
 
@@ -358,7 +455,7 @@ class GestorCultJobAssociationTest extends TestCase
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
 
         $this->assertNotNull($entityStillExists);
-        $this->assertEmpty($entityStillExists->exercices);
+        $this->assertSame($arvore, $entityStillExists->exercices);
         $this->assertCount(1, $relations);
     }
 
@@ -478,6 +575,126 @@ class GestorCultJobAssociationTest extends TestCase
 
     // ===== updateAgentFromGestorResponse =====
 
+    private function agenteComPerfilPreenchido(): object
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $agent->setMetadata('rgNumero', 'RG-ATUAL');
+        $agent->setMetadata('En_CEP', '57300000');
+        $agent->setMetadata('En_Num', '100');
+        $agent->setMetadata('telefone1', '82999990000');
+        $agent->setMetadata('En_Complemento', 'Sala 2');
+        $agent->setMetadata('nomeCompleto', 'Nome Anterior');
+        $agent->save(true);
+
+        return $agent;
+    }
+
+    /** Nulo da API é campo que ela não preencheu, não ordem de apagar o que o gestor já cadastrou. */
+    function testCampoNuloNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, [
+            'nome' => 'Nome Novo',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+        ]);
+
+        $this->assertSame('Nome Novo', $agent->getMetadata('nomeCompleto'));
+        $this->assertSame('RG-ATUAL', $agent->getMetadata('rgNumero'));
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+        $this->assertSame('82999990000', $agent->getMetadata('telefone1'));
+        $this->assertSame('Sala 2', $agent->getMetadata('En_Complemento'));
+    }
+
+    function testCampoAusenteNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['nome' => 'Nome Novo']);
+
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+        $this->assertSame('RG-ATUAL', $agent->getMetadata('rgNumero'));
+    }
+
+    function testCampoVazioNaRespostaPreservaOMetadadoPreenchido()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['cep' => '', 'numero' => '   ']);
+
+        $this->assertSame('57300000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('100', $agent->getMetadata('En_Num'));
+    }
+
+    function testCampoPreenchidoEDiferenteAtualizaOMetadado()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, ['cep' => '01001000', 'rg' => 'RG-NOVO']);
+
+        $this->assertSame('01001000', $agent->getMetadata('En_CEP'));
+        $this->assertSame('RG-NOVO', $agent->getMetadata('rgNumero'));
+    }
+
+    /** O critério do fim a fim: o sync inteiro com o retorno real não esvazia o perfil. */
+    function testSyncComORetornoRealNaoEsvaziaOPerfilDoGestor()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $job = $this->job();
+        $job->setGestorResponse([
+            'nome' => 'GESTOR DE TESTE',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+            'entes_federados' => [
+                ['name' => 'ESTADO DO PIAUI', 'document' => '06553481000300', 'exercicios' => []],
+            ],
+        ]);
+        $job->sync();
+        $this->app->em->clear();
+
+        $recarregado = $this->app->repo('MapasCulturais\\Entities\\Agent')->find($agent->id);
+
+        $this->assertSame('57300000', $recarregado->getMetadata('En_CEP'));
+        $this->assertSame('100', $recarregado->getMetadata('En_Num'));
+        $this->assertSame('GESTOR DE TESTE', $recarregado->getMetadata('nomeCompleto'));
+    }
+
+    /** O retorno real da Conecta: cinco dos seis campos nulos, e nenhum metadado pode se perder. */
+    function testRetornoRealDaConectaNaoEsvaziaNenhumCampoObrigatorio()
+    {
+        $agent = $this->agenteComPerfilPreenchido();
+
+        $this->job()->callUpdateAgentFromGestorResponse($agent, [
+            'nome' => 'GESTOR DE TESTE',
+            'rg' => null,
+            'cep' => null,
+            'celular' => null,
+            'numero' => null,
+            'complemento' => null,
+            'logradouro' => null,
+            'bairro' => null,
+            'municipio' => null,
+            'uf' => null,
+        ]);
+
+        foreach (['En_CEP' => '57300000', 'En_Num' => '100'] as $chave => $esperado) {
+            $this->assertSame($esperado, $agent->getMetadata($chave), "{$chave} é obrigatório no perfil");
+        }
+    }
+
     function testUpdateAgentFromGestorResponsePersisteSoCamposDiferentes()
     {
         $user = $this->userDirector->createUser();
@@ -544,5 +761,26 @@ class GestorCultJobAssociationTest extends TestCase
 
         $entities = $this->app->repo(FederativeEntity::class)->findBy(['document' => '12345678901234']);
         $this->assertCount(1, $entities, 'Rodar sync() de novo não deve duplicar a FederativeEntity');
+    }
+
+    /** Unir as grafias antes da validação evita que o par vire "document duplicado" e seja descartado. */
+    function testParDeGrafiasDoMesmoEnteViraUmaAssociacaoSo()
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $job = $this->job();
+        $entes = $job->callNormalizeFederativeEntities([
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA', 'exercicios' => []],
+        ]);
+
+        $job->callAssociateFederativeEntities($user->profile, $entes);
+        $this->app->em->clear();
+
+        $relacoes = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+
+        $this->assertCount(1, $relacoes);
+        $this->assertSame('01612689000178', $relacoes[0]->owner->document);
     }
 }
