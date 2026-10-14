@@ -159,16 +159,44 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    function testDocumentoNaoEncontradoNaoRevoga()
+    /** A Gestão não distingue documento inexistente de instabilidade, e lá o 404 segue sendo erro. */
+    function testDocumentoNaoEncontradoNaGestaoNaoRevoga()
     {
-        $this->emCadaProvedor(function (Provider $provedor) {
+        $this->comModoReal(function () {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'), $provedor);
+            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'), Provider::Gestao);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage(), $provedor->value);
-            $this->assertPapelERelacoesIntactos($user, $provedor);
+            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage());
+            $this->assertPapelERelacoesIntactos($user, Provider::Gestao);
+        });
+    }
+
+    /** Na Conecta o 404 com o texto da aplicação é resposta sobre a pessoa: ela não está lá. */
+    function testCpfDesconhecidoPelaConectaRevoga()
+    {
+        $this->comModoReal(function () {
+            $user = $this->gestorLogadoComUmEnte();
+
+            $corpo = '{"detail":"Pessoa com o CPF fornecido não encontrada no sistema."}';
+            $falha = $this->sincronizarCom(new FakeTransport(404, $corpo), Provider::Conecta);
+
+            $this->assertNull($falha, 'documento inexistente não é falha de integração');
+            $this->assertPapelERelacoesRevogados($user, Provider::Conecta);
+        });
+    }
+
+    /** Endereço errado também responde 404, e não pode custar o papel de quem logar. */
+    function testRotaInexistenteNaConectaNaoRevoga()
+    {
+        $this->comModoReal(function () {
+            $user = $this->gestorLogadoComUmEnte();
+
+            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Not Found"}'), Provider::Conecta);
+
+            $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
+            $this->assertPapelERelacoesIntactos($user, Provider::Conecta);
         });
     }
 

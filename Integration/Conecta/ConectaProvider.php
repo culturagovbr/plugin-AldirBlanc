@@ -32,6 +32,9 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
     /** A Gestão usa 403 para credencial; a Conecta usa 401. Os dois significam recusa. */
     private const REFUSED_STATUSES = [401, 403];
 
+    /** A Conecta responde 404 tanto para CPF que ela não conhece quanto para rota inexistente. */
+    private const UNKNOWN_DOCUMENT_DETAIL = '/n[ãa]o\s+(?:foi\s+)?encontrad[ao]/iu';
+
     public function __construct(private readonly ?Transport $transport = null)
     {
     }
@@ -47,9 +50,24 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
      */
     public function fetchManager(GestorDocument $document): ?ManagerSnapshot
     {
-        $resposta = (new EntesClient($document, $this->transport))->get();
+        try {
+            $resposta = (new EntesClient($document, $this->transport))->get();
+        } catch (IntegrationError $e) {
+            if ($this->isUnknownDocument($e)) {
+                return null;
+            }
+
+            throw $e;
+        }
 
         return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: false, documento: $document->document);
+    }
+
+    /** O 404 genérico pode ser endereço errado, e revogaria todo gestor que passasse por ele. */
+    private function isUnknownDocument(IntegrationError $e): bool
+    {
+        return $e->httpStatus() === 404
+            && preg_match(self::UNKNOWN_DOCUMENT_DETAIL, $e->getMessage()) === 1;
     }
 
     public function listParActions(int $skip, int $limit): ParActionPage
