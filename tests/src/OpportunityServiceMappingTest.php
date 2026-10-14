@@ -758,6 +758,67 @@ class OpportunityServiceMappingTest extends TestCase
         $this->assertSame('100698.85', $enviado['valor_total_edital']);
     }
 
+    /**
+     * A descrição longa em branco não pode anular o detalhamento: a Conecta recusa com 400,
+     * e o `??` sozinho não cobre string vazia.
+     */
+    function testMapOpportunityToIntegrationPayloadDescricaoLongaVaziaCaiParaDescricaoCurta()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->shortDescription = 'Premiação de iniciativas culturais';
+        $opp->longDescription = '';
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame('Premiação de iniciativas culturais', $payload['detalhamento_objeto']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadDescricaoLongaEmEspacosCaiParaDescricaoCurta()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->shortDescription = 'Fomento a projetos continuados';
+        $opp->longDescription = '   ';
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame('Fomento a projetos continuados', $payload['detalhamento_objeto']);
+    }
+
+    function testMapOpportunityToIntegrationPayloadDescricaoLongaPreenchidaPrevaleceSobreACurta()
+    {
+        $opp = $this->createOpportunity();
+        $oppId = $opp->id;
+
+        $this->app->disableAccessControl();
+        $opp->shortDescription = 'resumo curto';
+        $opp->longDescription = 'detalhamento completo do objeto';
+        $opp->save(true);
+        $this->app->enableAccessControl();
+
+        $this->app->em->detach($opp);
+        $payload = $this->service->mapOpportunityToIntegrationPayload(
+            $this->service->findOpportunityWithIntegrationData($oppId)
+        );
+
+        $this->assertSame('detalhamento completo do objeto', $payload['detalhamento_objeto']);
+    }
+
     function testValorTotalDeUmaCasaSobreviveAoDtoComOZeroFinal()
     {
         $opp = $this->createOpportunity();
