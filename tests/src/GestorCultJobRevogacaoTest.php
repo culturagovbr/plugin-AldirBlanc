@@ -131,6 +131,20 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "classificar a causa é do controller{$onde}");
     }
 
+    private function assertPapelERelacoesRevogados(object $user, ?Provider $provedor = null): void
+    {
+        $onde = $provedor === null ? '' : " ({$provedor->value})";
+
+        $this->assertFalse(UserAccessService::isGestorCultBr(), "o papel precisava ter sido revogado{$onde}");
+        $this->assertCount(
+            0,
+            $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
+            "as relações precisavam ter sido apagadas{$onde}",
+        );
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "revogar não é falha{$onde}");
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, "a tela precisa destravar{$onde}");
+    }
+
     /** Corpo `null` num 200 chegava ao gate como "este gestor não tem ente nenhum". */
     function testCorpoNuloNaoRevoga()
     {
@@ -145,16 +159,44 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    function testDocumentoNaoEncontradoNaoRevoga()
+    /** A Gestão não distingue documento inexistente de instabilidade, e lá o 404 segue sendo erro. */
+    function testDocumentoNaoEncontradoNaGestaoNaoRevoga()
     {
-        $this->emCadaProvedor(function (Provider $provedor) {
+        $this->comModoReal(function () {
             $user = $this->gestorLogadoComUmEnte();
 
-            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'), $provedor);
+            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Pessoa não encontrada"}'), Provider::Gestao);
 
             $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage(), $provedor->value);
-            $this->assertPapelERelacoesIntactos($user, $provedor);
+            $this->assertStringContainsString('Pessoa não encontrada', $falha->getMessage());
+            $this->assertPapelERelacoesIntactos($user, Provider::Gestao);
+        });
+    }
+
+    /** Na Conecta o 404 com o texto da aplicação é resposta sobre a pessoa: ela não está lá. */
+    function testCpfDesconhecidoPelaConectaRevoga()
+    {
+        $this->comModoReal(function () {
+            $user = $this->gestorLogadoComUmEnte();
+
+            $corpo = '{"detail":"Pessoa com o CPF fornecido não encontrada no sistema."}';
+            $falha = $this->sincronizarCom(new FakeTransport(404, $corpo), Provider::Conecta);
+
+            $this->assertNull($falha, 'documento inexistente não é falha de integração');
+            $this->assertPapelERelacoesRevogados($user, Provider::Conecta);
+        });
+    }
+
+    /** Endereço errado também responde 404, e não pode custar o papel de quem logar. */
+    function testRotaInexistenteNaConectaNaoRevoga()
+    {
+        $this->comModoReal(function () {
+            $user = $this->gestorLogadoComUmEnte();
+
+            $falha = $this->sincronizarCom(new FakeTransport(404, '{"detail":"Not Found"}'), Provider::Conecta);
+
+            $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
+            $this->assertPapelERelacoesIntactos($user, Provider::Conecta);
         });
     }
 
@@ -184,25 +226,18 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    /** Documento que a origem não conhece não é "gestor sem entes": não pode revogar nada. */
-    function testDocumentoDesconhecidoPelaOrigemNaoRevoga()
+    /** O `null` do contrato é a origem dizendo que não conhece o documento, e quem não existe lá não é gestor. */
+    function testDocumentoDesconhecidoPelaOrigemRevoga()
     {
         $user = $this->gestorLogadoComUmEnte();
 
         $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
         $job->setGestorResponse(null);
-        $falha = null;
-
-        try {
-            $job->sync();
-        } catch (\Throwable $e) {
-            $falha = $e;
-        }
+        $job->sync();
 
         $this->app->em->clear();
 
-        $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-        $this->assertPapelERelacoesIntactos($user);
+        $this->assertPapelERelacoesRevogados($user);
     }
 
     /** O caminho legítimo continua revogando: a API respondeu, e não há ente nenhum. */
@@ -213,13 +248,7 @@ class GestorCultJobRevogacaoTest extends TestCase
 
             $this->sincronizarCom(new FakeTransport(200, '{"entes_federados":[]}'), $provedor);
 
-            $this->assertFalse(UserAccessService::isGestorCultBr(), $provedor->value);
-            $this->assertCount(
-                0,
-                $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
-                $provedor->value,
-            );
-            $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, $provedor->value);
+            $this->assertPapelERelacoesRevogados($user, $provedor);
         });
     }
 
