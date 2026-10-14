@@ -342,13 +342,16 @@ class OpportunityService
 		$parAcaoId = $opportunity->getMetadata('parAcaoId') ?? $this->getRawMetadataValue($opportunity, 'parAcaoId');
 		$parAtividadeId = $opportunity->getMetadata('parAtividadeId') ?? $this->getRawMetadataValue($opportunity, 'parAtividadeId');
 
+		$detalhamentoObjeto = $this->normalizeString($opportunity->longDescription)
+			?? $this->normalizeString($opportunity->shortDescription);
+
         return [
             'id' => $opportunity->id,
             'numero_e_titulo_edital' => $opportunity->name ?? null,
             'forma_de_execucao' => $tipoDeEditalVal,
             'status' => $this->getOpportunityStatus($opportunity),
             'data_publicacao_edital' => $this->normalizeDateValue($opportunity->getMetadata('publishedTimestamp') ?? null),
-            'detalhamento_objeto' => mb_substr($opportunity->longDescription ?? $opportunity->shortDescription ?? '', 0, 600) ?: null,
+            'detalhamento_objeto' => mb_substr($detalhamentoObjeto ?? '', 0, 600) ?: null,
             'numero_previsto_vagas' => $vacanciesVal,
             'valor_total_edital' => $this->normalizeDecimalValue($totalResourceVal),
             'data_inicial_prazo_inscricao' => $this->normalizeDateValue($opportunity->registrationFrom ?? null),
