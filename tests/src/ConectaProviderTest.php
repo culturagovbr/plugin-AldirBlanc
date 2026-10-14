@@ -107,6 +107,33 @@ class ConectaProviderTest extends TestCase
         });
     }
 
+    /** CPF que a Conecta não conhece é o `null` do contrato, e é dele que sai a revogação do papel. */
+    function testCpfDesconhecidoViraDocumentoInexistente()
+    {
+        $json = json_encode(['detail' => 'Pessoa com o CPF fornecido não encontrada no sistema.']);
+
+        $this->comResposta($json, function (FakeTransport $transporte) {
+            $snapshot = (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+
+            $this->assertNull($snapshot);
+        }, 404);
+    }
+
+    /** Rota inexistente responde 404 com o corpo genérico do FastAPI, e continua sendo erro. */
+    function testQuatrocentosEQuatroSemOTextoDaAplicacaoContinuaErro()
+    {
+        $json = json_encode(['detail' => 'Not Found']);
+
+        $this->comResposta($json, function (FakeTransport $transporte) {
+            try {
+                (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+                $this->fail('Esperava erro no 404 sem o texto da aplicação');
+            } catch (IntegrationError $e) {
+                $this->assertSame(404, $e->httpStatus());
+            }
+        }, 404);
+    }
+
     function testEnvelopeDaConectaViraSnapshotComOsEntes()
     {
         $json = json_encode([
