@@ -7,15 +7,19 @@ use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
+use AldirBlanc\Dtos\FederativeEntitySnapshot;
+use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
-use AldirBlanc\Http\Clients\GestorClient;
+use AldirBlanc\Integration\FederativeEntityDocument;
+use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
-    public const API_UNAVAILABLE_MESSAGE = 'Não conseguimos estabelecer conexão com a API CultBr. Tente novamente mais tarde.';
+    public const API_UNAVAILABLE_MESSAGE = SyncFailure::MENSAGEM_API_INDISPONIVEL;
     private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
@@ -69,33 +73,32 @@ class GestorCultJob
     private function performSync(Agent $agent, $userId, string $document): void
     {
         $app = App::i();
-        $apiResponse = null;
 
         try {
-            $apiResponse = $this->fetchGestorData();
+            $snapshot = $this->fetchGestorData();
 
-            $federativeEntities = $this->extractFederativeEntitiesFromResponse($apiResponse);
+            if ($snapshot === null) {
+                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': documento não encontrado na origem');
+            }
+
+            $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
             $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
             $federativeEntities = $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
 
             $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
-            // Dispara alerta para Telegram
-            $app->log->critical("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            
-            // Qualquer erro da API é tratado como indisponibilidade
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-            
+            $app->log->error("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Marca como concluído com erro para não travar a tela
             $_SESSION['gestor_cult_sync_completed'] = true;
-            
-            // Re-lança a exceção para ser capturada pelo try/catch externo
+
+            // Quem classifica a causa é o controller, que conhece os dois lados da exceção.
             throw $e;
         }
 
-        // Se não houver entes federados (404 - CPF não encontrado), remove a permissão GestorCultBr
-        if ($federativeEntities === false || $federativeEntities === null || empty($federativeEntities)) {
+        // Só revoga com resposta inteira e sem nenhum ente: falha de rede, 404 e corpo
+        // ilegível saem pelo catch acima, sem chegar aqui e sem tocar no papel.
+        if ($federativeEntities === []) {
             $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
 
             if (UserAccessService::isGestorCultBr()) {
@@ -117,12 +120,12 @@ class GestorCultJob
         $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
 
         try {
-            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $apiResponse, $shouldGrantGestorRole, $userId) {
+            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
 
                 try {
-                    if (is_array($apiResponse)) {
-                        $this->updateAgentFromGestorResponse($agent, $apiResponse);
+                    if ($snapshot !== null) {
+                        $this->updateAgentFromGestorResponse($agent, $snapshot);
                         $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
                         $agent->save(false);
                     }
@@ -143,15 +146,12 @@ class GestorCultJob
             $_SESSION['gestor_cult_sync_completed'] = true;
             $app->log->info("[Gestores CultBR] Sync concluído com sucesso | Usuário ID: {$userId} | Agente ID: {$agent->id} | Entes federados associados: " . count($federativeEntities));
         } catch (\Throwable $e) {
-            // Dispara alerta para Telegram
-            $app->log->critical("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
-            
-            // Em caso de erro ao associar entes federados, trata como indisponibilidade da API
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = self::API_UNAVAILABLE_MESSAGE;
-            
+            $app->log->error("[Gestores CultBR] Erro ao associar entes federados durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
+
             // Marca como concluído com erro
             $_SESSION['gestor_cult_sync_completed'] = true;
+
+            throw $e;
         }
     }
 
@@ -184,22 +184,35 @@ class GestorCultJob
         return $response;
     }
 
-    protected function fetchGestorData()
+    protected function fetchGestorData(): ?ManagerSnapshot
     {
-        return (new GestorClient($this->gestorDocument))->get();
+        return Plugin::getInstance()->integrationProvider()->fetchManager($this->gestorDocument);
+    }
+
+    /** O job trabalha com a forma que já sabe tratar; a origem dela é que passou a ser o provedor. */
+    private function entitiesAsArray(ManagerSnapshot $snapshot): array
+    {
+        return array_map(
+            fn(FederativeEntitySnapshot $ente) => [
+                'document' => $ente->document,
+                'name' => $ente->name,
+                'exercicios' => $ente->exercices,
+            ],
+            $snapshot->entities(),
+        );
     }
 
     /**
-     * Mapeamento: chave no retorno da API do gestor => chave de metadado do Agent.
+     * Mapeamento: campo do contrato => chave de metadado do Agent.
      * Apenas campos que devem ser atualizados no sync.
      */
     private const GESTOR_API_TO_AGENT_METADATA = [
         'rg' => 'rgNumero',
         'cep' => 'En_CEP',
-        'nome' => 'nomeCompleto',
-        'celular' => 'telefone1',        // telefone privado 1 (campo no tema Pnab)
-        'numero' => 'En_Num',
-        'complemento' => 'En_Complemento',
+        'name' => 'nomeCompleto',
+        'cellphone' => 'telefone1',      // telefone privado 1 (campo no tema Pnab)
+        'number' => 'En_Num',
+        'complement' => 'En_Complemento',
     ];
 
     /**
@@ -207,13 +220,19 @@ class GestorCultJob
      * Altera apenas metadados cujo valor seja diferente do atual; se nada mudou, não persiste.
      *
      * @param Agent $agent
-     * @param array $apiResponse Retorno bruto da API (objeto com rg, cep, nome, etc.)
+     * @param ManagerSnapshot $snapshot dados de pessoa que a origem devolveu
      */
-    protected function updateAgentFromGestorResponse(Agent $agent, array $apiResponse): void
+    protected function updateAgentFromGestorResponse(Agent $agent, ManagerSnapshot $snapshot): void
     {
-        foreach (self::GESTOR_API_TO_AGENT_METADATA as $apiKey => $agentKey) {
-            $apiValue = $apiResponse[$apiKey] ?? null;
+        foreach (self::GESTOR_API_TO_AGENT_METADATA as $campo => $agentKey) {
+            $apiValue = $snapshot->{$campo}();
             $normalizedApi = $this->normalizeStringForComparison($apiValue);
+
+            // Campo sem valor na resposta é ausência de informação, não ordem de apagar: En_CEP e
+            // En_Num são obrigatórios no perfil, e esvaziá-los devolve o gestor a completeProfile.
+            if ($normalizedApi === '') {
+                continue;
+            }
 
             $currentValue = $agent->getMetadata($agentKey);
             $normalizedCurrent = $this->normalizeStringForComparison($currentValue);
@@ -222,7 +241,7 @@ class GestorCultJob
                 continue;
             }
 
-            $agent->setMetadata($agentKey, $apiValue === null ? null : (string) $apiValue);
+            $agent->setMetadata($agentKey, (string) $apiValue);
         }
     }
 
@@ -277,9 +296,8 @@ class GestorCultJob
      */
     protected function normalizeFederativeEntities($federativeEntities): array
     {
-        // Se já é um array, retorna como está
         if (is_array($federativeEntities)) {
-            return $federativeEntities;
+            return FederativeEntityDocument::dedupe($federativeEntities);
         }
 
         // Se é uma string, tenta decodificar JSON
@@ -323,14 +341,24 @@ class GestorCultJob
         return is_array($data['exercicios']) ? $data['exercicios'] : [];
     }
 
-    private function hasParData(array $data): bool
+    /** Resposta sem exercicios não apaga a árvore gravada: sem ela o gestor não cria oportunidade. */
+    private function applyEntityExercises(FederativeEntity $entity, array $exercicios): bool
     {
-        return array_key_exists('exercicios', $data) && $this->isValidExercisesList($data['exercicios']);
-    }
+        $gravada = $entity->exercices;
 
-    private function filterFederativeEntitiesWithParData(array $federativeEntities): array
-    {
-        return array_values(array_filter($federativeEntities, fn(array $data) => $this->hasParData($data)));
+        if ($exercicios === [] && $gravada !== null && $gravada !== []) {
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: resposta sem exercicios");
+
+            return false;
+        }
+
+        if (($gravada === null ? null : json_encode($gravada)) === json_encode($exercicios)) {
+            return false;
+        }
+
+        $entity->exercices = $exercicios;
+
+        return true;
     }
 
     private function validateFederativeEntitiesContract(array $federativeEntities): void
@@ -485,7 +513,7 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
-            $app->log->critical("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
+            $app->log->error("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }
@@ -557,10 +585,7 @@ class GestorCultJob
                         $changed = true;
                     }
 
-                    $currentJson = $entity->exercices === null ? null : json_encode($entity->exercices);
-                    $newJson = json_encode($exercicios);
-                    if ($currentJson !== $newJson) {
-                        $entity->exercices = $exercicios;
+                    if ($this->applyEntityExercises($entity, $exercicios)) {
                         $changed = true;
                     }
                     if ($changed) {
@@ -598,7 +623,7 @@ class GestorCultJob
             $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
-            $app->log->critical("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
+            $app->log->error("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
             throw $e;
         }
     }

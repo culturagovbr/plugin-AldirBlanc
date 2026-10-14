@@ -2,15 +2,20 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Controller;
+use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Entities\CultBrRequestLog;
 use AldirBlanc\Entities\CultBrRequestLogAttempt;
+use AldirBlanc\Enum\Provider;
+use AldirBlanc\Enum\SendResult;
+use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\OportunidadeCultJob;
-use AldirBlanc\Services\CultBrRequestLogService;
 use MapasCulturais\Entities\Opportunity;
-use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
-use Tests\AldirBlanc\Doubles\TestableOportunidadeCultJob;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
+use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
 /**
@@ -23,6 +28,7 @@ class OportunidadeCultJobLogTest extends TestCase
 {
     use UserDirector;
     use IsolatesJobQueue;
+    use SendsOpportunityThroughJob;
 
     protected function setUp(): void
     {
@@ -30,33 +36,41 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->clearJobQueue();
     }
 
-    private function createOpportunity(User $user): Opportunity
+    /** O provider de cada tentativa, na ordem: findByOpportunity não expõe a coluna. */
+    private function providers(string $requestUuid): array
     {
-        $this->login($user);
-        $this->app->disableAccessControl();
-        $className = $user->profile->opportunityClassName;
-        $opp = new $className();
-        $opp->owner = $user->profile;
-        $opp->ownerEntity = $user->profile;
-        $opp->name = 'Oportunidade Log CultBR Test';
-        $opp->shortDescription = 'desc';
-        $opp->status = Opportunity::STATUS_DRAFT;
-        $opp->save(true);
-        $this->app->enableAccessControl();
+        $log = $this->app->repo(CultBrRequestLog::class)->findOneBy(['requestUuid' => $requestUuid]);
+        $attempts = $this->app->repo(CultBrRequestLogAttempt::class)
+            ->findBy(['log' => $log], ['attempt' => 'ASC']);
+
+        return array_map(fn(CultBrRequestLogAttempt $attempt) => $attempt->provider, $attempts);
+    }
+
+    /** @return string|false o valor, ou false quando a chave não existe */
+    private function meta(int $opportunityId, string $key): string|false
+    {
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opportunityId, 'key' => $key]
+        );
+
+        return $row === false ? false : (string) $row['value'];
+    }
+
+    /** Envio cujo provedor devolve erro sem lançar — o estado que nenhum client real produz hoje. */
+    private function enviarComDesfechoDeErro(): Opportunity
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            fn() => $this->desfecho(['result' => SendResult::Error, 'httpStatus' => 502]),
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
         return $opp;
-    }
-
-    private function enqueueUpdateJob(Opportunity $opp, array $extra = []): void
-    {
-        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
-            'opportunity' => $opp,
-            'action'      => 'update',
-        ] + $extra);
-    }
-
-    private function logs(int $opportunityId): array
-    {
-        return (new CultBrRequestLogService())->findByOpportunity($opportunityId);
     }
 
     /** Ver OportunidadeCultJobUpdateTest: apaga a linha mantendo o objeto na identity map. */
@@ -68,7 +82,7 @@ class OportunidadeCultJobLogTest extends TestCase
         );
     }
 
-    function testEnvioBemSucedidoRegistraUmLogComUmaTentativa()
+    function testEnvioSimuladoRegistraUmLogComUmaTentativa()
     {
         $opp = $this->createOpportunity($this->userDirector->createUser());
 
@@ -78,7 +92,11 @@ class OportunidadeCultJobLogTest extends TestCase
         $rows = $this->logs($opp->id);
 
         $this->assertCount(1, $rows, 'Deve haver um envio registrado');
-        $this->assertEquals(CultBrRequestLog::RESULT_SUCCESS, $rows[0]['status']);
+        $this->assertEquals(
+            CultBrRequestLog::RESULT_SIMULATED,
+            $rows[0]['status'],
+            'O envelope diz o que houve, em vez de chamar de sucesso o envio que não saiu'
+        );
         $this->assertCount(1, $rows[0]['attempts']);
         $this->assertEquals(1, $rows[0]['attempts'][0]['attempt']);
         $this->assertEquals(
@@ -86,6 +104,142 @@ class OportunidadeCultJobLogTest extends TestCase
             $rows[0]['attempts'][0]['status'],
             'Em modo development a tentativa é simulada'
         );
+    }
+
+    /** Com duas implementações, o log precisa dizer para qual API o envio foi. */
+    function testCadaTentativaGravaOProvedorQueAAtendeu()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $uuid = $this->logs($opp->id)[0]['requestUuid'];
+
+        $this->assertSame([Provider::Gestao->value], $this->providers($uuid));
+    }
+
+    /** Envio retomado sob outra configuração: cada tentativa guarda a API que a atendeu. */
+    function testTentativasEmProvedoresDiferentesSaoDistinguiveisNoLog()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $uuid = $this->logs($opp->id)[0]['requestUuid'];
+
+        $this->comProviderConfigurado(Provider::Conecta->value, function () use ($opp, $uuid) {
+            $this->enqueueUpdateJob($opp, ['attempt' => 2, 'requestUuid' => $uuid]);
+            $this->processJobs(number_of_jobs: 1);
+        });
+
+        $this->assertSame([Provider::Gestao->value, Provider::Conecta->value], $this->providers($uuid));
+    }
+
+    /** Provedor irresolvível impede o envio: não há tentativa a registrar, e nada fecha como sucesso. */
+    function testProvedorIrresolvivelNaoEnviaENaoFechaComoSucesso()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProviderConfigurado('nao-existe', function () use ($opp) {
+            $this->enqueueUpdateJob($opp);
+            $this->processJobs(number_of_jobs: 1);
+        });
+
+        $rows = $this->logs($opp->id);
+
+        $this->assertCount(0, $rows[0]['attempts'], 'Sem provedor não houve chamada a registrar');
+        $this->assertNotEquals(CultBrRequestLog::RESULT_SUCCESS, $rows[0]['status']);
+    }
+
+    /**
+     * A tentativa é gravada a partir do que a operação devolveu, e não de estado deixado numa
+     * instância de client: o dublê não registra recorder nenhum.
+     */
+    function testTentativaVemDoDesfechoDevolvidoPeloProvedor()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            fn() => $this->desfecho(['endpoint' => 'http://conecta.invalid/oportunidades/77', 'httpStatus' => 201]),
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        $rows = $this->logs($opp->id);
+        $tentativa = $rows[0]['attempts'][0];
+
+        $this->assertSame([(int) $opp->id], FakeIntegrationProvider::$enviados);
+        $this->assertEquals('http://conecta.invalid/oportunidades/77', $tentativa['endpoint']);
+        $this->assertEquals(201, $tentativa['httpStatus']);
+        $this->assertEquals(SendResult::Success->value, $tentativa['status']);
+        $this->assertEquals(Provider::Conecta->value, $this->providers($rows[0]['requestUuid'])[0]);
+    }
+
+    /** O envio que falha registra a tentativa com o que a API respondeu — era o que se perdia. */
+    function testEnvioQueFalhaRegistraATentativaComARespostaDaApi()
+    {
+        $opp = $this->createOpportunity($this->userDirector->createUser());
+
+        $this->comProvedorDuble(
+            function () {
+                throw new SendFailed(
+                    $this->desfecho([
+                        'result' => SendResult::Error,
+                        'httpStatus' => 500,
+                        'response' => 'Internal Server Error',
+                    ]),
+                    IntegrationError::http('Erro HTTP 500', 500, 'Internal Server Error')
+                );
+            },
+            function () use ($opp) {
+                $this->enqueueUpdateJob($opp);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        $rows = $this->logs($opp->id);
+
+        $this->assertCount(1, $rows[0]['attempts'], 'A falha precisa deixar a tentativa registrada');
+        $tentativa = $rows[0]['attempts'][0];
+        $this->assertEquals(500, $tentativa['httpStatus']);
+        $this->assertEquals(SendResult::Error->value, $tentativa['status']);
+        $this->assertEquals('Erro HTTP 500', $tentativa['errorMessage']);
+        $this->assertStringContainsString('Internal Server Error', json_encode($tentativa['response']));
+    }
+
+    /** Dois envios no mesmo processo: cada log recebe a sua tentativa, e só a sua. */
+    function testDoisEnviosNoMesmoProcessoNaoMisturamLog()
+    {
+        $user = $this->userDirector->createUser();
+        $primeira = $this->createOpportunity($user);
+        $segunda = $this->createOpportunity($user);
+
+        $this->comProvedorDuble(
+            fn(OpportunityId $id) => $this->desfecho(['endpoint' => "http://conecta.invalid/oportunidades/{$id->id}"]),
+            function () use ($primeira, $segunda) {
+                // Um envio de cada vez, no mesmo processo: é entre eles que o estado vazava.
+                $this->enqueueUpdateJob($primeira);
+                $this->processJobs(number_of_jobs: 1);
+
+                $this->enqueueUpdateJob($segunda);
+                $this->processJobs(number_of_jobs: 1);
+            }
+        );
+
+        foreach ([$primeira, $segunda] as $opp) {
+            $rows = $this->logs($opp->id);
+            $this->assertCount(1, $rows, "A oportunidade {$opp->id} deve ter um envio");
+            $this->assertCount(1, $rows[0]['attempts'], "A oportunidade {$opp->id} deve ter uma tentativa");
+            $this->assertEquals(
+                "http://conecta.invalid/oportunidades/{$opp->id}",
+                $rows[0]['attempts'][0]['endpoint'],
+                'A tentativa gravada é a do próprio envio'
+            );
+        }
     }
 
     /**
@@ -143,19 +297,25 @@ class OportunidadeCultJobLogTest extends TestCase
         $this->assertEquals($user->id, $rows[0]['user']['id'] ?? null, 'Retentativa não pode perder o autor');
     }
 
-    /**
-     * 404 do CultBR é recusa, não sucesso: o parseResponse aceita a resposta sem lançar, e o
-     * endpoint é upsert (não devolve 404 por id inexistente), então sem essa checagem o job
-     * carimbaria cultBrLastSyncedAt para um envio que o servidor recusou.
-     */
-    function testRespostaRecusadaPeloCultBrNaoMarcaOportunidadeComoSincronizada()
+    /** Quem decide o fecho é o desfecho, não a ausência de exceção: erro sem lançar fecha em erro. */
+    function testDesfechoDeErroSemExcecaoFechaOEnvioEmErro()
     {
-        $job = new TestableOportunidadeCultJob(OportunidadeCultJob::SLUG);
+        $opp = $this->enviarComDesfechoDeErro();
 
-        $this->assertTrue($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_REJECTED));
-        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SUCCESS));
-        $this->assertFalse($job->callApiRejectedSend(CultBrRequestLogAttempt::RESULT_SIMULATED));
-        $this->assertFalse($job->callApiRejectedSend(null), 'Sem tentativa registrada, não há recusa a inferir');
+        $rows = $this->logs($opp->id);
+
+        $this->assertEquals(CultBrRequestLog::RESULT_ERROR, $rows[0]['status']);
+        $this->assertEquals(SendResult::Error->value, $rows[0]['attempts'][0]['status']);
+    }
+
+    function testDesfechoDeErroSemExcecaoNaoCarimbaOUltimoEnvio()
+    {
+        $opp = $this->enviarComDesfechoDeErro();
+
+        $this->assertFalse(
+            $this->meta((int) $opp->id, Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT),
+            'envio que falhou não carimba a data do último envio',
+        );
     }
 
     /** Esgotadas as 3 tentativas, o envio fecha como falha — hoje o job engole a exceção. */
