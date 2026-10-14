@@ -2,17 +2,19 @@
 
 namespace Tests\AldirBlanc;
 
-use AldirBlanc\Plugin;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\Traits\UserDirector;
 
 class ControllerIntegrationOpportunitiesTest extends TestCase
 {
+    use ConfiguresPlugin;
+
     use UserDirector;
 
     private ?int $originalSubsiteId = null;
@@ -56,13 +58,10 @@ class ControllerIntegrationOpportunitiesTest extends TestCase
 
     private function setPluginSubsiteId(int $id): void
     {
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-        $config = $ref->getValue($plugin);
+        $config = $this->leConfigDoPlugin();
         $this->originalSubsiteId = $config['integration']['subsiteId'];
         $config['integration']['subsiteId'] = $id;
-        $ref->setValue($plugin, $config);
+        $this->escreveConfigDoPlugin($config);
     }
 
     private function restorePluginSubsiteId(): void
@@ -70,13 +69,10 @@ class ControllerIntegrationOpportunitiesTest extends TestCase
         if ($this->originalSubsiteId === null) {
             return;
         }
-        $plugin = Plugin::getInstance();
-        $ref = new \ReflectionProperty($plugin, '_config');
-        $ref->setAccessible(true);
-        $config = $ref->getValue($plugin);
+
+        $config = $this->leConfigDoPlugin();
         $config['integration']['subsiteId'] = $this->originalSubsiteId;
-        $ref->setValue($plugin, $config);
-        $this->originalSubsiteId = null;
+        $this->escreveConfigDoPlugin($config);
     }
 
     function testIdAusenteRetorna400()

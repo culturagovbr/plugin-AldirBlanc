@@ -1,18 +1,18 @@
 services:
   mapas:
     environment:
-      # AbstractClient::$host/$token são propriedades tipadas (string, não-nullable) e são atribuídas
-      # no construtor independente do modo — mesmo em modo "development" (fixture local, sem chamada
-      # real), faltando essas envs o construtor quebra com TypeError. Valores fictícios: nunca usados
-      # de fato, pois PNAB_CULTBR_MODE não é setado aqui e o default do Plugin é 'development'.
+      # A suíte roda com fixture local, sem chamada real. O modo precisa ser declarado: o default
+      # do plugin é modo real, para que ambiente mal configurado falhe em vez de devolver fixture.
+      # Quem atende a integração. Sem declarar, a resolução falha nomeando os valores aceitos.
+      - PNAB_CULTBR_PROVIDER=gestao
+      - PNAB_CULTBR_MODE=development
+      # host e token são exigidos na construção do client mesmo em modo fixture. Valores fictícios,
+      # nunca usados de fato. Os endpoints não vêm daqui: são fato sobre cada API, fixos no plugin.
       - PNAB_CULTBR_HOST=http://cultbr.invalid
       - PNAB_CULTBR_TOKEN=fake-token-de-teste
-      # Endpoint fictício para OportunidadeCultClient::update() — apenas satisfaz o
-      # guard `empty($endpoint)` antes de chamar put(). Em modo 'development', o put()
-      # de AbstractClient faz short-circuit e retorna o payload sem nenhuma chamada HTTP.
-      - PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT=oportunidade/{id}/update
-      # Delay de retry nulo causaria TypeError em enqueueOrReplaceJob (string typed, nullable config).
-      # 'now' enfileira o retry imediatamente, permitindo testar o mecanismo sem aguardar intervalo.
+      # Os dois delays são declarados para a suíte não herdar o espaçamento de produção:
+      # 'now' enfileira imediatamente, permitindo drenar a fila no mesmo teste.
+      - ALDIRBLANC_INTEGRATION_DELAY_JOB=now
       - ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB=now
       # TTL=0 expira itens de cache imediatamente em algumas implementações (Symfony Cache).
       # 3600 s garante que os itens de tentativa (attempt counter) persistam durante a execução dos testes.

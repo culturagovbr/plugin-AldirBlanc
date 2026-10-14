@@ -6,6 +6,10 @@ use MapasCulturais\App;
 use MapasCulturais\Traits\RegisterFunctions;
 use MapasCulturais\i;
 use AldirBlanc\Traits\DoctrineEventListenerTrait;
+use AldirBlanc\Enum\Mode;
+use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Integration\IntegrationProvider;
+use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
@@ -17,28 +21,45 @@ class Plugin extends \MapasCulturais\Plugin
 
     protected static $instance;
 
+    private ?ProviderResolver $providerResolver = null;
+
     function __construct($config = [])
     {
         $config += [
             'client' => [
-                'mode' => env('PNAB_CULTBR_MODE', 'development'),
-                'host' => env('PNAB_CULTBR_HOST', null),
-                'token' => env('PNAB_CULTBR_TOKEN', null),
+                'provider' => env('PNAB_CULTBR_PROVIDER', null),
 
-                // PRIMEIRA FASE DA INTEGRAÇÃO (BUSCAR DADOS DO GESTOR E ENTES FEDERADOS)
-                'seficEndpoint' => env('PNAB_CULTBR_SEFIC_ENDPOINT', null),
-                'gestorEndpoint' => env('PNAB_CULTBR_GESTOR_ENDPOINT', null),
-                'enteFederadoEndpoint' => env('PNAB_CULTBR_ENTE_FEDERADO_ENDPOINT', null),
-                'parAcoesEndpoint' => env('PNAB_CULTBR_PAR_ACOES_ENDPOINT', 'par/sefic/acoes'),
-                'updateOportunidadeEndpoint' => env('PNAB_CULTBR_UPDATE_OPORTUNIDADE_ENDPOINT', null),
+                // Sem declaração, modo real: fixture silenciosa em produção é pior que falhar.
+                'mode' => env('PNAB_CULTBR_MODE', 'live'),
+
+                // Endpoint é fato sobre a API: só host e token mudam por instalação.
+                'providers' => [
+                    'gestao' => [
+                        'host' => env('PNAB_CULTBR_HOST', null),
+                        'token' => env('PNAB_CULTBR_TOKEN', null),
+                        'entesEndpoint' => 'par/sefic/pessoa/{document}',
+                        'parAcoesEndpoint' => 'par/sefic/acoes',
+                        'oportunidadeEndpoint' => 'integracao/oportunidades/{id}',
+                    ],
+                    'conecta' => [
+                        'host' => env('PNAB_CULTBR_HOST', null),
+                        'token' => env('PNAB_CULTBR_TOKEN', null),
+                        'entesEndpoint' => 'auth/pessoa/{document}/entes',
+                        'parAcoesEndpoint' => 'par/acoes',
+                        'oportunidadeEndpoint' => 'oportunidades/{id}',
+                        'criarOportunidadeEndpoint' => 'oportunidades',
+                        'validarTokenEndpoint' => 'validar-token',
+                    ],
+                ],
             ], 
             // Token de integração para consumo do CultBR
             'integration' => [
                 'appName' => env('ALDIRBLANC_APPLICATION_NAME', null),
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
-                'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', null),
-                'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', null),
-                'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', null),
+                // Zero desabilita o cache, e é intencional: não trocar por um TTL sem decisão.
+                'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 0),
+                'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', '+10 seconds'),
+                'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', '+15 seconds'),
             ]
         ];
 
@@ -54,6 +75,40 @@ class Plugin extends \MapasCulturais\Plugin
     public static function getInstance(): ?Plugin
     {
         return self::$instance;
+    }
+
+    /**
+     * Resolvido sob demanda: em _init() o Plugin ainda não é acessível por getInstance().
+     * Cada execução relê a configuração, então trocar o provedor com a fila cheia divide o lote.
+     */
+    public function integrationProvider(): IntegrationProvider
+    {
+        $this->providerResolver ??= new ProviderResolver($this->config['client']['provider'] ?? null);
+
+        return $this->providerResolver->resolve();
+    }
+
+    /** O modo vale para a integração inteira: ou os dois provedores simulam, ou nenhum simula. */
+    public static function modoDaIntegracao(): Mode
+    {
+        $config = self::getInstance()?->config['client']['mode'] ?? '';
+        $declarado = is_string($config) ? trim($config) : '';
+
+        $modo = Mode::tryFrom($declarado);
+
+        if ($modo !== null) {
+            return $modo;
+        }
+
+        $erro = IntegrationError::configuration('PNAB_CULTBR_MODE', 'valores aceitos: ' . implode(', ', Mode::valores()));
+        App::i()->log->critical('[CultBR] ' . $erro->getMessage());
+
+        throw $erro;
+    }
+
+    public function resetIntegrationProvider(): void
+    {
+        $this->providerResolver = null;
     }
 
     public function _init()

@@ -1,10 +1,5 @@
 <?php
 
-use AldirBlanc\Http\Clients\ParAcaoClient;
-
-$skip = $this->skip ?? ParAcaoClient::DEFAULT_SKIP;
-$limit = $this->limit ?? ParAcaoClient::DEFAULT_LIMIT;
-
 $actions = [
     [
         'id_par_acao_meta_acao' => 1,
@@ -30,18 +25,4 @@ $actions = [
     ],
 ];
 
-$total = count($actions);
-$page = array_slice($actions, $skip, $limit);
-$next = ($skip + $limit) < $total ? $skip + $limit : null;
-$previous = $skip > 0 ? max(0, $skip - $limit) : null;
-
-return [
-    'pagination' => [
-        'skip' => $skip,
-        'limit' => $limit,
-        'total' => $total,
-        'next' => $next,
-        'previous' => $previous,
-    ],
-    'data' => $page,
-];
+return require __DIR__ . '/../pagina-do-par.php';

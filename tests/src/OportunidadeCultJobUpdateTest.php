@@ -60,7 +60,7 @@ class OportunidadeCultJobUpdateTest extends TestCase
 
     private function findUpdateJob(int $opportunityId): ?Job
     {
-        $internalId = "oportunidade-cult-update:{$opportunityId}";
+        $internalId = "oportunidade-cult:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
@@ -149,6 +149,63 @@ class OportunidadeCultJobUpdateTest extends TestCase
         );
     }
 
+    /** O modo simulado percorre o mesmo fluxo dos demais ambientes; o que muda é só não sair pela rede. */
+    function testEnvioSimuladoCarimbaComoOEnvioReal()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+        $this->assertNotFalse($row, 'simulado não pode divergir do real no que grava');
+        $this->assertNotEmpty($row['value']);
+    }
+
+    /** O verbo sai do carimbo na execução: o segundo envio da mesma oportunidade não pode criar de novo. */
+    function testSegundoEnvioAtualizaEmVezDeCriar()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $this->enqueueUpdateJob($opp);
+        $this->processJobs(number_of_jobs: 1);
+
+        $acoes = $this->app->em->getConnection()->fetchFirstColumn(
+            'SELECT action FROM cultbr_request_log WHERE opportunity_id = :id ORDER BY id',
+            ['id' => (int) $opp->id]
+        );
+
+        $this->assertSame(['create', 'update'], $acoes, 'edital já enviado não pode ser criado outra vez');
+    }
+
+    /** Sem o carimbo na criação, todo edital novo seria reenviado a cada login do gestor. */
+    function testCriacaoGravaCultBrLastSyncedAtAposSucesso()
+    {
+        $user = $this->userDirector->createUser();
+        $opp = $this->createOpportunity($user);
+
+        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
+            'opportunity' => $opp,
+            'action'      => 'create',
+        ]);
+        $this->processJobs(number_of_jobs: 1);
+
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opp->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT]
+        );
+        $this->assertNotFalse($row, 'criação bem-sucedida também precisa carimbar o envio');
+        $this->assertNotEmpty($row['value']);
+    }
+
     function testUpdateJobGravaCultBrLastSyncedAtAposSucesso()
     {
         $user = $this->userDirector->createUser();
@@ -208,35 +265,4 @@ class OportunidadeCultJobUpdateTest extends TestCase
         $this->assertNotEquals($first['value'], $rows[0]['value'], 'Timestamp deve ser atualizado na segunda execução');
     }
 
-    /**
-     * Ação desconhecida (ex.: 'create', removida do fluxo) não existe em ACTIONS:
-     * o job lança "Method not found" antes do try/catch, então não enfileira retry.
-     */
-    function testAcaoDesconhecidaLancaExcecaoSemRetry()
-    {
-        $user = $this->userDirector->createUser();
-        $opp = $this->createOpportunity($user);
-
-        $this->app->enqueueOrReplaceJob(OportunidadeCultJob::SLUG, [
-            'opportunity' => $opp,
-            'action'      => 'create',
-        ]);
-
-        $jobId = md5("oportunidade-cult:oportunidade-cult-create:{$opp->id}");
-        $jobEntity = $this->app->repo('Job')->findOneBy(['id' => $jobId]);
-        $this->assertNotNull($jobEntity, 'Job com ação desconhecida deve existir antes de executar');
-
-        try {
-            (new OportunidadeCultJob(OportunidadeCultJob::SLUG))->_execute($jobEntity);
-            $this->fail('Esperava Exception "Method not found" para ação desconhecida');
-        } catch (\Exception $e) {
-            $this->assertStringContainsString('Method not found: create', $e->getMessage());
-        }
-
-        // O retry (attempt+1) fica dentro do catch de _execute, que não é alcançado.
-        $this->assertNull(
-            $this->findUpdateJob($opp->id),
-            'Ação desconhecida não deve enfileirar job de update'
-        );
-    }
 }

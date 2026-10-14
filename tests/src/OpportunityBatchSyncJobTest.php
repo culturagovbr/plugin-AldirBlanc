@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Controller;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use Laminas\Diactoros\Response;
@@ -77,9 +78,9 @@ class OpportunityBatchSyncJobTest extends TestCase
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
 
-    private function findUpdateJob(int $opportunityId): ?Job
+    private function findJob(int $opportunityId): ?Job
     {
-        $internalId = "oportunidade-cult-update:{$opportunityId}";
+        $internalId = "oportunidade-cult:{$opportunityId}";
         $hashedId = md5("oportunidade-cult:{$internalId}");
         return $this->app->repo('Job')->findOneBy(['id' => $hashedId]);
     }
@@ -153,8 +154,8 @@ class OpportunityBatchSyncJobTest extends TestCase
 
         $this->processJobs(number_of_jobs: 1);
 
-        $this->assertNotNull($this->findUpdateJob($opp1->id), 'Deve enfileirar update job para opp1');
-        $this->assertNotNull($this->findUpdateJob($opp2->id), 'Deve enfileirar update job para opp2');
+        $this->assertNotNull($this->findJob($opp1->id), 'Deve enfileirar update job para opp1');
+        $this->assertNotNull($this->findJob($opp2->id), 'Deve enfileirar update job para opp2');
     }
 
     function testBatchSyncJobNaoEnfileiraUpdateJobParaOportunidadeInelegivel()
@@ -172,7 +173,7 @@ class OpportunityBatchSyncJobTest extends TestCase
         $this->processJobs(number_of_jobs: 1);
 
         $this->assertNull(
-            $this->findUpdateJob($inelegivel->id),
+            $this->findJob($inelegivel->id),
             'Não deve enfileirar update job para oportunidade inelegível (sem PAR)'
         );
     }

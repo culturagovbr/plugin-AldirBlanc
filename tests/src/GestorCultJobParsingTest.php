@@ -65,11 +65,92 @@ class GestorCultJobParsingTest extends TestCase
 
     // ===== normalizeFederativeEntities =====
 
-    function testNormalizeJaArrayRetornaComoEsta()
+    function testNormalizeCompletaODocumentoComZerosAEsquerda()
     {
         $entes = [['document' => '1']];
 
-        $this->assertSame($entes, $this->job()->callNormalizeFederativeEntities($entes));
+        $this->assertSame(
+            [['document' => '00000000000001']],
+            $this->job()->callNormalizeFederativeEntities($entes),
+        );
+    }
+
+    /** As duas grafias do mesmo CNPJ eram chaves distintas, e viravam duas linhas do mesmo ente. */
+    function testNormalizeUneAsDuasGrafiasDoMesmoDocumento()
+    {
+        $entes = [
+            ['document' => '01612689000178', 'name' => 'MUNICIPIO DE MATUREIA'],
+            ['document' => '1612689000178', 'name' => 'MUNICIPIO DE MATUREIA'],
+        ];
+
+        $unidos = $this->job()->callNormalizeFederativeEntities($entes);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('01612689000178', $unidos[0]['document']);
+    }
+
+    /** Há homônimos com CNPJ legitimamente distinto: agrupar por nome uniria entes diferentes. */
+    function testNormalizeNaoUneHomonimosComDocumentoDistinto()
+    {
+        $entes = [
+            ['document' => '06553481000149', 'name' => 'ESTADO DO PIAUI'],
+            ['document' => '06553481000300', 'name' => 'ESTADO DO PIAUI'],
+        ];
+
+        $this->assertCount(2, $this->job()->callNormalizeFederativeEntities($entes));
+    }
+
+    /** Descartar o irmão que traz a árvore apagaria o que o gestor precisa para criar oportunidade. */
+    function testNormalizePrefereOIrmaoQueTrazAArvore()
+    {
+        $entes = [
+            ['document' => '1612689000178', 'name' => 'SEM ARVORE', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'COM ARVORE', 'exercicios' => [['id' => 1]]],
+        ];
+
+        $unidos = $this->job()->callNormalizeFederativeEntities($entes);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('COM ARVORE', $unidos[0]['name']);
+        $this->assertSame([['id' => 1]], $unidos[0]['exercicios']);
+        $this->assertSame('01612689000178', $unidos[0]['document'], 'o documento sobrevive normalizado');
+    }
+
+    /** A ordem da API só decide quando ela não traz árvore em nenhum dos lados. */
+    function testNormalizeMantemOPrimeiroQuandoAArvoreNaoDesempata()
+    {
+        $ambosVazios = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => []],
+            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => []],
+        ]);
+
+        $ambosComArvore = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '1612689000178', 'name' => 'PRIMEIRO', 'exercicios' => [['id' => 1]]],
+            ['document' => '01612689000178', 'name' => 'SEGUNDO', 'exercicios' => [['id' => 2]]],
+        ]);
+
+        $this->assertSame('PRIMEIRO', $ambosVazios[0]['name'], 'nenhum dos dois traz árvore');
+        $this->assertSame('PRIMEIRO', $ambosComArvore[0]['name'], 'sem critério para trocar, não se troca');
+    }
+
+    /** O irmão com árvore pode vir antes; nesse caso não há nada a fazer. */
+    function testNormalizeNaoTrocaQuandoOPrimeiroJaTrazAArvore()
+    {
+        $unidos = $this->job()->callNormalizeFederativeEntities([
+            ['document' => '01612689000178', 'name' => 'COM ARVORE', 'exercicios' => [['id' => 1]]],
+            ['document' => '1612689000178', 'name' => 'SEM ARVORE', 'exercicios' => []],
+        ]);
+
+        $this->assertCount(1, $unidos);
+        $this->assertSame('COM ARVORE', $unidos[0]['name']);
+    }
+
+    /** O dedupe não filtra nada: descartar com motivo é de quem vem depois, o mapper e a validação. */
+    function testNormalizeNaoEngoleItemSemDocumento()
+    {
+        $entes = [['name' => 'sem documento'], 'nem array'];
+
+        $this->assertCount(2, $this->job()->callNormalizeFederativeEntities($entes));
     }
 
     function testNormalizeJsonStringValidaDecodifica()

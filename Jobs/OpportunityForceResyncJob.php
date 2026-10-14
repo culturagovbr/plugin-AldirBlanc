@@ -71,7 +71,7 @@ class OpportunityForceResyncJob extends JobType
     {
         App::i()->enqueueOrReplaceJob(
             OportunidadeCultJob::SLUG,
-            ['opportunity' => $opportunity, 'action' => 'update'],
+            ['opportunity' => $opportunity],
             'now',
         );
     }
