@@ -76,16 +76,11 @@ class GestorCultJob
 
         try {
             $snapshot = $this->fetchGestorData();
+            $federativeEntities = $snapshot === null ? [] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
 
-            if ($snapshot === null) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': documento não encontrado na origem');
-            }
-
-            $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
-            $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
-            $federativeEntities = $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
-
-            $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+            $app->log->info($snapshot === null
+                ? "[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}"
+                : "[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
         } catch (\Throwable $e) {
             $app->log->error("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
 
@@ -96,8 +91,8 @@ class GestorCultJob
             throw $e;
         }
 
-        // Só revoga com resposta inteira e sem nenhum ente: falha de rede, 404 e corpo
-        // ilegível saem pelo catch acima, sem chegar aqui e sem tocar no papel.
+        // Só revoga o que a origem respondeu sobre o documento — nenhum ente, ou não o conhece.
+        // Falha de rede e corpo ilegível saem pelo catch acima, sem chegar aqui.
         if ($federativeEntities === []) {
             $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
 
@@ -182,6 +177,15 @@ class GestorCultJob
 
         // Formato antigo: o próprio retorno é a lista de entes
         return $response;
+    }
+
+    /** @return list<array> os entes do snapshot que atendem ao contrato, já sem duplicados */
+    private function federativeEntitiesFrom(ManagerSnapshot $snapshot, $userId, string $document): array
+    {
+        $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
+        $federativeEntities = $this->normalizeFederativeEntities($federativeEntities);
+
+        return $this->discardEntitiesOutOfContract($federativeEntities, $userId, $document);
     }
 
     protected function fetchGestorData(): ?ManagerSnapshot

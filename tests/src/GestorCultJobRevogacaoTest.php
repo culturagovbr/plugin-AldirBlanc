@@ -131,6 +131,20 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "classificar a causa é do controller{$onde}");
     }
 
+    private function assertPapelERelacoesRevogados(object $user, ?Provider $provedor = null): void
+    {
+        $onde = $provedor === null ? '' : " ({$provedor->value})";
+
+        $this->assertFalse(UserAccessService::isGestorCultBr(), "o papel precisava ter sido revogado{$onde}");
+        $this->assertCount(
+            0,
+            $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
+            "as relações precisavam ter sido apagadas{$onde}",
+        );
+        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "revogar não é falha{$onde}");
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, "a tela precisa destravar{$onde}");
+    }
+
     /** Corpo `null` num 200 chegava ao gate como "este gestor não tem ente nenhum". */
     function testCorpoNuloNaoRevoga()
     {
@@ -184,25 +198,18 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    /** Documento que a origem não conhece não é "gestor sem entes": não pode revogar nada. */
-    function testDocumentoDesconhecidoPelaOrigemNaoRevoga()
+    /** O `null` do contrato é a origem dizendo que não conhece o documento, e quem não existe lá não é gestor. */
+    function testDocumentoDesconhecidoPelaOrigemRevoga()
     {
         $user = $this->gestorLogadoComUmEnte();
 
         $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
         $job->setGestorResponse(null);
-        $falha = null;
-
-        try {
-            $job->sync();
-        } catch (\Throwable $e) {
-            $falha = $e;
-        }
+        $job->sync();
 
         $this->app->em->clear();
 
-        $this->assertNotNull($falha, 'a falha precisa subir para o controller tratar');
-        $this->assertPapelERelacoesIntactos($user);
+        $this->assertPapelERelacoesRevogados($user);
     }
 
     /** O caminho legítimo continua revogando: a API respondeu, e não há ente nenhum. */
@@ -213,13 +220,7 @@ class GestorCultJobRevogacaoTest extends TestCase
 
             $this->sincronizarCom(new FakeTransport(200, '{"entes_federados":[]}'), $provedor);
 
-            $this->assertFalse(UserAccessService::isGestorCultBr(), $provedor->value);
-            $this->assertCount(
-                0,
-                $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
-                $provedor->value,
-            );
-            $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, $provedor->value);
+            $this->assertPapelERelacoesRevogados($user, $provedor);
         });
     }
 
