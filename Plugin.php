@@ -230,6 +230,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE, [
+            'label' => i::__('Início da janela de alterações pendentes do resultado (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));

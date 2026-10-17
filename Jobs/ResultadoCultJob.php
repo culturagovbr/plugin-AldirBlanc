@@ -44,6 +44,11 @@ class ResultadoCultJob extends JobType
 		$fresca = $app->repo('Opportunity')->find($raizId);
 		$faseFinal = $fresca?->lastPhase;
 
+		if ($faseFinal) {
+			// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
+			$service->clearResultadoDirtySince((int) $faseFinal->id);
+		}
+
 		if (!$faseFinal || !$service->isEligibleForResultSync($faseFinal)) {
 			$app->log->info("ResultadoCultJob: edital {$raizId} não está elegível para envio de resultado - nada enviado");
 
