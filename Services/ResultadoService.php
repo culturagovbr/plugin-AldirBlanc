@@ -4,6 +4,8 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
+use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
 
@@ -69,6 +71,15 @@ class ResultadoService
             id_status: self::STATUS_PUBLICADO,
             data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
         );
+    }
+
+    /** Ponto único de enfileiramento do envio de resultado; o delay padrão é o da integração. */
+    public function enqueueResultadoSync(Opportunity $raiz, ?string $delay = null): void
+    {
+        $delay ??= Plugin::getInstance()->config['integration']['delayJob'];
+        $start = (new \DateTime())->modify($delay)->format('Y-m-d H:i:s');
+
+        App::i()->enqueueOrReplaceJob(ResultadoCultJob::SLUG, ['opportunity' => $raiz], $start);
     }
 
     public function persistParEditalResultadoId(int $raizId, int $id): void
