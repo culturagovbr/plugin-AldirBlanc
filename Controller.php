@@ -57,6 +57,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Id do edital no PAR, ecoado pelo CultBR na resposta do envio; chave das rotas de resultado. */
     public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID = 'cultBrParEditalId';
 
+    /** Id do resultado VIGENTE no PAR (o último 201); substituído a cada retificação. */
+    public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID = 'cultBrParEditalResultadoId';
+
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
     private const CULT_LOGS_MAX_LIMIT = 100;

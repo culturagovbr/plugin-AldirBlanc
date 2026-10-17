@@ -1,0 +1,135 @@
+<?php
+
+namespace Tests\AldirBlanc;
+
+use AldirBlanc\Controller;
+use AldirBlanc\Services\ResultadoService;
+use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\Traits\UserDirector;
+
+/** Régua e payload do resultado: a fase final publicada decide, nunca o flag da raiz. */
+class ResultadoServiceTest extends TestCase
+{
+    use UserDirector;
+    use BuildsPublishedFinalPhase;
+
+    private function service(): ResultadoService
+    {
+        return new ResultadoService();
+    }
+
+    function testFaseFinalPublicadaDeRaizCompletaEhElegivel()
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->assertTrue($this->service()->isEligibleForResultSync($fase));
+    }
+
+    function testFaseFinalNaoPublicadaNaoEhElegivel()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner, 'Subsite Nao Publicada');
+        $raiz = $this->raizElegivel($owner, $subsite);
+        $fase = $this->faseFinal($raiz, publicada: false);
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+        $this->assertFalse($this->service()->isEligibleForResultSync($fase));
+    }
+
+    /** Fase intermediária e fase de recurso caem neste ramo: sem isLastPhase não há envio. */
+    function testFaseQueNaoEhAFinalNaoEhElegivel()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner, 'Subsite Intermediaria');
+        $raiz = $this->raizElegivel($owner, $subsite);
+        $fase = $this->faseFinal($raiz);
+        $fase->setMetadata('isLastPhase', false);
+        $this->app->disableAccessControl();
+        $fase->save(true);
+        $this->app->enableAccessControl();
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+        $this->assertFalse($this->service()->isEligibleForResultSync($fase));
+    }
+
+    function testRaizSemIdDoParNaoEhElegivel()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner, 'Subsite Sem Par Id');
+        $raiz = $this->raizElegivel($owner, $subsite);
+        $fase = $this->faseFinal($raiz);
+
+        $this->assertFalse($this->service()->isEligibleForResultSync($fase));
+    }
+
+    function testRaizReprovadaNaReguaDaFase1NaoEhElegivel()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner, 'Subsite Sem Ente');
+        $raiz = $this->raizElegivel($owner, $subsite);
+        $fase = $this->faseFinal($raiz);
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+        $this->app->disableAccessControl();
+        $raiz->setMetadata('federativeEntityId', '');
+        $raiz->save(true);
+        $this->app->enableAccessControl();
+
+        $this->assertFalse($this->service()->isEligibleForResultSync($fase));
+    }
+
+    function testPrimeiroEnvioMontaFinalPublicadoComADataDaFase()
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $payload = $this->service()->buildResultado($fase)->toArray();
+
+        $this->assertSame(ResultadoService::TIPO_FINAL, $payload['id_tipo']);
+        $this->assertSame(ResultadoService::STATUS_PUBLICADO, $payload['id_status']);
+        $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
+    }
+
+    function testComResultadoVigenteMontaRetificadoDatadoDaRetificacao()
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
+
+        $payload = $this->service()->buildResultado($fase)->toArray();
+
+        $this->assertSame(ResultadoService::TIPO_RETIFICADO, $payload['id_tipo']);
+        $this->assertSame(ResultadoService::STATUS_PUBLICADO, $payload['id_status']);
+        $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+    }
+
+    function testPublicacaoSemCarimboCaiParaOInstanteDoEnvio()
+    {
+        $owner = $this->userDirector->createUser();
+        $subsite = $this->integrationSubsite($owner, 'Subsite Sem Carimbo');
+        $raiz = $this->raizElegivel($owner, $subsite);
+        $fase = $this->faseFinal($raiz, publicada: true, publicadaEm: null);
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+        $payload = $this->service()->buildResultado($fase)->toArray();
+
+        $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
+    }
+
+    function testPersistenciaDoIdVigenteSubstituiSemDuplicar()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $raizId = (int) $raiz->id;
+        $service = $this->service();
+
+        $service->persistParEditalResultadoId($raizId, 777);
+        $service->persistParEditalResultadoId($raizId, 888);
+
+        $rows = $this->app->em->getConnection()->fetchAllAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $raizId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID]
+        );
+        $this->assertCount(1, $rows, 'o metadado guarda o VIGENTE: substitui, nunca duplica');
+        $this->assertSame('888', $rows[0]['value']);
+        $this->assertSame(888, $service->parEditalResultadoId($raizId));
+    }
+}
