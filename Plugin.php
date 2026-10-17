@@ -13,6 +13,7 @@ use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
+use AldirBlanc\Jobs\ResultadoCultJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -223,7 +224,14 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, [
+            'label' => i::__('Id do resultado vigente no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
+        $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
         $app->registerJobType(new OpportunityForceResyncJob(OpportunityForceResyncJob::SLUG));
     }
