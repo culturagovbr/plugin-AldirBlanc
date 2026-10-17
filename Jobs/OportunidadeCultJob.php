@@ -10,6 +10,7 @@ use MapasCulturais\Definitions\JobType;
 use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\SendOutcome;
@@ -79,6 +80,7 @@ class OportunidadeCultJob extends JobType
 			onSuccess: function (SendOutcome $outcome) use ($app, $job) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 				$this->persistParEditalId($app, (int) $job->opportunity->id, $outcome->response);
+				$this->chainResultadoSync($app, (int) $job->opportunity->id);
 			},
 			scheduleRetry: fn(?string $requestUuid) => $app->enqueueOrReplaceJob(self::SLUG, [
 				'opportunity' => $opportunity,
@@ -108,6 +110,39 @@ class OportunidadeCultJob extends JobType
 		}
 
 		$this->upsertOpportunityMeta($app, $opportunityId, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, (string) $parEditalId);
+	}
+
+	/**
+	 * Edital com resultado publicado tem o envio de resultado encadeado no sucesso da oportunidade.
+	 * Falha aqui vira warning: não pode reenfileirar um envio de oportunidade que a API já aceitou.
+	 */
+	private function chainResultadoSync(App $app, int $opportunityId): void
+	{
+		try {
+			$raiz = $app->repo('Opportunity')->find($opportunityId);
+			$faseFinal = $raiz?->lastPhase;
+
+			if (!$faseFinal) {
+				return;
+			}
+
+			$service = new ResultadoService();
+
+			if (!$service->isEligibleForResultSync($faseFinal)) {
+				return;
+			}
+
+			// Só o encadeamento tem esta guarda: cada reenvio cria documento novo no PAR (retificado),
+			// e o lote pós-login reenviaria um idêntico a cada login do gestor.
+			$jaEnviado = $service->parEditalResultadoId($opportunityId) !== null;
+			if ($jaEnviado && !$service->hasPendingResultChange($faseFinal)) {
+				return;
+			}
+
+			$service->enqueueResultadoSync($raiz);
+		} catch (\Throwable $e) {
+			$app->log->warning("OportunidadeCultJob: falha ao encadear o envio de resultado da oportunidade {$opportunityId}: " . $e->getMessage());
+		}
 	}
 
 	private function upsertOpportunityMeta(App $app, int $opportunityId, string $key, string $value): void
