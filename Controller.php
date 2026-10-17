@@ -170,11 +170,17 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : self::CULT_LOGS_DEFAULT_LIMIT;
         $limit = max(1, min($limit, self::CULT_LOGS_MAX_LIMIT));
 
+        $actionGroup = isset($this->data['action']) ? (string) $this->data['action'] : null;
+        if ($actionGroup !== null && !isset(CultBrRequestLogService::ACTION_GROUPS[$actionGroup])) {
+            $this->errorJson(i::__('Grupo de envio desconhecido.'), 400);
+            return;
+        }
+
         $logService = new CultBrRequestLogService();
 
         $this->json([
-            'data' => $logService->findByOpportunity($opportunityId, $skip, $limit),
-            'total' => $logService->countByOpportunity($opportunityId),
+            'data' => $logService->findByOpportunity($opportunityId, $skip, $limit, $actionGroup),
+            'total' => $logService->countByOpportunity($opportunityId, $actionGroup),
             'skip' => $skip,
             'limit' => $limit,
         ]);

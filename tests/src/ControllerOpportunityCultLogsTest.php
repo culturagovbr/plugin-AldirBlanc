@@ -98,6 +98,75 @@ class ControllerOpportunityCultLogsTest extends TestCase
         $this->assertEquals(404, $this->responseStatus());
     }
 
+    /** Envio de oportunidade e de resultado para a mesma raiz, para os testes das sub-abas. */
+    private function opportunityComLogsDosDoisTipos(User $admin): Opportunity
+    {
+        $opp = $this->opportunity($admin);
+        $service = new CultBrRequestLogService();
+        $service->startOrResume((int) $opp->id, 'update');
+        $service->startOrResume((int) $opp->id, 'resultado');
+
+        return $opp;
+    }
+
+    function testFiltroDeOportunidadeListaSoCreateEUpdate()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN]);
+        $this->login($admin);
+        $opp = $this->opportunityComLogsDosDoisTipos($admin);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opp->id, 'action' => 'oportunidade'];
+
+        $payload = $this->callJson(fn() => $controller->callGetOpportunityCultLogs());
+
+        $this->assertEquals(1, $payload['total']);
+        $this->assertEquals('update', $payload['data'][0]['action']);
+    }
+
+    function testFiltroDeResultadoListaSoResultado()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN]);
+        $this->login($admin);
+        $opp = $this->opportunityComLogsDosDoisTipos($admin);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opp->id, 'action' => 'resultado'];
+
+        $payload = $this->callJson(fn() => $controller->callGetOpportunityCultLogs());
+
+        $this->assertEquals(1, $payload['total']);
+        $this->assertEquals('resultado', $payload['data'][0]['action']);
+    }
+
+    function testSemFiltroListaOsDoisTipos()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN]);
+        $this->login($admin);
+        $opp = $this->opportunityComLogsDosDoisTipos($admin);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opp->id];
+
+        $payload = $this->callJson(fn() => $controller->callGetOpportunityCultLogs());
+
+        $this->assertEquals(2, $payload['total'], 'sem filtro, o comportamento atual se preserva');
+    }
+
+    function testFiltroDesconhecidoRecebe400()
+    {
+        $admin = $this->userDirector->createUser([Role::ADMIN]);
+        $this->login($admin);
+        $opp = $this->opportunityComLogsDosDoisTipos($admin);
+
+        $controller = $this->controller();
+        $controller->data = ['opportunityId' => $opp->id, 'action' => 'inexistente'];
+
+        $this->callJson(fn() => $controller->callGetOpportunityCultLogs());
+
+        $this->assertEquals(400, $this->responseStatus());
+    }
+
     function testAdminRecebeEnviosComTentativasAninhadas()
     {
         $admin = $this->userDirector->createUser([Role::ADMIN]);
