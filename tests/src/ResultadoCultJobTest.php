@@ -149,6 +149,25 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame([], $logs, 'sem envio não há nem registro de tentativa');
     }
 
+    /** O caminho de dev: provider conecta real em modo development — simula sem rede. */
+    function testEnvioSimuladoFechaOLogComoSimuladoESemMetadado()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comProviderConfigurado('conecta', function () use ($raiz) {
+            $this->enfileira($raiz);
+            $this->processJobs(number_of_jobs: 1);
+        });
+
+        $this->assertFalse($this->resultadoId((int) $raiz->id), 'a resposta simulada ecoa o payload, sem id a capturar');
+        $status = $this->app->em->getConnection()->fetchFirstColumn(
+            'SELECT status FROM cultbr_request_log WHERE opportunity_id = :id',
+            ['id' => (int) $raiz->id]
+        );
+        $this->assertSame(['simulated'], $status, 'simulado não pode se passar por envio aceito pela API');
+        $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'simulado conclui sem retry');
+    }
+
     function testProvedorSemACapacidadeEncerraSemRetry()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());

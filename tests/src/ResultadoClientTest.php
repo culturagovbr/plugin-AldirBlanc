@@ -106,6 +106,26 @@ class ResultadoClientTest extends TestCase
         });
     }
 
+    function testEnvioEmModoSimuladoNaoSaiPelaRede()
+    {
+        $this->comConfigDoPlugin(
+            fn(array $config) => $this->comValoresDoCliente(
+                $config,
+                ['host' => self::HOST, 'token' => 'token-de-teste', 'mode' => 'development'],
+                'conecta',
+            ),
+            function () {
+                $transporte = new FakeTransport(status: 201);
+
+                $outcome = $this->envia($transporte);
+
+                $this->assertSame([], $transporte->metodos(), 'modo simulado não sai pela rede');
+                $this->assertSame(SendResult::Simulated, $outcome->result);
+                $this->assertSame('POST', $outcome->method);
+            },
+        );
+    }
+
     function testSoAConectaDeclaraACapacidadeDeEnviarResultado()
     {
         $this->assertTrue(is_a(ConectaProvider::class, SendsResultado::class, true));
