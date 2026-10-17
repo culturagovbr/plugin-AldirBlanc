@@ -89,6 +89,7 @@ class OportunidadeCultJob extends JobType
 
 			if (!$falhou) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
+				$this->persistParEditalId($app, (int) $job->opportunity->id, $outcome->response);
 			}
 
 			$alvo = "para ação: {$action} para oportunidade: {$opportunity->id}";
@@ -189,17 +190,36 @@ class OportunidadeCultJob extends JobType
 
 	protected function persistCultLastSyncedAtFlag(App $app, int $opportunityId): void
 	{
+		$now = (new \DateTime())->format(\DateTime::ATOM);
+		$this->upsertOpportunityMeta($app, $opportunityId, Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT, $now);
+	}
+
+	/** Resposta sem o id (ou não-JSON) não falha o envio: a captura se recupera num reenvio. */
+	protected function persistParEditalId(App $app, int $opportunityId, ?string $response): void
+	{
+		$decoded = is_string($response) ? json_decode($response, true) : null;
+		$parEditalId = filter_var($decoded['id_par_edital'] ?? null, FILTER_VALIDATE_INT);
+
+		if ($parEditalId === false || $parEditalId < 1) {
+			$app->log->warning("OportunidadeCultJob: resposta sem id_par_edital para oportunidade: {$opportunityId}");
+			return;
+		}
+
+		$this->upsertOpportunityMeta($app, $opportunityId, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, (string) $parEditalId);
+	}
+
+	private function upsertOpportunityMeta(App $app, int $opportunityId, string $key, string $value): void
+	{
 		if ($app->repo('Opportunity')->find($opportunityId) === null) {
 			return;
 		}
-		$now = (new \DateTime())->format(\DateTime::ATOM);
 		$conn = $app->em->getConnection();
 		$updated = $conn->executeStatement(
 			'UPDATE opportunity_meta SET value = :value WHERE object_id = :id AND key = :key',
 			[
-				'value' => $now,
+				'value' => $value,
 				'id'    => $opportunityId,
-				'key'   => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT,
+				'key'   => $key,
 			]
 		);
 		if ($updated === 0) {
@@ -207,8 +227,8 @@ class OportunidadeCultJob extends JobType
 				'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
 				[
 					'id'    => $opportunityId,
-					'key'   => Controller::OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT,
-					'value' => $now,
+					'key'   => $key,
+					'value' => $value,
 				]
 			);
 		}
