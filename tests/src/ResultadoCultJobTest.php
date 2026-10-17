@@ -7,7 +7,6 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\ResultadoCultJob;
-use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use Tests\Abstract\TestCase;
@@ -74,7 +73,7 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame([ResultadoCultJob::ACTION], $acoes, 'o log do resultado vive no action próprio, sob a RAIZ');
         $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
         $this->assertSame(53790, FakeIntegrationProvider::$resultadosEnviados[0]['edital']);
-        $this->assertSame(ResultadoService::TIPO_FINAL, FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo);
+        $this->assertSame(2, FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo);
     }
 
     function testSegundoEnvioViraRetificado()
@@ -88,8 +87,9 @@ class ResultadoCultJobTest extends TestCase
         $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}');
         $segundoTipo = FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo;
 
-        $this->assertSame(ResultadoService::TIPO_FINAL, $primeiroTipo);
-        $this->assertSame(ResultadoService::TIPO_RETIFICADO, $segundoTipo, 'publicado é imutável: correção cria um retificado');
+        // Literais de propósito: o contrato do PAR é 2 = final, 3 = retificado.
+        $this->assertSame(2, $primeiroTipo);
+        $this->assertSame(3, $segundoTipo, 'publicado é imutável: correção cria um retificado');
         $this->assertSame('888', $this->resultadoId((int) $raiz->id), 'o metadado guarda o resultado vigente');
     }
 

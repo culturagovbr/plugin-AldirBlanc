@@ -4,6 +4,8 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
+use AldirBlanc\Enum\ResultadoStatus;
+use AldirBlanc\Enum\ResultadoTipo;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
@@ -14,10 +16,6 @@ use MapasCulturais\Entities\Opportunity;
  */
 class ResultadoService
 {
-    public const TIPO_FINAL = 2;
-    public const TIPO_RETIFICADO = 3;
-    public const STATUS_PUBLICADO = 3;
-
     private OpportunityService $opportunityService;
 
     public function __construct()
@@ -67,8 +65,8 @@ class ResultadoService
         $retificacao = $this->parEditalResultadoId($raizId) !== null;
 
         return new Resultado(
-            id_tipo: $retificacao ? self::TIPO_RETIFICADO : self::TIPO_FINAL,
-            id_status: self::STATUS_PUBLICADO,
+            id_tipo: ($retificacao ? ResultadoTipo::FinalRetificado : ResultadoTipo::Final)->value,
+            id_status: ResultadoStatus::Publicado->value,
             data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
         );
     }

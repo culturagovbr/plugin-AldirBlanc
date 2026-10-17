@@ -85,8 +85,9 @@ class ResultadoServiceTest extends TestCase
 
         $payload = $this->service()->buildResultado($fase)->toArray();
 
-        $this->assertSame(ResultadoService::TIPO_FINAL, $payload['id_tipo']);
-        $this->assertSame(ResultadoService::STATUS_PUBLICADO, $payload['id_status']);
+        // Literais de propósito: os valores são contrato do PAR, e comparar com o enum seria tautologia.
+        $this->assertSame(2, $payload['id_tipo']);
+        $this->assertSame(3, $payload['id_status']);
         $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
     }
 
@@ -97,8 +98,8 @@ class ResultadoServiceTest extends TestCase
 
         $payload = $this->service()->buildResultado($fase)->toArray();
 
-        $this->assertSame(ResultadoService::TIPO_RETIFICADO, $payload['id_tipo']);
-        $this->assertSame(ResultadoService::STATUS_PUBLICADO, $payload['id_status']);
+        $this->assertSame(3, $payload['id_tipo']);
+        $this->assertSame(3, $payload['id_status']);
         $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
     }
 
