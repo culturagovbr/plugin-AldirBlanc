@@ -73,6 +73,12 @@ class ResultadoService
         );
     }
 
+    /** Alteração pendente desde o último envio? O carimbo vive na fase final e quem o grava é o reenvio por alteração. */
+    public function hasPendingResultChange(Opportunity $faseFinal): bool
+    {
+        return $this->meta((int) $faseFinal->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE) !== null;
+    }
+
     /** Ponto único de enfileiramento do envio de resultado; o delay padrão é o da integração. */
     public function enqueueResultadoSync(Opportunity $raiz, ?string $delay = null): void
     {
