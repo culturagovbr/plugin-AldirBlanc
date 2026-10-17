@@ -7,16 +7,13 @@ use AldirBlanc\Plugin;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
-use AldirBlanc\Entities\CultBrRequestLog;
+use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\SendAction;
-use AldirBlanc\Enum\SendResult;
-use AldirBlanc\Exceptions\IntegrationError;
-use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Controller;
 
 class OportunidadeCultJob extends JobType
@@ -68,124 +65,29 @@ class OportunidadeCultJob extends JobType
 		// O verbo sai do carimbo na hora de executar, não de quem enfileirou: entre uma coisa e outra
 		// o edital pode ter passado a existir na origem, e repetir o POST criaria outro.
 		$sendAction = $this->opportunityService->sendActionFor($opportunity);
-		$action = $sendAction->value;
 
-		$app->log->info("OportunidadeCultJob executando tentativa {$attempt}/" . self::MAX_ATTEMPTS . " para ação: {$action} para oportunidade: {$opportunity->id}");
+		$runner = new SendRunner('OportunidadeCultJob', self::MAX_ATTEMPTS, new CultBrRequestLogService());
 
-		// Histórico da aba "Logs CultBr": o uuid nasce na primeira tentativa e viaja no payload
-		// do job, de modo que as retentativas entrem como tentativas do mesmo envio.
-		$logService = new CultBrRequestLogService();
-		// $job->user é o usuário logado no save que enfileirou o job (App::enqueueJob).
-		$requestLog = $this->recordLog(fn() => $logService->startOrResume(
-			(int) $opportunity->id,
-			$action,
-			$job->requestUuid ?? null,
-			$job->user ?? null
-		));
-		try {
-			$outcome = $this->sendToCult($opportunity, $sendAction);
-			$this->recordAttempt($logService, $requestLog, $outcome, $attempt);
-			$falhou = $outcome->result === SendResult::Error;
-
-			if (!$falhou) {
+		$runner->run(
+			opportunityId: (int) $opportunity->id,
+			action: $sendAction->value,
+			requestUuid: $job->requestUuid ?? null,
+			// $job->user é o usuário logado no save que enfileirou o job (App::enqueueJob).
+			user: $job->user ?? null,
+			attempt: $attempt,
+			send: fn() => $this->sendToCult($opportunity, $sendAction),
+			onSuccess: function (SendOutcome $outcome) use ($app, $job) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 				$this->persistParEditalId($app, (int) $job->opportunity->id, $outcome->response);
-			}
-
-			$alvo = "para ação: {$action} para oportunidade: {$opportunity->id}";
-
-			if ($falhou) {
-				$app->log->critical("OportunidadeCultJob falhou sem lançar exceção {$alvo} - envio encerrado");
-			} else {
-				$app->log->info("OportunidadeCultJob executado com sucesso {$alvo}");
-			}
-		} catch (\Throwable $e) {
-			if ($e instanceof SendFailed) {
-				$this->recordAttempt($logService, $requestLog, $e->outcome(), $attempt, $e->getMessage());
-			}
-
-			$failureMessage = "OportunidadeCultJob falhou na tentativa {$attempt}/" . self::MAX_ATTEMPTS . ": " . $e->getMessage() . " - ação: {$action} - oportunidade: {$opportunity->id}";
-
-			if ($attempt < self::MAX_ATTEMPTS && $this->shouldRetry($e)) {
-				$app->log->error($failureMessage);
-
-				$delay = Plugin::getInstance()->config['integration']['retryDelayJob'];
-				$app->enqueueOrReplaceJob(self::SLUG, [
-					'opportunity' => $opportunity,
-					'attempt'     => $attempt + 1,
-					'requestUuid' => $requestLog?->requestUuid,
-				], $delay);
-
-				return true;
-			}
-
-			$app->log->critical($failureMessage . ' - envio encerrado');
-
-			if ($requestLog) {
-				$this->recordLog(fn() => $logService->finish($requestLog, CultBrRequestLog::RESULT_ERROR));
-			}
-
-			return true;
-		}
-
-		// Fora do try: uma falha ao gravar o log não pode cair no catch acima e
-		// reenfileirar um PUT que já foi aceito pelo CultBR.
-		if ($requestLog) {
-			$resultado = $falhou ? CultBrRequestLog::RESULT_ERROR : CultBrRequestLog::RESULT_SUCCESS;
-
-			$this->recordLog(fn() => $logService->finish($requestLog, $resultado));
-		}
+			},
+			scheduleRetry: fn(?string $requestUuid) => $app->enqueueOrReplaceJob(self::SLUG, [
+				'opportunity' => $opportunity,
+				'attempt'     => $attempt + 1,
+				'requestUuid' => $requestUuid,
+			], Plugin::getInstance()->config['integration']['retryDelayJob']),
+		);
 
 		return true;
-	}
-
-	/** Repete só o que pode mudar de resultado; falha que não sabemos classificar mantém a retentativa. */
-	private function shouldRetry(\Throwable $e): bool
-	{
-		return !$e instanceof IntegrationError || $e->isRetryable();
-	}
-
-	/** Grava a tentativa juntando o desfecho do envio com o que só o job sabe: em que tentativa está. */
-	private function recordAttempt(
-		CultBrRequestLogService $logService,
-		?CultBrRequestLog $requestLog,
-		SendOutcome $outcome,
-		int $attempt,
-		?string $error = null
-	): void {
-		if (!$requestLog) {
-			return;
-		}
-
-		$this->recordLog(fn() => $logService->recordAttempt($requestLog, [
-			'method'          => $outcome->method,
-			'endpoint'        => $outcome->endpoint,
-			'payload'         => $outcome->payload,
-			'response'        => $outcome->response,
-			'responseHeaders' => $outcome->responseHeaders,
-			'httpStatus'      => $outcome->httpStatus,
-			'status'          => $outcome->result->value,
-			'sentAt'          => $outcome->sentAt,
-			'durationMs'      => $outcome->durationMs,
-			'provider'        => $outcome->provider->value,
-			'error'           => $error,
-			'attempt'         => $attempt,
-			'maxAttempts'     => self::MAX_ATTEMPTS,
-		]));
-	}
-
-	/**
-	 * Executa uma gravação do histórico sem deixar que ela interfira no envio: o log é
-	 * acessório e sua falha (tabela ausente, banco indisponível) não pode alterar o fluxo.
-	 */
-	private function recordLog(callable $operation)
-	{
-		try {
-			return $operation();
-		} catch (\Throwable $e) {
-			App::i()->log->error('[CultBR] Falha ao registrar log de envio: ' . $e->getMessage());
-			return null;
-		}
 	}
 
 	protected function persistCultLastSyncedAtFlag(App $app, int $opportunityId): void
