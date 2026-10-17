@@ -216,6 +216,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, [
+            'label' => i::__('Id do edital no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
         $app->registerJobType(new OpportunityForceResyncJob(OpportunityForceResyncJob::SLUG));

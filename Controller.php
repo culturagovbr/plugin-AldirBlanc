@@ -54,6 +54,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Gravado em OportunidadeCultJob após PUT update bem-sucedido no Cult; registra o timestamp do último envio. */
     public const OPPORTUNITY_META_CULT_BR_LAST_SYNCED_AT = 'cultBrLastSyncedAt';
 
+    /** Id do edital no PAR, ecoado pelo CultBR na resposta do envio; chave das rotas de resultado. */
+    public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID = 'cultBrParEditalId';
+
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
     private const CULT_LOGS_MAX_LIMIT = 100;
