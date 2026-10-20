@@ -58,7 +58,8 @@ class FormularioResultadoService
         return [
             'estado' => $estado,
             'estrutura' => $estrutura,
-            'respostas' => $respostas,
+            // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
+            'respostas' => (object) $respostas,
             'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
         ];

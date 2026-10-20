@@ -121,6 +121,26 @@ class ControllerResultadoFormularioTest extends TestCase
         }, semFormulario: true);
     }
 
+    function testRespostasVaziasSerializamComoObjetoJson()
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $controller = new TestableController();
+            $controller->data = ['opportunityId' => $raiz->id];
+            $this->app->response = new Response();
+
+            try {
+                $controller->callGetResultadoFormulario();
+                $this->fail('Esperava Halt');
+            } catch (Halt) {
+            }
+
+            $corpo = (string) $this->app->response->getBody();
+            $this->assertStringContainsString('"respostas":{}', $corpo, 'vazio como [] faria o cliente tratar respostas como lista');
+        });
+    }
+
     function testEstadoCarregaADataDePublicacaoAutomatica()
     {
         $this->comFormulario(function () {
