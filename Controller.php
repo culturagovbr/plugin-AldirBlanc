@@ -18,6 +18,8 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Services\FormularioRespostasValidator;
+use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
@@ -186,6 +188,111 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'skip' => $skip,
             'limit' => $limit,
         ]);
+    }
+
+    /**
+     * Estado do formulário de resultado do CultBR no edital (estrutura, respostas salvas, ciclo).
+     *
+     * GET /aldirblanc/resultadoFormulario?opportunityId={id}
+     */
+    public function GET_resultadoFormulario(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        try {
+            $estado = (new FormularioResultadoService())->formStateForOpportunity($opportunity);
+        } catch (IntegrationError $e) {
+            $this->failResultadoFormulario($e);
+            return;
+        }
+
+        $this->json($estado);
+    }
+
+    /**
+     * Salva respostas (inclusive parciais) do formulário de resultado e devolve o estado novo.
+     *
+     * POST /aldirblanc/resultadoFormulario — body: opportunityId, respostas {id_questao: valor}
+     */
+    public function POST_resultadoFormulario(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        $service = new FormularioResultadoService();
+
+        try {
+            $estrutura = $service->formStructureForOpportunity((int) $opportunity->id);
+        } catch (IntegrationError $e) {
+            $this->failResultadoFormulario($e);
+            return;
+        }
+
+        if ($estrutura === null) {
+            $this->errorJson(i::__('Este edital não tem formulário de resultado no CultBR.'), 400);
+            return;
+        }
+
+        if (!$service->isFaseFinalPublicada($opportunity)) {
+            $this->errorJson(i::__('Publique o resultado final do edital para preencher o formulário.'), 400);
+            return;
+        }
+
+        $respostas = $this->data['respostas'] ?? null;
+        if (!is_array($respostas) || $respostas === []) {
+            $this->errorJson(i::__('Informe as respostas.'), 400);
+            return;
+        }
+
+        $erros = (new FormularioRespostasValidator($estrutura))->validate($respostas);
+        if ($erros !== []) {
+            $this->errorJson(['message' => i::__('Há respostas inválidas.'), 'respostas' => $erros], 400);
+            return;
+        }
+
+        $service->saveRespostas((int) $opportunity->id, $respostas, $estrutura);
+
+        $this->json($service->formStateForOpportunity($opportunity));
+    }
+
+    /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */
+    private function failResultadoFormulario(IntegrationError $erro): void
+    {
+        App::i()->log->error('[CultBR] Não foi possível obter o formulário de resultado: ' . $erro->getMessage());
+
+        $this->errorJson(i::__('Não recebemos dados pela API CultBr'), 502);
+    }
+
+    /** Resolve e autoriza o edital dos endpoints do formulário de resultado; respondeu erro = null. */
+    private function resultadoFormularioOpportunity(): ?Opportunity
+    {
+        $this->requireAuthentication();
+
+        $opportunityId = isset($this->data['opportunityId']) ? (int) $this->data['opportunityId'] : 0;
+        if ($opportunityId < 1) {
+            $this->errorJson(i::__('Informe a oportunidade.'), 400);
+            return null;
+        }
+
+        $opportunity = App::i()->repo('Opportunity')->find($opportunityId);
+        if ($opportunity === null) {
+            $this->errorJson(i::__('Oportunidade não encontrada.'), 404);
+            return null;
+        }
+
+        try {
+            $this->checkOpportunityControlPermission($opportunity);
+        } catch (\MapasCulturais\Exceptions\PermissionDenied) {
+            $this->errorJson(i::__('Permissão negada.'), 403);
+            return null;
+        }
+
+        return $opportunity;
     }
 
     /** Enfileira o reenvio ao CultBR da seleção: POST /aldirblanc/forceResyncOpportunities */
