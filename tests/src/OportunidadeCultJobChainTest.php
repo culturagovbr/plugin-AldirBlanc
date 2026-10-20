@@ -8,6 +8,7 @@ use AldirBlanc\Jobs\ResultadoCultJob;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
@@ -27,23 +28,33 @@ class OportunidadeCultJobChainTest extends TestCase
         $this->clearJobQueue();
     }
 
-    /** Envia a OPORTUNIDADE com o desfecho dado, a partir de fila limpa. */
-    private function enviaOportunidade(Opportunity $raiz, array $trocas = []): void
+    /** Envia a OPORTUNIDADE com o desfecho dado, a partir de fila limpa; o formulário de resultado resolve completo. */
+    private function enviaOportunidade(Opportunity $raiz, array $trocas = [], ?array $estrutura = null): void
     {
-        $this->comProvedorDuble(
-            fn() => $this->desfecho($trocas),
-            function () use ($raiz) {
-                $this->clearJobQueue();
-                $this->enqueueUpdateJob($raiz);
-                // executeJob, não processJobs: hash iniciado por letra zera o cast no while do core.
-                $subsiteAnterior = $this->app->currentSubsiteId;
-                try {
-                    $this->app->executeJob('2100-01-01 00:00');
-                } finally {
-                    // O job seta o subsite atual; sem restaurar, o próximo teste roda sob um subsite desfeito pelo rollback.
-                    $this->app->setCurrentSubsiteId($subsiteAnterior);
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProvedorDuble(
+                fn() => $this->desfecho($trocas),
+                function () use ($raiz, $estrutura) {
+                    FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+                    FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura ?? self::ESTRUTURA_SEM_OBRIGATORIAS;
+
+                    $this->clearJobQueue();
+                    $this->enqueueUpdateJob($raiz);
+                    // executeJob, não processJobs: hash iniciado por letra zera o cast no while do core.
+                    $subsiteAnterior = $this->app->currentSubsiteId;
+                    try {
+                        $this->app->executeJob('2100-01-01 00:00');
+                    } finally {
+                        // O job seta o subsite atual; sem restaurar, o próximo teste roda sob um subsite desfeito pelo rollback.
+                        $this->app->setCurrentSubsiteId($subsiteAnterior);
+                    }
                 }
-            }
+            ),
         );
     }
 
@@ -113,10 +124,25 @@ class OportunidadeCultJobChainTest extends TestCase
         $this->enviaOportunidade($raiz);
 
         // Gatilho 2: a republicação dispara o hook do tema — sem limpar a fila entre os dois.
-        $this->app->disableAccessControl();
-        $fase->publishRegistrations();
-        $this->app->enableAccessControl();
+        $this->comFormularioResultado(function () use ($fase) {
+            $this->app->disableAccessControl();
+            $fase->publishRegistrations();
+            $this->app->enableAccessControl();
+        });
 
         $this->assertCount(1, $this->jobsDeResultado(), 'dois gatilhos próximos, um job: enqueueOrReplaceJob deduplica pelo id');
+    }
+
+    function testSucessoComFormularioIncompletoNaoEncadeia()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $estruturaComObrigatoria = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 52, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
+
+        $this->enviaOportunidade($raiz, estrutura: $estruturaComObrigatoria);
+
+        $this->assertCount(0, $this->jobsDeResultado(), 'a oportunidade foi aceita, mas sem formulário completo o resultado não segue');
     }
 }

@@ -3,9 +3,11 @@
 namespace Tests\AldirBlanc\Traits;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Plugin;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Subsite;
 use MapasCulturais\Entities\User;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 
 /** Monta o cenário do envio de resultado: raiz elegível na régua da fase 1 + fase final publicada. */
 trait BuildsPublishedFinalPhase
@@ -103,5 +105,37 @@ trait BuildsPublishedFinalPhase
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
         return [$raiz, $fase];
+    }
+
+    /** Estrutura publicada sem questões obrigatórias: o formulário é completo por vacuidade. */
+    protected const ESTRUTURA_SEM_OBRIGATORIAS = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => []];
+
+    /** Roda o exercício com o formulário de resultado do edital resolvendo completo (ou como a estrutura dada). */
+    protected function comFormularioResultado(callable $exercicio, ?array $estrutura = null): void
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura ?? self::ESTRUTURA_SEM_OBRIGATORIAS;
+
+        $plugin = Plugin::getInstance();
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['provider'] = FakeIntegrationProvider::class;
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            function () use ($exercicio, $plugin) {
+                $plugin->resetIntegrationProvider();
+
+                try {
+                    $exercicio();
+                } finally {
+                    $plugin->resetIntegrationProvider();
+                    FakeIntegrationProvider::reset();
+                }
+            },
+        );
     }
 }

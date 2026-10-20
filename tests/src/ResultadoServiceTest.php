@@ -3,9 +3,12 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Plugin;
 use AldirBlanc\Services\ResultadoService;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\Traits\UserDirector;
 
 /** Régua e payload do resultado: a fase final publicada decide, nunca o flag da raiz. */
@@ -13,6 +16,7 @@ class ResultadoServiceTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
+    use ConfiguresPlugin;
 
     private function service(): ResultadoService
     {
@@ -114,6 +118,49 @@ class ResultadoServiceTest extends TestCase
         $payload = $this->service()->buildResultado($fase)->toArray();
 
         $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
+    }
+
+    private function jobsDeResultado(): array
+    {
+        return $this->app->repo('Job')->findBy(['type' => \AldirBlanc\Jobs\ResultadoCultJob::SLUG]);
+    }
+
+    function testCompletudeIndisponivelNaoEnfileira()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        // O provedor da Gestão não serve o formulário: sem certeza da completude, nada é enfileirado.
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['client']['provider'] = 'gestao';
+
+                return $config;
+            },
+            function () use ($raiz) {
+                Plugin::getInstance()->resetIntegrationProvider();
+
+                try {
+                    $this->service()->enqueueResultadoSync($raiz);
+                } finally {
+                    Plugin::getInstance()->resetIntegrationProvider();
+                }
+            },
+        );
+
+        $this->assertCount(0, $this->jobsDeResultado(), 'na dúvida o envio não sai — fail-safe do gate');
+    }
+
+    function testEditalSemFormularioNoParNaoEnfileira()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
+
+            $this->service()->enqueueResultadoSync($raiz);
+
+            $this->assertCount(0, $this->jobsDeResultado(), 'sem formulário no PAR a integração não faz nada');
+        });
     }
 
     function testPersistenciaDoIdVigenteSubstituiSemDuplicar()

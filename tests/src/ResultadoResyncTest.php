@@ -11,6 +11,7 @@ use MapasCulturais\Entities\Registration;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
@@ -20,6 +21,7 @@ class ResultadoResyncTest extends TestCase
     use UserDirector;
     use IsolatesJobQueue;
     use BuildsPublishedFinalPhase;
+    use ConfiguresPlugin;
 
     protected function setUp(): void
     {
@@ -64,11 +66,14 @@ class ResultadoResyncTest extends TestCase
         return $row === false ? false : (string) $row;
     }
 
+    /** A alteração roda com o formulário de resultado completo: é o que o gate do envio exige. */
     private function alteraStatus(Registration $inscricao): void
     {
-        $this->app->disableAccessControl();
-        $inscricao->setStatusToApproved();
-        $this->app->enableAccessControl();
+        $this->comFormularioResultado(function () use ($inscricao) {
+            $this->app->disableAccessControl();
+            $inscricao->setStatusToApproved();
+            $this->app->enableAccessControl();
+        });
     }
 
     function testAlteracaoDeStatusAbreAJanelaEAgendaUmJob()
@@ -88,11 +93,13 @@ class ResultadoResyncTest extends TestCase
     {
         [, , $inscricao] = $this->cenarioEnviado('Subsite Resync Coalesce');
 
-        $this->app->disableAccessControl();
-        for ($i = 0; $i < 50; $i++) {
-            $i % 2 === 0 ? $inscricao->setStatusToApproved() : $inscricao->setStatusToWaitlist();
-        }
-        $this->app->enableAccessControl();
+        $this->comFormularioResultado(function () use ($inscricao) {
+            $this->app->disableAccessControl();
+            for ($i = 0; $i < 50; $i++) {
+                $i % 2 === 0 ? $inscricao->setStatusToApproved() : $inscricao->setStatusToWaitlist();
+            }
+            $this->app->enableAccessControl();
+        });
 
         $this->assertCount(1, $this->jobsDeResultado(), 'N alterações não podem virar N jobs nem N requisições');
     }
@@ -150,7 +157,7 @@ class ResultadoResyncTest extends TestCase
 
         $this->assertCount(0, $this->jobsDeResultado(), 'dentro do flush do postRemove nada é enfileirado');
 
-        (new ResultadoService())->flushDeferredResultadoResyncs();
+        $this->comFormularioResultado(fn() => (new ResultadoService())->flushDeferredResultadoResyncs());
 
         $this->assertCount(1, $this->jobsDeResultado(), 'o reenvio adiado sai depois do flush');
         $this->assertNotFalse($this->dirtySince((int) $fase->id));
@@ -175,9 +182,11 @@ class ResultadoResyncTest extends TestCase
             ['value' => (new \DateTime('-11 minutes'))->format('Y-m-d H:i:s'), 'id' => (int) $fase->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE]
         );
 
-        $this->app->disableAccessControl();
-        $inscricao->setStatusToWaitlist();
-        $this->app->enableAccessControl();
+        $this->comFormularioResultado(function () use ($inscricao) {
+            $this->app->disableAccessControl();
+            $inscricao->setStatusToWaitlist();
+            $this->app->enableAccessControl();
+        });
 
         $agendadoPara = $conn->fetchOne('SELECT next_execution_timestamp FROM job WHERE name = :name', ['name' => ResultadoCultJob::SLUG]);
         $this->assertSame('2099-01-01 00:00:00', $agendadoPara, 'no teto, o job roda no horário já agendado');
@@ -195,6 +204,24 @@ class ResultadoResyncTest extends TestCase
         $this->assertCount(1, $this->jobsDeResultado(), 'carimbo órfão não pode engolir alterações para sempre');
         $novoCarimbo = $this->dirtySince((int) $fase->id);
         $this->assertGreaterThan((new \DateTime('-1 minute'))->format('Y-m-d H:i:s'), $novoCarimbo, 'a janela recomeça agora');
+    }
+
+    function testAlteracaoComFormularioIncompletoCarimbaMasNaoAgenda()
+    {
+        [, $fase, $inscricao] = $this->cenarioEnviado('Subsite Resync Incompleto');
+
+        $estruturaComObrigatoria = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 52, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
+
+        $this->comFormularioResultado(function () use ($inscricao) {
+            $this->app->disableAccessControl();
+            $inscricao->setStatusToApproved();
+            $this->app->enableAccessControl();
+        }, $estruturaComObrigatoria);
+
+        $this->assertCount(0, $this->jobsDeResultado(), 'sem formulário completo a mudança não vira envio');
+        $this->assertNotFalse($this->dirtySince((int) $fase->id), 'a alteração fica carimbada para quando o formulário completar');
     }
 
     function testExecucaoDoJobLimpaOCarimboEAlteracaoNovaAbreOutraRodada()

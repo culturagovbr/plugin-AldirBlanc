@@ -9,6 +9,7 @@ use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\Traits\UserDirector;
 
@@ -18,6 +19,7 @@ class ThemeResultadoHooksTest extends TestCase
     use UserDirector;
     use IsolatesJobQueue;
     use BuildsPublishedFinalPhase;
+    use ConfiguresPlugin;
 
     protected function setUp(): void
     {
@@ -41,45 +43,68 @@ class ThemeResultadoHooksTest extends TestCase
 
     function testPublicarAFaseFinalDeEditalElegivelEnfileiraOJob()
     {
-        $owner = $this->userDirector->createUser();
-        $subsite = $this->integrationSubsite($owner, 'Subsite Hook Feliz');
-        $raiz = $this->raizElegivel($owner, $subsite);
-        $fase = $this->faseFinal($raiz, publicada: false);
-        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+        $this->comFormularioResultado(function () {
+            $owner = $this->userDirector->createUser();
+            $subsite = $this->integrationSubsite($owner, 'Subsite Hook Feliz');
+            $raiz = $this->raizElegivel($owner, $subsite);
+            $fase = $this->faseFinal($raiz, publicada: false);
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
-        $this->publica($fase);
+            $this->publica($fase);
 
-        $this->assertCount(1, $this->jobsDeResultado(), 'a publicação da fase final é o gatilho do envio');
+            $this->assertCount(1, $this->jobsDeResultado(), 'a publicação da fase final é o gatilho do envio');
+        });
     }
 
     /** Com inscrição selecionada, o loop de publicação roda em->clear() e o hook recebe a fase detached — o caso real. */
     function testPublicarComInscricaoSelecionadaEnfileiraMesmoComAEntidadeDetached()
     {
-        $owner = $this->userDirector->createUser();
-        $subsite = $this->integrationSubsite($owner, 'Subsite Hook Detached');
-        $raiz = $this->raizElegivel($owner, $subsite);
-        $fase = $this->faseFinal($raiz, publicada: false);
-        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+        $this->comFormularioResultado(function () {
+            $owner = $this->userDirector->createUser();
+            $subsite = $this->integrationSubsite($owner, 'Subsite Hook Detached');
+            $raiz = $this->raizElegivel($owner, $subsite);
+            $fase = $this->faseFinal($raiz, publicada: false);
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
-        $this->app->disableAccessControl();
-        $inscricao = new Registration();
-        $inscricao->opportunity = $fase;
-        $inscricao->owner = $owner->profile;
-        $inscricao->save(true);
-        $this->app->em->getConnection()->executeStatement(
-            'UPDATE registration SET status = 10 WHERE id = :id',
-            ['id' => (int) $inscricao->id]
-        );
-        $this->app->enableAccessControl();
+            $this->app->disableAccessControl();
+            $inscricao = new Registration();
+            $inscricao->opportunity = $fase;
+            $inscricao->owner = $owner->profile;
+            $inscricao->save(true);
+            $this->app->em->getConnection()->executeStatement(
+                'UPDATE registration SET status = 10 WHERE id = :id',
+                ['id' => (int) $inscricao->id]
+            );
+            $this->app->enableAccessControl();
 
-        // Entidade fria, como no request real: metadados ainda não hidratados quando o clear do loop roda.
-        $faseId = (int) $fase->id;
-        $this->app->em->clear();
-        $faseFria = $this->app->repo('Opportunity')->find($faseId);
+            // Entidade fria, como no request real: metadados ainda não hidratados quando o clear do loop roda.
+            $faseId = (int) $fase->id;
+            $this->app->em->clear();
+            $faseFria = $this->app->repo('Opportunity')->find($faseId);
 
-        $this->publica($faseFria);
+            $this->publica($faseFria);
 
-        $this->assertCount(1, $this->jobsDeResultado(), 'o gatilho funciona com a fase desanexada pelo loop de publicação');
+            $this->assertCount(1, $this->jobsDeResultado(), 'o gatilho funciona com a fase desanexada pelo loop de publicação');
+        });
+    }
+
+    function testPublicarComFormularioIncompletoNaoEnfileira()
+    {
+        $estruturaComObrigatoria = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 52, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
+
+        $this->comFormularioResultado(function () {
+            $owner = $this->userDirector->createUser();
+            $subsite = $this->integrationSubsite($owner, 'Subsite Hook Incompleto');
+            $raiz = $this->raizElegivel($owner, $subsite);
+            $fase = $this->faseFinal($raiz, publicada: false);
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+            $this->publica($fase);
+
+            $this->assertCount(0, $this->jobsDeResultado(), 'sem formulário completo a publicação não enfileira');
+        }, $estruturaComObrigatoria);
     }
 
     /** Fase intermediária e fase de recurso caem aqui: sem isLastPhase, publicar não envia nada. */

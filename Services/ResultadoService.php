@@ -6,6 +6,7 @@ use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Enum\ResultadoStatus;
 use AldirBlanc\Enum\ResultadoTipo;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
@@ -69,6 +70,18 @@ class ResultadoService
             id_status: ResultadoStatus::Publicado->value,
             data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
         );
+    }
+
+    /** O envio exige o formulário de resultado completo; sem certeza da completude, nada é enfileirado. */
+    public function isResultadoFormComplete(Opportunity $raiz): bool
+    {
+        try {
+            return (new FormularioResultadoService())->isFormularioCompleto($raiz);
+        } catch (IntegrationError $e) {
+            App::i()->log->warning("Resultado do edital {$raiz->id}: completude do formulário indisponível - " . $e->getMessage());
+
+            return false;
+        }
     }
 
     /** Alteração pendente desde o último envio? O carimbo vive na fase final e quem o grava é o reenvio por alteração. */
@@ -198,6 +211,12 @@ class ResultadoService
     /** Ponto único de enfileiramento do envio de resultado; o delay padrão é o da integração. */
     public function enqueueResultadoSync(Opportunity $raiz, ?string $delay = null): void
     {
+        if (!$this->isResultadoFormComplete($raiz)) {
+            App::i()->log->info("Resultado do edital {$raiz->id} não enfileirado: formulário de resultado incompleto");
+
+            return;
+        }
+
         $delay ??= Plugin::getInstance()->config['integration']['delayJob'];
         $start = (new \DateTime())->modify($delay)->format('Y-m-d H:i:s');
 
