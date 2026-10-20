@@ -37,15 +37,24 @@ class ResultadoCultJobTest extends TestCase
         $this->app->enqueueOrReplaceJob(ResultadoCultJob::SLUG, ['opportunity' => $raiz]);
     }
 
-    private function processaComResposta(Opportunity $raiz, ?string $response): void
+    private function processaComResposta(Opportunity $raiz, ?string $response, ?array $estrutura = null): void
     {
-        $this->comProvedorDuble(
-            fn() => $this->desfecho(),
-            function () use ($raiz, $response) {
-                FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['response' => $response]);
-                $this->enfileira($raiz);
-                $this->processJobs(number_of_jobs: 1);
-            }
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProvedorDuble(
+                fn() => $this->desfecho(),
+                function () use ($raiz, $response, $estrutura) {
+                    FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+                    FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura ?? self::ESTRUTURA_SEM_OBRIGATORIAS;
+                    FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['response' => $response]);
+                    $this->enfileira($raiz);
+                    $this->processJobs(number_of_jobs: 1);
+                }
+            ),
         );
     }
 
@@ -110,6 +119,8 @@ class ResultadoCultJobTest extends TestCase
         $this->comProvedorDuble(
             fn() => $this->desfecho(),
             function () use ($raiz) {
+                FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+                FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
                 FakeIntegrationProvider::$aoEnviarResultado = function () {
                     throw new SendFailed(
                         $this->desfecho(['result' => SendResult::Error, 'httpStatus' => 500]),
@@ -147,6 +158,25 @@ class ResultadoCultJobTest extends TestCase
             ['id' => (int) $raiz->id]
         );
         $this->assertSame([], $logs, 'sem envio não há nem registro de tentativa');
+    }
+
+    function testFormularioIncompletoNaExecucaoNaoEnviaEMantemOCarimbo()
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $fase->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE, '2026-10-16 20:00:00');
+
+        $estruturaComObrigatoria = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 52, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $estruturaComObrigatoria);
+
+        $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados, 'entre enfileirar e rodar o formulário manda: incompleto não envia');
+        $carimbo = $this->app->em->getConnection()->fetchOne(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => (int) $fase->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE]
+        );
+        $this->assertNotFalse($carimbo, 'a janela de alterações fica aberta esperando o formulário');
     }
 
     /** O caminho de dev: provider conecta real em modo development — simula sem rede. */

@@ -13,6 +13,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Services\CultBrRequestLogService;
+use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\ResultadoService;
 
 class ResultadoCultJob extends JobType
@@ -44,16 +45,33 @@ class ResultadoCultJob extends JobType
 		$fresca = $app->repo('Opportunity')->find($raizId);
 		$faseFinal = $fresca?->lastPhase;
 
-		if ($faseFinal) {
-			// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
-			$service->clearResultadoDirtySince((int) $faseFinal->id);
-		}
-
 		if (!$faseFinal || !$service->isEligibleForResultSync($faseFinal)) {
+			if ($faseFinal) {
+				// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
+				$service->clearResultadoDirtySince((int) $faseFinal->id);
+			}
+
 			$app->log->info("ResultadoCultJob: edital {$raizId} não está elegível para envio de resultado - nada enviado");
 
 			return true;
 		}
+
+		try {
+			$formCompleto = (new FormularioResultadoService())->isFormularioCompleto($fresca);
+		} catch (IntegrationError $e) {
+			// Completude indisponível não encerra aqui: o envio adiante acusa o mesmo erro no log, com retry.
+			$formCompleto = true;
+		}
+
+		if (!$formCompleto) {
+			// Nada é limpo: a alteração pendente espera o formulário ficar completo.
+			$app->log->info("ResultadoCultJob: edital {$raizId} com formulário de resultado incompleto - nada enviado");
+
+			return true;
+		}
+
+		// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
+		$service->clearResultadoDirtySince((int) $faseFinal->id);
 
 		$runner = new SendRunner('ResultadoCultJob', self::MAX_ATTEMPTS, new CultBrRequestLogService());
 
