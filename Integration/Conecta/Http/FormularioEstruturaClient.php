@@ -22,8 +22,8 @@ class FormularioEstruturaClient extends AbstractClient
     {
         $this->document = '';
 
-        // A API exige a barra final antes da query: sem ela responde 307, que o transporte não segue.
-        $endpoint = rtrim($this->requiredEndpoint('formularioEstruturaEndpoint'), '/') . '/';
+        // A rota canônica é SEM barra final: com ela a API responde 307 (e o Location rebaixa para http).
+        $endpoint = rtrim($this->requiredEndpoint('formularioEstruturaEndpoint'), '/');
         $this->endpoint = $endpoint . '?' . http_build_query([
             'modulo' => self::MODULO_RESULTADO,
             'id_tipo_acao' => $idTipoAcao,

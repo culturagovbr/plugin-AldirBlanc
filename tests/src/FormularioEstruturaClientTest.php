@@ -41,23 +41,23 @@ class FormularioEstruturaClientTest extends TestCase
 
             $this->assertSame(['GET'], $transporte->metodos());
             $this->assertSame(
-                self::HOST . '/par/formularios/estrutura/?modulo=RESULTADO_EDITAL&id_tipo_acao=12',
+                self::HOST . '/par/formularios/estrutura?modulo=RESULTADO_EDITAL&id_tipo_acao=12',
                 $transporte->ultimaUrl(),
-                'sem a barra final antes da query a API responde 307',
+                'a rota canônica é sem barra: com ela a API responde 307',
             );
             $this->assertSame(109, $estrutura['id_formulario']);
         });
     }
 
-    function testBarraFinalEGarantidaMesmoComConfigSemBarra()
+    function testBarraFinalESuprimidaMesmoComConfigComBarra()
     {
         $this->comConecta(function () {
             $transporte = new FakeTransport(status: 200, body: '{"id_formulario": 109}');
 
             (new ConectaProvider($transporte))->fetchFormularioResultado(1);
 
-            $this->assertStringContainsString('/par/formularios/estrutura/?', $transporte->ultimaUrl());
-        }, ['formularioEstruturaEndpoint' => 'par/formularios/estrutura']);
+            $this->assertStringContainsString('/par/formularios/estrutura?', $transporte->ultimaUrl());
+        }, ['formularioEstruturaEndpoint' => 'par/formularios/estrutura/']);
     }
 
     function testTipoDeAcaoSemFormularioPublicadoDevolveNull()
