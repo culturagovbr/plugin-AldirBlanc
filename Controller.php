@@ -24,6 +24,7 @@ use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Exceptions\Halt;
@@ -257,7 +258,14 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $service->saveRespostas($opportunity, $respostas, $estrutura);
 
-        $this->json($service->formStateForOpportunity($opportunity));
+        $formState = $service->formStateForOpportunity($opportunity);
+
+        // O save que deixa o formulário completo é um gatilho de envio como a publicação.
+        if ($formState['estado'] === FormularioResultadoService::ESTADO_COMPLETO) {
+            (new ResultadoService())->enqueueResultadoSync($opportunity);
+        }
+
+        $this->json($formState);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */

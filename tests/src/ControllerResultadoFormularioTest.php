@@ -199,6 +199,35 @@ class ControllerResultadoFormularioTest extends TestCase
         );
     }
 
+    private function jobsDeResultado(): array
+    {
+        return $this->app->repo('Job')->findBy(['type' => \AldirBlanc\Jobs\ResultadoCultJob::SLUG]);
+    }
+
+    function testSaveQueCompletaOFormularioEnfileiraOEnvio()
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->postRespostas($raiz, [10 => 7, 11 => 'Processo concluído sem intercorrências.']);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado']);
+            $this->assertCount(1, $this->jobsDeResultado(), 'completar o formulário é um gatilho de envio');
+        });
+    }
+
+    function testSaveQueMantemPendenteNaoEnfileira()
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->postRespostas($raiz, [11 => 'Só o comentário, sem a média.']);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado']);
+            $this->assertCount(0, $this->jobsDeResultado(), 'formulário pendente não dispara envio');
+        });
+    }
+
     function testCategoriasSemValorExibemTabelaSemTotais()
     {
         FakeIntegrationProvider::reset();
