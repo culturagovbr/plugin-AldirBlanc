@@ -236,6 +236,41 @@ class ControllerResultadoFormularioTest extends TestCase
         );
     }
 
+    function testInscricoesSemCategoriaContamZeroESugeremTotalZero()
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
+                [$owner, $raiz, $fase] = $this->cenario();
+
+                $this->app->disableAccessControl();
+                $raiz->registrationRanges = [['label' => 'Música', 'limit' => 5, 'value' => 1000]];
+                $raiz->save(true);
+                $this->app->enableAccessControl();
+
+                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED);
+                $this->app->em->clear();
+                $this->login($owner);
+
+                $payload = $this->getFormulario($raiz);
+                $autos = $payload['respostasAutomaticas'];
+
+                $linha = ($autos['53'] ?? $autos[53])[0];
+                $this->assertSame(0, $linha['quantidade_contemplados'], 'selecionada sem categoria não entra na linha');
+                $this->assertSame(0, $linha['valor_total_categoria']);
+                $this->assertSame(0, $payload['respostas']['52'] ?? $payload['respostas'][52], 'sugestão de total zera — borda documentada: 0 conta como preenchido');
+            }),
+        );
+    }
+
     function testAutomaticasSozinhasCompletamOFormulario()
     {
         FakeIntegrationProvider::reset();
