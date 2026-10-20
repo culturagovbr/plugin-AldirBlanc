@@ -255,7 +255,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service->saveRespostas((int) $opportunity->id, $respostas, $estrutura);
+        $service->saveRespostas($opportunity, $respostas, $estrutura);
 
         $this->json($service->formStateForOpportunity($opportunity));
     }

@@ -27,7 +27,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
     /** Estrutura mínima: duas editáveis obrigatórias + anexo e data de publicação fora do gate. */
     private const ESTRUTURA = ['id_formulario' => 109, 'id_formulario_versao' => 296, 'versao' => 5, 'secoes' => [['etapas' => [['questoes' => [
-        ['id_questao' => 10, 'tipo_questao' => 'número', 'tag' => 'total_inscritos', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 10, 'tipo_questao' => 'número', 'tag' => 'media_das_notas', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 11, 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 20, 'tipo_questao' => 'anexo', 'tag' => 'planilha_de_resultados', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
@@ -119,6 +119,145 @@ class ControllerResultadoFormularioTest extends TestCase
             $this->assertNull($payload['estrutura']);
             $this->assertFalse($payload['envioHabilitado']);
         }, semFormulario: true);
+    }
+
+    /** Estrutura com as tags que o cálculo automático reconhece. */
+    private const ESTRUTURA_AUTO = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+        ['id_questao' => 50, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 51, 'tipo_questao' => 'número', 'tag' => 'total_contemplados_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 52, 'tipo_questao' => 'moeda', 'tag' => 'valor_total_repassado_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 53, 'tipo_questao' => 'Tabela Dinâmica', 'tag' => 'dados_por_categoria_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => ['minRows' => 1, 'columns' => [
+            ['key' => 'categoria', 'label' => 'Categoria', 'readOnly' => true, 'required' => true],
+            ['key' => 'valor_individual', 'label' => 'Valor individual', 'required' => true],
+            ['key' => 'quantidade_contemplados', 'label' => 'Quantidade', 'required' => true],
+            ['key' => 'valor_total_categoria', 'label' => 'Total', 'readOnly' => true, 'required' => false],
+        ]], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+    ]]]]]];
+
+    private function inscricao(Opportunity $fase, int $status, ?string $categoria = null): void
+    {
+        $this->app->disableAccessControl();
+        $inscricao = new \MapasCulturais\Entities\Registration();
+        $inscricao->opportunity = $fase;
+        $inscricao->owner = $fase->owner;
+        $inscricao->save(true);
+        $conn = $this->app->em->getConnection();
+        $conn->executeStatement('UPDATE registration SET status = :s WHERE id = :id', ['s' => $status, 'id' => $inscricao->id]);
+        if ($categoria !== null) {
+            $conn->executeStatement('UPDATE registration SET range = :r WHERE id = :id', ['r' => $categoria, 'id' => $inscricao->id]);
+        }
+        $this->app->enableAccessControl();
+    }
+
+    function testCamposConhecidosDoEditalSaoCalculadosENaoSalvaveis()
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
+                [$owner, $raiz, $fase] = $this->cenario();
+
+                $this->app->disableAccessControl();
+                $raiz->registrationRanges = [
+                    ['label' => 'Música', 'limit' => 5, 'value' => 1000],
+                    ['label' => 'Teatro', 'limit' => 2, 'value' => 500],
+                ];
+                $raiz->save(true);
+                $this->app->enableAccessControl();
+
+                $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_SENT);
+                $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_NOTAPPROVED);
+                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+                // Os UPDATEs por SQL não aparecem nas entidades da identity map — leitura fria.
+                $this->app->em->clear();
+                $this->login($owner);
+
+                $payload = $this->getFormulario($raiz);
+                $autos = $payload['respostasAutomaticas'];
+
+                $this->assertSame(2, $autos['50'] ?? $autos[50], 'inscritas reais da primeira fase');
+                $this->assertSame(2, $autos['51'] ?? $autos[51], 'contempladas reais da fase final');
+                $this->assertArrayNotHasKey('52', $autos, 'valor repassado não é travado');
+                $this->assertSame(2000, $payload['respostas']['52'] ?? $payload['respostas'][52], 'valor repassado vem pré-preenchido do cálculo');
+                $linhas = $autos['53'] ?? $autos[53];
+                $this->assertSame(['categoria' => 'Música', 'valor_individual' => 1000, 'quantidade_contemplados' => 2, 'valor_total_categoria' => 2000], $linhas[0]);
+                $this->assertSame(['categoria' => 'Teatro', 'valor_individual' => 500, 'quantidade_contemplados' => 0, 'valor_total_categoria' => 0], $linhas[1]);
+
+                $this->postRespostas($raiz, [50 => 99, 52 => 1234]);
+                $relido = $this->getFormulario($raiz);
+                $this->assertArrayNotHasKey('50', (array) $relido['respostas'], 'questão automática não aceita valor do cliente');
+                $this->assertSame(1234, $relido['respostas']['52'] ?? $relido['respostas'][52], 'o gestor pode ajustar o valor sugerido');
+            }),
+        );
+    }
+
+    function testAutomaticasSozinhasCompletamOFormulario()
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario' => 111, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 60, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+            ['id_questao' => 61, 'tipo_questao' => 'número', 'tag' => 'total_contemplados_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ]]]]]];
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
+                [, $raiz] = $this->cenario();
+
+                $payload = $this->getFormulario($raiz);
+
+                $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado'], 'obrigatórias satisfeitas pelo cálculo contam para a completude');
+                $this->assertTrue($payload['envioHabilitado']);
+            }),
+        );
+    }
+
+    function testSemCategoriasValorETabelaFicamSemFonte()
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
+                [, $raiz] = $this->cenario();
+
+                $payload = $this->getFormulario($raiz);
+                $autos = $payload['respostasAutomaticas'];
+
+                $this->assertArrayHasKey('50', $autos, 'contagem existe mesmo zerada');
+                $this->assertArrayNotHasKey('52', $autos, 'sem categorias não há valor calculado');
+                $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem categorias o campo de valor vem vazio');
+                $this->assertSame([53], $payload['questoesSemFonte'], 'só a tabela é fonte única; o valor é campo');
+                $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'sem fonte não completa — força a configuração na origem');
+
+                $this->postRespostas($raiz, [53 => [['categoria' => 'x']]]);
+                $relido = $this->getFormulario($raiz);
+                $this->assertSame([], (array) $relido['respostas'], 'questão sem fonte não aceita valor do cliente');
+
+                $this->postRespostas($raiz, [52 => 123]);
+                $completo = $this->getFormulario($raiz);
+                $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $completo['estado'], 'sem fonte fica fora do gate — não trava a completude invisivelmente');
+            }),
+        );
     }
 
     function testRespostasVaziasSerializamComoObjetoJson()

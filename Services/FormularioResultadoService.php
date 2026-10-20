@@ -9,6 +9,7 @@ use AldirBlanc\Integration\FetchesFormularioResultado;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\Registration;
 
 /** Estrutura do formulário de resultado do PAR: resolve o tipo de ação do edital e busca com cache. */
 class FormularioResultadoService
@@ -21,6 +22,9 @@ class FormularioResultadoService
 
     private const CACHE_ESTRUTURA = 'aldirblanc:cultbr:formulario_resultado:tipo_acao:';
     private const CACHE_TIPO_ACAO = 'aldirblanc:cultbr:par_tipo_acao:oportunidade:';
+
+    /** @var array<int, array<int, mixed>> memoização por request: o save e o estado reusam o mesmo cálculo */
+    private array $automaticasPorRaiz = [];
 
     /** Estrutura do formulário do edital, ou null quando ele não tem formulário de resultado no PAR. */
     public function formStructureForOpportunity(int $opportunityId): ?array
@@ -52,17 +56,282 @@ class FormularioResultadoService
     public function formStateForOpportunity(Opportunity $raiz): array
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
-        $respostas = $this->savedRespostas((int) $raiz->id);
-        $estado = $this->estado($raiz, $estrutura, $respostas);
+        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $estado = $this->estado($raiz, $estrutura, $automaticas + $respostas);
 
         return [
             'estado' => $estado,
             'estrutura' => $estrutura,
             // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
             'respostas' => (object) $respostas,
+            'respostasAutomaticas' => (object) $automaticas,
+            'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
         ];
+    }
+
+    /**
+     * Respostas calculadas do próprio edital — o formulário não repete o que o CultEditais sabe:
+     * contagens reais de inscritas e contempladas e, quando as Configurações de categorias do
+     * edital existem, o valor repassado e as linhas por categoria.
+     * @return array<int, mixed> por id_questao; questão sem dado calculável fica de fora (vira campo)
+     */
+    public function respostasAutomaticas(Opportunity $raiz, ?array $estrutura): array
+    {
+        if ($estrutura === null) {
+            return [];
+        }
+
+        if (isset($this->automaticasPorRaiz[(int) $raiz->id])) {
+            return $this->automaticasPorRaiz[(int) $raiz->id];
+        }
+
+        $automaticas = [];
+
+        foreach ($estrutura['secoes'] ?? [] as $secao) {
+            foreach ($secao['etapas'] ?? [] as $etapa) {
+                foreach ($etapa['questoes'] ?? [] as $questao) {
+                    $valor = $this->valorAutomatico($raiz, $questao);
+
+                    if ($valor !== null) {
+                        $automaticas[(int) $questao['id_questao']] = $valor;
+                    }
+                }
+            }
+        }
+
+        return $this->automaticasPorRaiz[(int) $raiz->id] = $automaticas;
+    }
+
+    /**
+     * Questões de natureza automática cuja fonte falta (edital sem Configurações de categorias):
+     * não viram campo — o preenchimento é configurar as categorias no edital, a fonte única.
+     * @return list<int>
+     */
+    private function questoesSemFonte(Opportunity $raiz, ?array $estrutura, array $automaticas): array
+    {
+        if ($estrutura === null) {
+            return [];
+        }
+
+        $semFonte = [];
+
+        foreach ($estrutura['secoes'] ?? [] as $secao) {
+            foreach ($secao['etapas'] ?? [] as $etapa) {
+                foreach ($etapa['questoes'] ?? [] as $questao) {
+                    $id = (int) $questao['id_questao'];
+
+                    if ($this->isTagAutomatica((string) ($questao['tag'] ?? '')) && !array_key_exists($id, $automaticas)) {
+                        $semFonte[] = $id;
+                    }
+                }
+            }
+        }
+
+        return $semFonte;
+    }
+
+    private function isTagAutomatica(string $tag): bool
+    {
+        foreach (['total_inscritos', 'total_contemplados', 'total_vagas_contempladas', 'dados_por_categoria', 'tabela_categorias'] as $prefixo) {
+            if (str_starts_with($tag, $prefixo)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function valorAutomatico(Opportunity $raiz, array $questao): mixed
+    {
+        $tag = (string) ($questao['tag'] ?? '');
+
+        if (str_starts_with($tag, 'total_inscritos')) {
+            return $this->totalInscritas($raiz);
+        }
+
+        if (str_starts_with($tag, 'total_contemplados') || str_starts_with($tag, 'total_vagas_contempladas')) {
+            return $this->totalContempladas($raiz);
+        }
+
+        if (str_starts_with($tag, 'dados_por_categoria') || str_starts_with($tag, 'tabela_categorias')) {
+            return $this->linhasPorCategoria($raiz, $questao);
+        }
+
+        return null;
+    }
+
+    /**
+     * Pré-preenchimentos editáveis: valores calculáveis que o gestor pode ajustar — hoje, o
+     * valor total repassado (soma por categoria). Resposta salva sempre vence a sugestão.
+     * @return array<int, mixed> por id_questao
+     */
+    public function respostasSugeridas(Opportunity $raiz, ?array $estrutura): array
+    {
+        if ($estrutura === null) {
+            return [];
+        }
+
+        $sugeridas = [];
+
+        foreach ($estrutura['secoes'] ?? [] as $secao) {
+            foreach ($secao['etapas'] ?? [] as $etapa) {
+                foreach ($etapa['questoes'] ?? [] as $questao) {
+                    if (!str_starts_with((string) ($questao['tag'] ?? ''), 'valor_total_repassado')) {
+                        continue;
+                    }
+
+                    $valor = $this->valorTotalRepassado($raiz);
+
+                    if ($valor !== null) {
+                        $sugeridas[(int) $questao['id_questao']] = $valor;
+                    }
+                }
+            }
+        }
+
+        return $sugeridas;
+    }
+
+    private function totalInscritas(Opportunity $raiz): int
+    {
+        return (int) App::i()->repo('Registration')->count([
+            'opportunity' => $raiz,
+            'status' => [
+                Registration::STATUS_SENT,
+                Registration::STATUS_INVALID,
+                Registration::STATUS_NOTAPPROVED,
+                Registration::STATUS_WAITLIST,
+                Registration::STATUS_APPROVED,
+            ],
+        ]);
+    }
+
+    private function totalContempladas(Opportunity $raiz): int
+    {
+        $faseFinal = $raiz->lastPhase;
+
+        if (!$faseFinal || !$faseFinal->isLastPhase) {
+            return 0;
+        }
+
+        return (int) App::i()->repo('Registration')->count([
+            'opportunity' => $faseFinal,
+            'status' => Registration::STATUS_APPROVED,
+        ]);
+    }
+
+    /**
+     * Categorias das Configurações do edital (registrationRanges: label, limit, value) com a
+     * contagem REAL de contempladas por categoria — contemplado é desfecho, não vaga.
+     * @return list<array{label: string, valor: ?float, contempladas: int}>|null null sem categorias
+     */
+    private function categoriasComContagem(Opportunity $raiz): ?array
+    {
+        $categorias = $raiz->registrationRanges;
+
+        if (!is_array($categorias) || $categorias === []) {
+            return null;
+        }
+
+        $faseFinal = $raiz->lastPhase;
+        $temFaseFinal = $faseFinal && $faseFinal->isLastPhase;
+
+        $linhas = [];
+        foreach ($categorias as $categoria) {
+            $rotulo = trim((string) ($categoria['label'] ?? ''));
+            if ($rotulo === '') {
+                continue;
+            }
+
+            $valor = $categoria['value'] ?? null;
+
+            // Um count por categoria (são poucas): hidratar as selecionadas pesaria em edital grande.
+            $contempladas = $temFaseFinal ? (int) App::i()->repo('Registration')->count([
+                'opportunity' => $faseFinal,
+                'status' => Registration::STATUS_APPROVED,
+                'range' => $rotulo,
+            ]) : 0;
+
+            $linhas[] = [
+                'label' => $rotulo,
+                'valor' => is_numeric($valor) ? (float) $valor : null,
+                'contempladas' => $contempladas,
+            ];
+        }
+
+        return $linhas === [] ? null : $linhas;
+    }
+
+    private function valorTotalRepassado(Opportunity $raiz): ?float
+    {
+        $categorias = $this->categoriasComContagem($raiz);
+
+        if ($categorias === null) {
+            return null;
+        }
+
+        $total = 0.0;
+        foreach ($categorias as $categoria) {
+            if ($categoria['valor'] === null) {
+                // Categoria sem valor configurado: o total seria mentira — o campo volta ao gestor.
+                return null;
+            }
+
+            $total += $categoria['valor'] * $categoria['contempladas'];
+        }
+
+        return round($total, 2);
+    }
+
+    /** Linhas na forma das colunas da própria questão (os formulários variam as chaves por tipo de ação). */
+    private function linhasPorCategoria(Opportunity $raiz, array $questao): ?array
+    {
+        $categorias = $this->categoriasComContagem($raiz);
+
+        if ($categorias === null) {
+            return null;
+        }
+
+        $colunas = array_column($questao['config']['columns'] ?? [], 'key');
+
+        if ($colunas === []) {
+            return null;
+        }
+
+        $linhas = [];
+        foreach ($categorias as $categoria) {
+            $linha = [];
+            foreach ($colunas as $chave) {
+                $linha[$chave] = $this->celulaAutomatica($chave, $categoria);
+            }
+            $linhas[] = $linha;
+        }
+
+        return $linhas;
+    }
+
+    private function celulaAutomatica(string $chave, array $categoria): mixed
+    {
+        if (str_contains($chave, 'valor_total')) {
+            return $categoria['valor'] === null ? null : round($categoria['valor'] * $categoria['contempladas'], 2);
+        }
+
+        if (str_contains($chave, 'valor')) {
+            return $categoria['valor'];
+        }
+
+        if (str_contains($chave, 'quantidade')) {
+            return $categoria['contempladas'];
+        }
+
+        if (str_contains($chave, 'categoria')) {
+            return $categoria['label'];
+        }
+
+        return null;
     }
 
     /** A data que o envio usará (a questão do formulário é somente leitura); null antes de publicar. */
@@ -88,6 +357,8 @@ class FormularioResultadoService
         }
 
         $faltantes = (new FormularioRespostasValidator($estrutura))->missingRequired($respostas);
+        // Questão sem fonte nem aparece na tela — não pode travar a completude invisivelmente.
+        $faltantes = array_diff($faltantes, $this->questoesSemFonte($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura)));
 
         return $faltantes === [] ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
     }
@@ -111,10 +382,17 @@ class FormularioResultadoService
     /**
      * Merge parcial sobre as respostas salvas (null limpa a resposta) e grava com a versão do
      * formulário vigente, para detectar estrutura que mudou entre o preenchimento e o envio.
+     * Questões automáticas são descartadas: o cálculo do edital é a única fonte delas.
      * @return array<int, mixed> as respostas como ficaram salvas
      */
-    public function saveRespostas(int $raizId, array $respostas, array $estrutura): array
+    public function saveRespostas(Opportunity $raiz, array $respostas, array $estrutura): array
     {
+        $raizId = (int) $raiz->id;
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $respostas = array_diff_key($respostas, $automaticas);
+        $respostas = array_diff_key($respostas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
+
+
         $salvas = $this->savedRespostas($raizId);
 
         foreach ($respostas as $idQuestao => $valor) {
