@@ -87,12 +87,14 @@ class ResultadoServiceTest extends TestCase
     {
         [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
-        $payload = $this->service()->buildResultado($fase)->toArray();
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->service()->buildResultado($fase)->toArray();
 
-        // Literais de propósito: os valores são contrato do PAR, e comparar com o enum seria tautologia.
-        $this->assertSame(2, $payload['id_tipo']);
-        $this->assertSame(3, $payload['id_status']);
-        $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
+            // Literais de propósito: os valores são contrato do PAR, e comparar com o enum seria tautologia.
+            $this->assertSame(2, $payload['id_tipo']);
+            $this->assertSame(3, $payload['id_status']);
+            $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
+        });
     }
 
     function testComResultadoVigenteMontaRetificadoDatadoDaRetificacao()
@@ -100,11 +102,13 @@ class ResultadoServiceTest extends TestCase
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
 
-        $payload = $this->service()->buildResultado($fase)->toArray();
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->service()->buildResultado($fase)->toArray();
 
-        $this->assertSame(3, $payload['id_tipo']);
-        $this->assertSame(3, $payload['id_status']);
-        $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+            $this->assertSame(3, $payload['id_tipo']);
+            $this->assertSame(3, $payload['id_status']);
+            $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+        });
     }
 
     function testPublicacaoSemCarimboCaiParaOInstanteDoEnvio()
@@ -115,9 +119,37 @@ class ResultadoServiceTest extends TestCase
         $fase = $this->faseFinal($raiz, publicada: true, publicadaEm: null);
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
-        $payload = $this->service()->buildResultado($fase)->toArray();
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->service()->buildResultado($fase)->toArray();
 
-        $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
+            $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
+        });
+    }
+
+    function testPayloadLevaRespostasSalvasAutomaticasEDataDePublicacao()
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1,
+            'respostas' => [51 => 'Comentário salvo pelo gestor.'],
+        ]));
+
+        $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 50, 'nome' => 'Total de inscritos', 'tipo_questao' => 'número', 'requerida' => true, 'tag' => 'total_inscritos_1_1'],
+            ['id_questao' => 51, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+            ['id_questao' => 54, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
+            ['id_questao' => 55, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
+        ]]]]]];
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $respostas = $this->service()->buildResultado($fase)->toArray()['respostas'];
+
+            $porQuestao = array_column($respostas, 'resposta', 'id_par_questao');
+            $this->assertSame(0, $porQuestao[50]['valor'], 'a contagem automática do edital entra no envio');
+            $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[51]['valor']);
+            $this->assertStringStartsWith('2026-10-10T12:00:00', $porQuestao[54]['valor'], 'a questão de data de publicação repete a data do campo próprio');
+            $this->assertArrayNotHasKey(55, $porQuestao, 'questão sem resposta não viaja');
+        }, $estrutura);
     }
 
     private function jobsDeResultado(): array

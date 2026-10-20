@@ -62,13 +62,15 @@ class ResultadoService
     /** Monta o corpo do envio: final na primeira vez, retificado nas correções — publicado é imutável. */
     public function buildResultado(Opportunity $faseFinal): Resultado
     {
-        $raizId = (int) $faseFinal->firstPhase->id;
-        $retificacao = $this->parEditalResultadoId($raizId) !== null;
+        $raiz = $faseFinal->firstPhase;
+        $retificacao = $this->parEditalResultadoId((int) $raiz->id) !== null;
+        $dataPublicacao = $this->dataPublicacao($faseFinal, $retificacao);
 
         return new Resultado(
             id_tipo: ($retificacao ? ResultadoTipo::FinalRetificado : ResultadoTipo::Final)->value,
             id_status: ResultadoStatus::Publicado->value,
-            data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
+            data_publicacao: $dataPublicacao,
+            respostas: (new FormularioResultadoService())->respostasParaEnvio($raiz, $dataPublicacao),
         );
     }
 

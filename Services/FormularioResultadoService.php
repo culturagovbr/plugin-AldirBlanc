@@ -382,6 +382,44 @@ class FormularioResultadoService
         return $this->faltantes($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura) + $respostas) === [];
     }
 
+    /**
+     * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, mais a data de
+     * publicação informada — a mesma do campo próprio do POST, para nunca divergirem.
+     * @return list<array{id_par_questao: int, resposta: array{valor: mixed}}>|null null sem formulário
+     */
+    public function respostasParaEnvio(Opportunity $raiz, string $dataPublicacao): ?array
+    {
+        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+
+        if ($estrutura === null) {
+            return null;
+        }
+
+        $valores = $this->respostasAutomaticas($raiz, $estrutura)
+            + $this->savedRespostas((int) $raiz->id)
+            + $this->respostasSugeridas($raiz, $estrutura);
+
+        $respostas = [];
+
+        foreach ($estrutura['secoes'] ?? [] as $secao) {
+            foreach ($secao['etapas'] ?? [] as $etapa) {
+                foreach ($etapa['questoes'] ?? [] as $questao) {
+                    $id = (int) $questao['id_questao'];
+                    $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
+                        ? $dataPublicacao
+                        : ($valores[$id] ?? null);
+
+                    if ($valor === null) {
+                        continue;
+                    }
+
+                    $respostas[] = ['id_par_questao' => $id, 'resposta' => ['valor' => $valor]];
+                }
+            }
+        }
+
+        return $respostas;
+    }
 
     /** O travamento do card tem espelho aqui: sem a publicação final, nada se edita nem se salva. */
     public function isFaseFinalPublicada(Opportunity $raiz): bool
