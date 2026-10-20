@@ -60,7 +60,16 @@ class FormularioResultadoService
             'estrutura' => $estrutura,
             'respostas' => $respostas,
             'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
+            'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
         ];
+    }
+
+    /** A data que o envio usará (a questão do formulário é somente leitura); null antes de publicar. */
+    private function dataPublicacaoAutomatica(Opportunity $raiz): ?string
+    {
+        $faseFinal = $raiz->lastPhase;
+
+        return $faseFinal?->publishTimestamp?->format(\DateTime::ATOM);
     }
 
     private function estado(Opportunity $raiz, ?array $estrutura, array $respostas): string

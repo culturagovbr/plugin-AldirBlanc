@@ -121,6 +121,17 @@ class ControllerResultadoFormularioTest extends TestCase
         }, semFormulario: true);
     }
 
+    function testEstadoCarregaADataDePublicacaoAutomatica()
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertStringStartsWith('2026-10-10T12:00:00', (string) $payload['dataPublicacao'], 'a data automática é o publishTimestamp da fase final');
+        });
+    }
+
     function testFaseFinalNaoPublicadaTravaLeituraEESave()
     {
         $this->comFormulario(function () {
