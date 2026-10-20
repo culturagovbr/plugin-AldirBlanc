@@ -356,12 +356,32 @@ class FormularioResultadoService
             return self::ESTADO_ENVIADO;
         }
 
-        $faltantes = (new FormularioRespostasValidator($estrutura))->missingRequired($respostas);
-        // Questão sem fonte nem aparece na tela — não pode travar a completude invisivelmente.
-        $faltantes = array_diff($faltantes, $this->questoesSemFonte($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura)));
-
-        return $faltantes === [] ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
+        return $this->faltantes($raiz, $estrutura, $respostas) === [] ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
     }
+
+    /** @return list<int> obrigatórias sem resposta, já descontadas as questões sem fonte */
+    private function faltantes(Opportunity $raiz, array $estrutura, array $respostas): array
+    {
+        $faltantes = (new FormularioRespostasValidator($estrutura))->missingRequired($respostas);
+
+        // Questão sem fonte nem aparece na tela — não pode travar a completude invisivelmente.
+        return array_values(array_diff($faltantes, $this->questoesSemFonte($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura))));
+    }
+
+    /** O formulário tem todas as obrigatórias respondidas? Independe de já haver envio — vale para retificações. */
+    public function isFormularioCompleto(Opportunity $raiz): bool
+    {
+        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+
+        if ($estrutura === null) {
+            return false;
+        }
+
+        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+
+        return $this->faltantes($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura) + $respostas) === [];
+    }
+
 
     /** O travamento do card tem espelho aqui: sem a publicação final, nada se edita nem se salva. */
     public function isFaseFinalPublicada(Opportunity $raiz): bool
