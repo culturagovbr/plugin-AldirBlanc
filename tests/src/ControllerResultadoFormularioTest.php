@@ -199,6 +199,43 @@ class ControllerResultadoFormularioTest extends TestCase
         );
     }
 
+    function testCategoriasSemValorExibemTabelaSemTotais()
+    {
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['cacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
+                [$owner, $raiz, $fase] = $this->cenario();
+
+                $this->app->disableAccessControl();
+                $raiz->registrationRanges = [['label' => 'Música', 'limit' => 5, 'value' => null]];
+                $raiz->save(true);
+                $this->app->enableAccessControl();
+
+                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+                $this->app->em->clear();
+                $this->login($owner);
+
+                $payload = $this->getFormulario($raiz);
+                $autos = $payload['respostasAutomaticas'];
+
+                $linha = ($autos['53'] ?? $autos[53])[0];
+                $this->assertSame('Música', $linha['categoria']);
+                $this->assertNull($linha['valor_individual'], 'categoria sem valor não inventa número');
+                $this->assertSame(1, $linha['quantidade_contemplados'], 'a contagem real segue valendo');
+                $this->assertNull($linha['valor_total_categoria']);
+                $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem valores não há sugestão de total');
+            }),
+        );
+    }
+
     function testAutomaticasSozinhasCompletamOFormulario()
     {
         FakeIntegrationProvider::reset();
