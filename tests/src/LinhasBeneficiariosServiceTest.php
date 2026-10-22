@@ -266,6 +266,22 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertArrayNotHasKey('data_inicio_execucao', $enviavel);
     }
 
+    function testFormatoPresencialExigeOCepDoLocal()
+    {
+        $service = $this->service();
+        $comum = ['data_recebimento_recurso' => '10/01/2026'];
+
+        $semCep = $service->mesclar($this->linhaMinima(), [], $comum + ['formato_execucao' => 'Presencial Itinerante']);
+        $this->assertSame(['cep_local_execucao'], $service->pendencias($semCep), 'o validador recusa por cep_local_execucao_obrigatorio');
+        $this->assertSame(['cep_local_execucao'], $service->faltasParaEnvio($semCep));
+
+        $comCep = $service->mesclar($this->linhaMinima(), [], $comum + ['formato_execucao' => 'Presencial Itinerante', 'cep_local_execucao' => '57072-900']);
+        $this->assertSame([], $service->pendencias($comCep));
+
+        $remoto = $service->mesclar($this->linhaMinima(), [], $comum + ['formato_execucao' => 'Remoto/Online']);
+        $this->assertSame([], $service->pendencias($remoto), 'sem presença não há local a informar');
+    }
+
     function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
     {
         $porChave = array_column($this->service()->colunas(), null, 'chave');

@@ -68,6 +68,13 @@ class LinhasBeneficiariosService
         'recebeu_recursos_outras_fontes' => self::RESPOSTA_SEM_OUTRAS_FONTES,
     ];
 
+    /** Presencial exige o local: o validador recusa com 'cep_local_execucao_obrigatorio'. */
+    public const FORMATOS_QUE_EXIGEM_CEP = [
+        'Presencial Fixo',
+        'Presencial Itinerante',
+        'Híbrido',
+    ];
+
     public const RESPOSTA_SEM_OUTRAS_FONTES = 'Não, a ação foi integralmente realizada com recursos do PNAB';
 
     /** As datas da linha, na ordem em que os fatos acontecem. */
@@ -192,6 +199,10 @@ class LinhasBeneficiariosService
             $achadas[] = 'valor_recursos_outras_fontes';
         }
 
+        if ($this->presencialSemCep($linhaMesclada)) {
+            $achadas[] = 'cep_local_execucao';
+        }
+
         foreach (array_keys(self::OPCOES) as $chave) {
             $valor = $linhaMesclada[$chave]['valor'] ?? null;
             if ($this->preenchido($valor) && !$this->noVocabulario($chave, $valor)) {
@@ -257,6 +268,14 @@ class LinhasBeneficiariosService
         }
 
         return $this->negouOutrasFontes($linhaMesclada) ? $temValor : !$temValor;
+    }
+
+    private function presencialSemCep(array $linhaMesclada): bool
+    {
+        $formato = $linhaMesclada['formato_execucao']['valor'] ?? null;
+
+        return in_array($formato, self::FORMATOS_QUE_EXIGEM_CEP, true)
+            && !$this->preenchido($linhaMesclada['cep_local_execucao']['valor'] ?? null);
     }
 
     private function negouOutrasFontes(array $linhaMesclada): bool
