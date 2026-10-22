@@ -9,7 +9,7 @@ class Resultado
         public int $id_tipo,
         public int $id_status,
         public ?string $data_publicacao = null,
-        /** @var array<int, array{id_par_questao: int, resposta: array{valor: mixed}}>|null */
+        /** @var array<int, array{id_par_questao: int, resposta: array{resposta: mixed}}>|null */
         public ?array $respostas = null,
         /** @var array<int, array{nome: string, caminho: string, descricao?: ?string}>|null */
         public ?array $anexos = null,

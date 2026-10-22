@@ -131,24 +131,27 @@ class ResultadoServiceTest extends TestCase
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1,
-            'respostas' => [51 => 'Comentário salvo pelo gestor.'],
+            'respostas' => [51 => 'Comentário salvo pelo gestor.', 56 => 'Resposta sem endereço no PAR.'],
         ]));
 
         $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
-            ['id_questao' => 50, 'nome' => 'Total de inscritos', 'tipo_questao' => 'número', 'requerida' => true, 'tag' => 'total_inscritos_1_1'],
-            ['id_questao' => 51, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
-            ['id_questao' => 54, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
-            ['id_questao' => 55, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
+            ['id_questao' => 50, 'id_questao_etapa' => 950, 'nome' => 'Total de inscritos', 'tipo_questao' => 'número', 'requerida' => true, 'tag' => 'total_inscritos_1_1'],
+            ['id_questao' => 51, 'id_questao_etapa' => 951, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+            ['id_questao' => 54, 'id_questao_etapa' => 954, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
+            ['id_questao' => 55, 'id_questao_etapa' => 955, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
+            ['id_questao' => 56, 'nome' => 'Questão sem id de etapa', 'tipo_questao' => 'textarea', 'requerida' => false],
         ]]]]]];
 
         $this->comFormularioResultado(function () use ($fase) {
             $respostas = $this->service()->buildResultado($fase)->toArray()['respostas'];
 
+            // O envio endereça pelo id_questao_etapa; o salvamento interno segue por id_questao.
             $porQuestao = array_column($respostas, 'resposta', 'id_par_questao');
-            $this->assertSame(0, $porQuestao[50]['valor'], 'a contagem automática do edital entra no envio');
-            $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[51]['valor']);
-            $this->assertStringStartsWith('2026-10-10T12:00:00', $porQuestao[54]['valor'], 'a questão de data de publicação repete a data do campo próprio');
-            $this->assertArrayNotHasKey(55, $porQuestao, 'questão sem resposta não viaja');
+            $this->assertSame(0, $porQuestao[950]['resposta'], 'a contagem automática do edital entra no envio');
+            $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[951]['resposta']);
+            $this->assertStringStartsWith('2026-10-10T12:00:00', $porQuestao[954]['resposta'], 'a questão de data de publicação repete a data do campo próprio');
+            $this->assertArrayNotHasKey(955, $porQuestao, 'questão sem resposta não viaja');
+            $this->assertArrayNotHasKey(0, $porQuestao, 'questão sem id_questao_etapa não viaja');
         }, $estrutura);
     }
 

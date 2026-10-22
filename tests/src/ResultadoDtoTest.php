@@ -15,8 +15,8 @@ class ResultadoDtoTest extends TestCase
             'id_status' => 3,
             'data_publicacao' => '2026-10-16T18:00:00-03:00',
             'respostas' => [
-                ['id_par_questao' => 100, 'resposta' => ['valor' => 'resposta1']],
-                ['id_par_questao' => 101, 'resposta' => ['valor' => 42]],
+                ['id_par_questao' => 100, 'resposta' => ['resposta' => 'resposta1']],
+                ['id_par_questao' => 101, 'resposta' => ['resposta' => 42]],
             ],
             'anexos' => [
                 ['nome' => 'resultado-final.pdf', 'caminho' => 'https://mapas.exemplo/files/resultado-final.pdf', 'descricao' => 'Lista de selecionados'],

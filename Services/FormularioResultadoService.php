@@ -385,7 +385,7 @@ class FormularioResultadoService
     /**
      * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, mais a data de
      * publicação informada — a mesma do campo próprio do POST, para nunca divergirem.
-     * @return list<array{id_par_questao: int, resposta: array{valor: mixed}}>|null null sem formulário
+     * @return list<array{id_par_questao: int, resposta: array{resposta: mixed}}>|null null sem formulário
      */
     public function respostasParaEnvio(Opportunity $raiz, string $dataPublicacao): ?array
     {
@@ -404,16 +404,18 @@ class FormularioResultadoService
         foreach ($estrutura['secoes'] ?? [] as $secao) {
             foreach ($secao['etapas'] ?? [] as $etapa) {
                 foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $id = (int) $questao['id_questao'];
                     $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
                         ? $dataPublicacao
-                        : ($valores[$id] ?? null);
+                        : ($valores[(int) $questao['id_questao']] ?? null);
 
-                    if ($valor === null) {
+                    // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
+                    $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
+
+                    if ($valor === null || $idEnvio === 0) {
                         continue;
                     }
 
-                    $respostas[] = ['id_par_questao' => $id, 'resposta' => ['valor' => $valor]];
+                    $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $valor]];
                 }
             }
         }
