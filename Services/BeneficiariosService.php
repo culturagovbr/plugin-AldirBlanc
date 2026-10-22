@@ -261,7 +261,6 @@ class BeneficiariosService
         $cnpj = $this->documento($agente, self::CNPJ_DIGITOS);
 
         return [
-            'tipo_agente' => $this->tipoDeAgente($cpf, $cnpj),
             'identificador_edital' => (string) $raiz->name,
             'cpf_responsavel_execucao' => $cpf,
             'cnpj_responsavel_execucao' => $cnpj,
@@ -279,19 +278,6 @@ class BeneficiariosService
         $grupo = $mapa[(string) $contemplada->proponentType] ?? 'owner';
 
         return $agentsData[$grupo] ?? [];
-    }
-
-    /**
-     * O CultBr só conhece as duas naturezas, com esta grafia; os tipos de proponente do edital
-     * (MEI, Coletivo) não existem lá, e quem decide é o documento do responsável.
-     */
-    private function tipoDeAgente(?string $cpf, ?string $cnpj): string
-    {
-        if ($cnpj !== null) {
-            return 'Pessoa jurídica';
-        }
-
-        return $cpf !== null ? 'Pessoa física' : '';
     }
 
     /** O documento vem mascarado no cadastro; a quantidade de dígitos diz se é CPF ou CNPJ. */

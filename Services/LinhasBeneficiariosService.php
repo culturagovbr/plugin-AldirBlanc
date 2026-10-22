@@ -15,7 +15,6 @@ class LinhasBeneficiariosService
     public const FONTE_GESTOR = 'gestor';
 
     public const COLUNAS = [
-        'tipo_agente' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'identificador_edital' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'cpf_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'cnpj_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
@@ -27,19 +26,27 @@ class LinhasBeneficiariosService
         'valor_recursos_outras_fontes' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'moeda', 'editavel' => true],
         'qtd_pessoas_remuneradas_exec' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'numero', 'editavel' => true],
         'cpfs_remunerados' => ['fonte' => self::FONTE_GESTOR, 'tipo' => 'lista', 'editavel' => true],
-        'formato_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'texto', 'editavel' => true],
+        'formato_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'selecao', 'editavel' => true],
         'cep_local_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'texto', 'editavel' => true],
     ];
 
-    /**
-     * Só os valores atestados pelo modelo de planilha e pelo payload de referência do CultBr.
-     * A lista completa não está documentada, e valor fora dela derruba a planilha inteira.
-     */
+    /** Vocabulário informado pela equipe do CultBr; valor fora dele é recusado com 'erro de domínio'. */
     public const OPCOES = [
         'recebeu_recursos_outras_fontes' => [
-            'Não',
+            'Não, a ação foi integralmente realizada com recursos do PNAB',
+            'Sim - Governo Federal',
             'Sim - Governo Estadual',
+            'Sim - Governo Municipal',
             'Sim - Setor Privado',
+            'Sim - Pessoa Física',
+            'Sim - Organização da Sociedade Civil',
+        ],
+        'formato_execucao' => [
+            'Presencial Fixo',
+            'Presencial Itinerante',
+            'Híbrido',
+            'Remoto/Online',
+            'Não se aplica',
         ],
     ];
 
@@ -61,7 +68,7 @@ class LinhasBeneficiariosService
         'recebeu_recursos_outras_fontes' => self::RESPOSTA_SEM_OUTRAS_FONTES,
     ];
 
-    public const RESPOSTA_SEM_OUTRAS_FONTES = 'Não';
+    public const RESPOSTA_SEM_OUTRAS_FONTES = 'Não, a ação foi integralmente realizada com recursos do PNAB';
 
     /** As datas da linha, na ordem em que os fatos acontecem. */
     private const SEQUENCIA_DAS_DATAS = [
@@ -77,7 +84,6 @@ class LinhasBeneficiariosService
     public function colunas(): array
     {
         $labels = [
-            'tipo_agente' => i::__('Tipo de agente'),
             'identificador_edital' => i::__('Identificador do edital'),
             'cpf_responsavel_execucao' => i::__('CPF do responsável'),
             'cnpj_responsavel_execucao' => i::__('CNPJ do responsável'),
@@ -186,6 +192,13 @@ class LinhasBeneficiariosService
             $achadas[] = 'valor_recursos_outras_fontes';
         }
 
+        foreach (array_keys(self::OPCOES) as $chave) {
+            $valor = $linhaMesclada[$chave]['valor'] ?? null;
+            if ($this->preenchido($valor) && !$this->noVocabulario($chave, $valor)) {
+                $achadas[] = $chave;
+            }
+        }
+
         return array_merge($achadas, $this->datasForaDaOrdem($linhaMesclada));
     }
 
@@ -200,12 +213,29 @@ class LinhasBeneficiariosService
         foreach (array_keys(self::COLUNAS) as $chave) {
             $valor = $linhaMesclada[$chave]['valor'] ?? null;
 
-            if ($this->preenchido($valor)) {
+            if ($this->preenchido($valor) && $this->noVocabulario($chave, $valor)) {
                 $linha[$chave] = $valor;
             }
         }
 
         return $linha;
+    }
+
+    /** Valor fora da lista derruba a planilha inteira; a ficha traz o que o ente cadastrou, não o vocabulário do contrato. */
+    public function noVocabulario(string $chave, mixed $valor): bool
+    {
+        $opcoes = self::OPCOES[$chave] ?? null;
+        if ($opcoes === null) {
+            return true;
+        }
+
+        foreach (is_array($valor) ? $valor : [$valor] as $item) {
+            if (!in_array($item, $opcoes, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Só o CPF ou só o CNPJ basta ao validador, então a dupla conta como uma exigência. */
@@ -215,10 +245,7 @@ class LinhasBeneficiariosService
             || $this->preenchido($linhaMesclada['cnpj_responsavel_execucao']['valor'] ?? null);
     }
 
-    /**
-     * Declarar fonte sem dizer quanto, ou negar e mesmo assim informar valor: as duas são
-     * contradição na mesma linha, e o validador recusa a planilha por qualquer uma delas.
-     */
+    /** O validador cobra as duas direções, por 'valor_outras_fontes_obrigatorio' e 'valor_outras_fontes_deve_ser_vazio'. */
     private function valorDeOutrasFontesNaoBateComAResposta(array $linhaMesclada): bool
     {
         $respondeu = $this->preenchido($linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null);

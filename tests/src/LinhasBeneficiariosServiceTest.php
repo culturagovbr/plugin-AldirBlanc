@@ -23,7 +23,6 @@ class LinhasBeneficiariosServiceTest extends TestCase
     function testColunasSaemNaOrdemDoModeloDePlanilha()
     {
         $esperada = [
-            'tipo_agente',
             'identificador_edital',
             'cpf_responsavel_execucao',
             'cnpj_responsavel_execucao',
@@ -179,10 +178,10 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $base = $this->linhaMinima();
         $comum = ['data_recebimento_recurso' => '10/01/2026'];
 
-        $negouSemValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não']]);
+        $negouSemValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não, a ação foi integralmente realizada com recursos do PNAB']]);
         $this->assertSame([], $service->pendencias($negouSemValor), 'quem nega não tem valor a informar');
 
-        $negouComValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não'], 'valor_recursos_outras_fontes' => '1000.00']);
+        $negouComValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não, a ação foi integralmente realizada com recursos do PNAB'], 'valor_recursos_outras_fontes' => '1000.00']);
         $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($negouComValor), 'negar e informar valor é contradição na mesma linha');
 
         $declarouFonte = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']]);
@@ -224,10 +223,11 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $service = $this->service();
 
         $qtdSemOsCpfs = $service->mesclar($this->linhaMinima(), ['qtd_pessoas_remuneradas_exec' => '2'], []);
-        $this->assertSame(['cpfs_remunerados'], $service->faltasParaEnvio($qtdSemOsCpfs), 'contradição recusa a planilha inteira, não só a linha');
+        $this->assertSame([], $service->faltasParaEnvio($qtdSemOsCpfs));
+        $this->assertSame(['data_recebimento_recurso'], $service->pendencias($qtdSemOsCpfs), 'quantidade sem CPF deixou de ser cobrada: era regra nossa, não do validador');
 
         $outraFonteSemValor = $service->mesclar($this->linhaMinima(), ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']], []);
-        $this->assertSame(['valor_recursos_outras_fontes'], $service->faltasParaEnvio($outraFonteSemValor));
+        $this->assertSame(['valor_recursos_outras_fontes'], $service->faltasParaEnvio($outraFonteSemValor), 'o validador recusa por valor_outras_fontes_obrigatorio');
 
         $terminoAntesDoInicio = $service->mesclar($this->linhaMinima(), [], ['data_inicio_execucao' => '10/03/2026', 'data_termino_execucao' => '01/03/2026']);
         $this->assertSame(['data_termino_execucao'], $service->faltasParaEnvio($terminoAntesDoInicio));
@@ -268,9 +268,11 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $porChave = array_column($this->service()->colunas(), null, 'chave');
 
         $opcoes = $porChave['recebeu_recursos_outras_fontes']['opcoes'];
-        $this->assertContains('Não', $opcoes, 'é assim que o modelo de planilha nega a pergunta');
-        $this->assertContains('Sim - Governo Estadual', $opcoes, 'e assim que o payload de referência nomeia a fonte');
-        $this->assertNull($porChave['formato_execucao']['opcoes'], 'sem lista oficial, o gestor digita');
+        $this->assertContains('Não, a ação foi integralmente realizada com recursos do PNAB', $opcoes, 'o validador recusou a forma curta \'Não\' por erro de domínio');
+        $this->assertContains('Sim - Governo Estadual', $opcoes, 'vocabulário informado pela equipe do CultBr');
+        $this->assertSame('Presencial Fixo', $porChave['formato_execucao']['opcoes'][0], 'a equipe do CultBr informou as formas curtas, não as do padrão de dados');
+        $this->assertCount(5, $porChave['formato_execucao']['opcoes']);
+        $this->assertSame('selecao', $porChave['formato_execucao']['tipo'], 'o contrato não aceita lista nesta coluna');
     }
 
     function testOutrasFontesExigemOValor()
