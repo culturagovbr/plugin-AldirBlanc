@@ -282,6 +282,44 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
+     * Enfileira o envio do resultado ao CultBR a pedido do gestor. É o único caminho do primeiro envio.
+     *
+     * POST /aldirblanc/resultadoEnviar — body: opportunityId
+     */
+    public function POST_resultadoEnviar(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        // O id recebido pode ser de uma fase: a raiz é quem identifica o edital no PAR e no job.
+        $raiz = $opportunity->firstPhase ?: $opportunity;
+        $faseFinal = $raiz->lastPhase;
+
+        if (!$faseFinal || !$faseFinal->publishedRegistrations) {
+            $this->errorJson(i::__('Publique o resultado final do edital antes de enviar.'), 400);
+            return;
+        }
+
+        $service = new ResultadoService();
+
+        if (!$service->isEligibleForResultSync($faseFinal)) {
+            $this->errorJson(i::__('Este edital ainda não está integrado ao CultBR.'), 400);
+            return;
+        }
+
+        if (!$service->isResultadoFormComplete($raiz)) {
+            $this->errorJson(i::__('Complete o formulário do resultado antes de enviar.'), 400);
+            return;
+        }
+
+        $service->enqueueResultadoSync($raiz);
+
+        $this->json(['enfileirado' => true]);
+    }
+
+    /**
      * Campos da ficha do edital, colunas mapeáveis e o de/para salvo (ou a sugestão, se ainda não há).
      *
      * GET /aldirblanc/resultadoDePara?opportunityId=

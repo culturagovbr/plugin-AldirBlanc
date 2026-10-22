@@ -149,6 +149,11 @@ class TestableController extends Controller
         $this->POST_resultadoFormulario();
     }
 
+    public function callPostResultadoEnviar(): void
+    {
+        $this->POST_resultadoEnviar();
+    }
+
     public function callGetIntegrationOpportunities(): void
     {
         $ref = new \ReflectionMethod($this, '_getIntegrationOpportunities');
