@@ -203,6 +203,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $exato = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '2'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
         $this->assertSame([], $service->pendencias($exato));
     }
+
     function testNegarOutrasFontesDispensaOValorERecusaValorInformado()
     {
         $service = $this->service();
@@ -218,6 +219,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $declarouFonte = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']]);
         $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($declarouFonte), 'declarou a fonte, tem que dizer quanto');
     }
+
     function testAsDatasDaLinhaSeguemAOrdemDosFatos()
     {
         $service = $this->service();
@@ -238,6 +240,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $soInicio = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/01/2026', 'data_inicio_execucao' => '01/02/2026']);
         $this->assertSame([], $service->pendencias($soInicio), 'sem término não há o que comparar');
     }
+
     function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
     {
         $porChave = array_column($this->service()->colunas(), null, 'chave');
@@ -247,6 +250,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertContains('Sim - Governo Estadual', $opcoes, 'e assim que o payload de referência nomeia a fonte');
         $this->assertNull($porChave['formato_execucao']['opcoes'], 'sem lista oficial, o gestor digita');
     }
+
     function testOutrasFontesExigemOValor()
     {
         $service = $this->service();
