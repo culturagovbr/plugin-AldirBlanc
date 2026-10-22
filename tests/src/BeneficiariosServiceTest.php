@@ -350,6 +350,24 @@ class BeneficiariosServiceTest extends TestCase
         $this->assertSame(['Sim - Governo Estadual', 'Sim - Setor Privado'], $this->celula($linha, 'recebeu_recursos_outras_fontes'), 'o contrato pede lista, e quem converte é a definição do metadado registrado');
     }
 
+    function testVarreduraEmLotesNaoAcumulaAsInscricoesJaProcessadas()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        foreach (['111.444.777-35', '529.982.247-25', '007.898.359-24'] as $cpf) {
+            $this->contemplada($raiz, $fase, ['owner' => ['cpf' => $cpf]]);
+        }
+
+        $lotes = 0;
+        $this->service()->emLotes($raiz, 1, function () use (&$lotes) {
+            $lotes++;
+        });
+
+        $hidratadas = $this->app->em->getUnitOfWork()->getIdentityMap()[Registration::class] ?? [];
+
+        $this->assertSame(3, $lotes, 'cada contemplada veio no seu lote');
+        $this->assertCount(0, $hidratadas, 'segurar as inscrições já processadas estoura a memória do edital grande');
+    }
+
     function testLinhasDeTrazSomenteAsContempladasInformadas()
     {
         [$raiz, $fase] = $this->editalComCategorias();

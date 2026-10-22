@@ -6,6 +6,7 @@ use AldirBlanc\Controller;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
+use MapasCulturais\Entities\RegistrationMeta;
 
 /**
  * Beneficiários de um edital para a grade de resultado: pagina as contempladas da fase final,
@@ -39,6 +40,44 @@ class BeneficiariosService
         $contempladas = $repo->findBy($criterio, ['number' => 'ASC'], $limit, $skip);
 
         return ['linhas' => $this->montar($raiz, $contempladas), 'total' => (int) $repo->count($criterio)];
+    }
+
+    /**
+     * Todas as contempladas em lotes, na mesma ordem; `pagina` recontaria o total a cada passo.
+     * Solta as inscrições a cada lote: quem chamar não pode estar segurando nenhuma.
+     */
+    public function emLotes(Opportunity $raiz, int $tamanho, callable $aCadaLote): void
+    {
+        $faseFinal = $this->faseFinalPublicada($raiz);
+        if ($faseFinal === null) {
+            return;
+        }
+
+        $repo = App::i()->repo('Registration');
+        $criterio = ['opportunity' => $faseFinal, 'status' => Registration::STATUS_APPROVED];
+
+        for ($skip = 0; ; $skip += $tamanho) {
+            $contempladas = $repo->findBy($criterio, ['number' => 'ASC'], $tamanho, $skip);
+            if ($contempladas === []) {
+                return;
+            }
+
+            $aCadaLote($this->montar($raiz, $contempladas));
+            $this->liberaInscricoesHidratadas();
+        }
+    }
+
+    /** Solta só inscrição e metadado: um `clear` geral destacaria o edital que o chamador ainda usa. */
+    private function liberaInscricoesHidratadas(): void
+    {
+        $em = App::i()->em;
+        $mapa = $em->getUnitOfWork()->getIdentityMap();
+
+        foreach ([Registration::class, RegistrationMeta::class] as $classe) {
+            foreach ($mapa[$classe] ?? [] as $entidade) {
+                $em->detach($entidade);
+            }
+        }
     }
 
     /** Linhas das contempladas informadas, na ordem em que a tabela as listou. */
