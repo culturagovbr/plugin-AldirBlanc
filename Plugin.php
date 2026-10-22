@@ -134,6 +134,25 @@ class Plugin extends \MapasCulturais\Plugin
             'integrationFederativeEntityOpportunities'
         ];
 
+        $app->config['routes']['shortcuts']['beneficiarios-do-resultado'] = [
+            'opportunity',
+            'resultadoBeneficiarios'
+        ];
+
+        // Tela da grade de beneficiários: action nova no controller de oportunidade, view no tema.
+        $app->hook('GET(opportunity.resultadoBeneficiarios)', function () use ($app) {
+            $this->requireAuthentication();
+
+            $opportunity = $this->requestedEntity;
+            if (!$opportunity) {
+                $app->pass();
+            }
+
+            $opportunity->checkPermission('@control');
+
+            $this->render('resultado-beneficiarios', ['entity' => $opportunity]);
+        });
+
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
         // ownerEntity inexistente cause null dereference no core.
