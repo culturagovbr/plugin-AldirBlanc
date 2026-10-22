@@ -23,6 +23,8 @@ use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
+use AldirBlanc\Services\BeneficiariosService;
+use AldirBlanc\Services\LinhasBeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
@@ -78,9 +80,16 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
 
+    /** Células da linha digitadas pelo gestor, na inscrição de origem: coluna => valor. */
+    public const REGISTRATION_META_CULT_BR_RESULTADO_LINHA = 'cultBrResultadoLinha';
+
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
     private const CULT_LOGS_MAX_LIMIT = 100;
+
+    /** Paginação da grade de beneficiários (GET_resultadoBeneficiarios). */
+    private const BENEFICIARIOS_DEFAULT_LIMIT = 50;
+    private const BENEFICIARIOS_MAX_LIMIT = 200;
 
     /** Teto de oportunidades por requisição, no disparo e na consulta de status. */
     public const MAX_OPPORTUNITIES_PER_REQUEST = 500;
@@ -323,6 +332,67 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $salvo = (new ResultadoDeParaService())->salvarMapeamento($opportunity, $mapeamento);
 
         $this->json(['mapeamento' => $salvo]);
+    }
+
+    /**
+     * Beneficiários do edital para a grade de resultado, uma página por vez.
+     *
+     * GET /aldirblanc/resultadoBeneficiarios/opportunityId:123/skip:0/limit:50
+     */
+    public function GET_resultadoBeneficiarios(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        $skip = isset($this->data['skip']) ? max(0, (int) $this->data['skip']) : 0;
+        $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : self::BENEFICIARIOS_DEFAULT_LIMIT;
+        $limit = max(1, min($limit, self::BENEFICIARIOS_MAX_LIMIT));
+
+        $pagina = (new BeneficiariosService())->pagina($opportunity, $skip, $limit);
+
+        $this->json([
+            'data' => $pagina['linhas'],
+            'total' => $pagina['total'],
+            'skip' => $skip,
+            'limit' => $limit,
+            'colunas' => (new LinhasBeneficiariosService())->colunas(),
+        ]);
+    }
+
+    /**
+     * Salva as células digitadas de uma linha da grade e devolve a linha recalculada.
+     *
+     * POST /aldirblanc/resultadoBeneficiarioLinha — body: opportunityId, registrationId, celulas
+     */
+    public function POST_resultadoBeneficiarioLinha(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        $registrationId = isset($this->data['registrationId']) ? (int) $this->data['registrationId'] : 0;
+        $celulas = $this->data['celulas'] ?? null;
+        if ($registrationId < 1 || !is_array($celulas)) {
+            $this->errorJson(i::__('Informe a inscrição e as células.'), 400);
+            return;
+        }
+
+        $service = new BeneficiariosService();
+        if ($service->faseFinalPublicada($opportunity) === null) {
+            $this->errorJson(i::__('O resultado deste edital ainda não foi publicado.'), 409);
+            return;
+        }
+
+        $linha = $service->salvarCelulas($opportunity, $registrationId, $celulas);
+        if ($linha === null) {
+            $this->errorJson(i::__('Inscrição contemplada não encontrada neste edital.'), 404);
+            return;
+        }
+
+        $this->json(['linha' => $linha]);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */
