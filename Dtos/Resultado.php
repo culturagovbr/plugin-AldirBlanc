@@ -13,6 +13,9 @@ class Resultado
         public ?array $respostas = null,
         /** @var array<int, array{nome: string, caminho: string, descricao?: ?string}>|null */
         public ?array $anexos = null,
+        public ?string $tipo_planilha = null,
+        /** @var array<int, array<string, mixed>>|null */
+        public ?array $linhas = null,
     ) {
     }
 
@@ -25,18 +28,29 @@ class Resultado
             data_publicacao: isset($data['data_publicacao']) ? (string) $data['data_publicacao'] : null,
             respostas: isset($data['respostas']) && is_array($data['respostas']) ? $data['respostas'] : null,
             anexos: isset($data['anexos']) && is_array($data['anexos']) ? $data['anexos'] : null,
+            tipo_planilha: isset($data['tipo_planilha']) ? (string) $data['tipo_planilha'] : null,
+            linhas: isset($data['linhas']) && is_array($data['linhas']) ? $data['linhas'] : null,
         );
     }
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $corpo = [
             'id_tipo' => $this->id_tipo,
             'id_status' => $this->id_status,
             'data_publicacao' => $this->data_publicacao,
             'respostas' => $this->respostas,
             'anexos' => $this->anexos,
         ];
+
+        // Sem planilha as chaves nem aparecem: incluí-las vazias mudaria o hash de todo resultado já
+        // enviado, e cada edital publicado viraria um retificado sem que nada tivesse mudado.
+        if ($this->linhas !== null && $this->tipo_planilha !== null) {
+            $corpo['tipo_planilha'] = $this->tipo_planilha;
+            $corpo['linhas'] = $this->linhas;
+        }
+
+        return $corpo;
     }
 }

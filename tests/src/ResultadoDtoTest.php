@@ -57,4 +57,40 @@ class ResultadoDtoTest extends TestCase
             $dto->toArray()
         );
     }
+
+    function testSemPlanilhaOCorpoNaoGanhaAsChavesDaPlanilha()
+    {
+        $corpo = (new Resultado(id_tipo: 2, id_status: 3))->toArray();
+
+        $this->assertArrayNotHasKey('tipo_planilha', $corpo, 'chave a mais mudaria o hash e faria todo resultado publicado virar retificado');
+        $this->assertArrayNotHasKey('linhas', $corpo);
+    }
+
+    function testComPlanilhaOCorpoCarregaOTipoEAsLinhas()
+    {
+        $linhas = [['identificador_edital' => 'Edital X', 'valor_recebido_pnab' => '15000.00']];
+
+        $corpo = (new Resultado(id_tipo: 2, id_status: 3, tipo_planilha: 'acao_cultural_realizada', linhas: $linhas))->toArray();
+
+        $this->assertSame('acao_cultural_realizada', $corpo['tipo_planilha']);
+        $this->assertSame($linhas, $corpo['linhas']);
+    }
+
+    function testLinhasSemOTipoDaPlanilhaNaoEntramNoCorpo()
+    {
+        $corpo = (new Resultado(id_tipo: 2, id_status: 3, linhas: [['identificador_edital' => 'Edital X']]))->toArray();
+
+        $this->assertArrayNotHasKey('linhas', $corpo, 'as duas chaves só fazem sentido juntas');
+        $this->assertArrayNotHasKey('tipo_planilha', $corpo);
+    }
+
+    function testRoundTripPreservaAPlanilha()
+    {
+        $payload = $this->payloadCompleto() + [
+            'tipo_planilha' => 'acao_cultural_realizada',
+            'linhas' => [['identificador_edital' => 'Edital X']],
+        ];
+
+        $this->assertSame($payload, Resultado::fromArray($payload)->toArray());
+    }
 }
