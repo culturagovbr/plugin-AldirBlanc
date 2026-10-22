@@ -193,6 +193,25 @@ class LinhasBeneficiariosService
         return array_merge($achadas, $this->datasForaDaOrdem($linhaMesclada));
     }
 
+    /**
+     * A linha como o contrato a espera: valor cru, sem a fonte, e sem as colunas vazias.
+     *
+     * @return array<string, mixed>
+     */
+    public function paraOEnvio(array $linhaMesclada): array
+    {
+        $linha = [];
+        foreach (array_keys(self::COLUNAS) as $chave) {
+            $valor = $linhaMesclada[$chave]['valor'] ?? null;
+
+            if ($this->preenchido($valor)) {
+                $linha[$chave] = $valor;
+            }
+        }
+
+        return $linha;
+    }
+
     /** Só o CPF ou só o CNPJ basta ao validador, então a dupla conta como uma exigência. */
     public function temResponsavel(array $linhaMesclada): bool
     {

@@ -278,6 +278,22 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame([], $service->faltasParaEnvio($soCnpj), 'CNPJ basta no lugar do CPF');
     }
 
+    function testLinhaDeEnvioSaiComValorCruESemAsColunasVazias()
+    {
+        $linha = $this->service()->mesclar(
+            ['identificador_edital' => 'Edital X', 'cpf_responsavel_execucao' => '11144477735', 'valor_recebido_pnab' => '15000.00'],
+            [],
+            ['data_recebimento_recurso' => '10/01/2026', 'cep_local_execucao' => ''],
+        );
+
+        $enviavel = $this->service()->paraOEnvio($linha);
+
+        $this->assertSame('15000.00', $enviavel['valor_recebido_pnab'], 'o contrato recebe o valor, não a fonte dele');
+        $this->assertSame('10/01/2026', $enviavel['data_recebimento_recurso']);
+        $this->assertArrayNotHasKey('cep_local_execucao', $enviavel, 'campo opcional vazio é omitido, nunca enviado em branco');
+        $this->assertArrayNotHasKey('data_inicio_execucao', $enviavel);
+    }
+
     function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
     {
         $porChave = array_column($this->service()->colunas(), null, 'chave');
