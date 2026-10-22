@@ -257,6 +257,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA, [
+            'label' => i::__('Dados de execução informados pelo gestor para a planilha de resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
