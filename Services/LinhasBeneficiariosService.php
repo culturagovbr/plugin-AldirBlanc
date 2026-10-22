@@ -15,6 +15,7 @@ class LinhasBeneficiariosService
     public const FONTE_GESTOR = 'gestor';
 
     public const COLUNAS = [
+        'tipo_agente' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'identificador_edital' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'cpf_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
         'cnpj_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
@@ -91,6 +92,7 @@ class LinhasBeneficiariosService
     public function colunas(): array
     {
         $labels = [
+            'tipo_agente' => i::__('Tipo de agente'),
             'identificador_edital' => i::__('Identificador do edital'),
             'cpf_responsavel_execucao' => i::__('CPF do responsável'),
             'cnpj_responsavel_execucao' => i::__('CNPJ do responsável'),

@@ -23,6 +23,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
     function testColunasSaemNaOrdemDoModeloDePlanilha()
     {
         $esperada = [
+            'tipo_agente',
             'identificador_edital',
             'cpf_responsavel_execucao',
             'cnpj_responsavel_execucao',

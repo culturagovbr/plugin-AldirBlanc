@@ -31,7 +31,7 @@ class LinhasDoResultadoServiceTest extends TestCase
         $this->assertSame('15000.00', $linhas[0]['valor_recebido_pnab']);
         $this->assertSame('11144477735', $linhas[0]['cpf_responsavel_execucao']);
         $this->assertSame((string) $raiz->name, $linhas[0]['identificador_edital']);
-        $this->assertArrayNotHasKey('tipo_agente', $linhas[0], 'coluna que o validador não conhece derruba a planilha inteira');
+        $this->assertSame('Pessoa física', $linhas[0]['tipo_agente']);
     }
 
     function testUmaContempladaIncompletaSeguraAPlanilhaInteira()
