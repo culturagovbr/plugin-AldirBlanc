@@ -248,8 +248,7 @@ class LinhasBeneficiariosService
     }
 
     /**
-     * O recurso chega antes de a execução começar, e ela só termina depois de começada.
-     * Data que quebra essa ordem é erro de digitação, e o gestor precisa ver na hora.
+     * O recurso chega antes de a execução começar, e ela termina depois de começada.
      *
      * @return string[] as colunas cuja data contraria a data válida anterior
      */
