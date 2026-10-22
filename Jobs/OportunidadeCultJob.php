@@ -80,6 +80,7 @@ class OportunidadeCultJob extends JobType
 			onSuccess: function (SendOutcome $outcome) use ($app, $job) {
 				$this->persistCultLastSyncedAtFlag($app, (int) $job->opportunity->id);
 				$this->persistParEditalId($app, (int) $job->opportunity->id, $outcome->response);
+				$this->persistParTipoAcaoId($app, (int) $job->opportunity->id, $outcome->response);
 				$this->chainResultadoSync($app, (int) $job->opportunity->id);
 			},
 			scheduleRetry: fn(?string $requestUuid) => $app->enqueueOrReplaceJob(self::SLUG, [
@@ -110,6 +111,19 @@ class OportunidadeCultJob extends JobType
 		}
 
 		$this->upsertOpportunityMeta($app, $opportunityId, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, (string) $parEditalId);
+	}
+
+	/** O tipo de ação vem no bloco `acao` do mesmo eco; ausente, a montagem do formulário resolve por auto-cura. */
+	protected function persistParTipoAcaoId(App $app, int $opportunityId, ?string $response): void
+	{
+		$decoded = is_string($response) ? json_decode($response, true) : null;
+		$idTipoAcao = filter_var($decoded['acao']['id_par_tipo_acao'] ?? null, FILTER_VALIDATE_INT);
+
+		if ($idTipoAcao === false || $idTipoAcao < 1) {
+			return;
+		}
+
+		$this->upsertOpportunityMeta($app, $opportunityId, Controller::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID, (string) $idTipoAcao);
 	}
 
 	/**

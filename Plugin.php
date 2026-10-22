@@ -225,6 +225,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID, [
+            'label' => i::__('Tipo de ação do edital no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, [
             'label' => i::__('Id do resultado vigente no PAR (CultBR)'),
             'type' => 'string',

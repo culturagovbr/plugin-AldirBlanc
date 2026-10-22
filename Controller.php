@@ -60,6 +60,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Id do edital no PAR, ecoado pelo CultBR na resposta do envio; chave das rotas de resultado. */
     public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID = 'cultBrParEditalId';
 
+    /** Tipo de ação do edital no PAR; resolvido uma vez e persistido para montar o formulário sem HTTP. */
+    public const OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID = 'cultBrParTipoAcaoId';
+
     /** Id do resultado VIGENTE no PAR (o último 201); substituído a cada retificação. */
     public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID = 'cultBrParEditalResultadoId';
 
