@@ -41,8 +41,8 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                // Cache desligado: a chave por tipo de ação atravessaria os cenários do processo.
-                $config['integration']['cacheTTL'] = 0;
+                // Cache desligado: a estrutura cacheada por tipo de ação atravessaria os cenários do processo.
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
@@ -157,7 +157,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
@@ -236,7 +236,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
@@ -273,7 +273,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
@@ -311,7 +311,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
@@ -334,7 +334,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },

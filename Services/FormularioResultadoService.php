@@ -40,16 +40,60 @@ class FormularioResultadoService
         return $this->cached(
             self::CACHE_ESTRUTURA . $idTipoAcao,
             fn() => $this->provider()->fetchFormularioResultado($idTipoAcao),
+            $this->formularioCacheTtl(),
         );
     }
 
-    /** Tipo de ação PAR do edital, ou null quando a oportunidade não existe na origem ou vem sem o tipo. */
+    /**
+     * Tipo de ação PAR do edital, ou null quando a oportunidade não existe na origem ou vem sem o tipo.
+     * Resolve em três camadas — cache, metadado persistido, HTTP — para não repetir nem a API nem o banco.
+     */
     public function parTipoAcaoForOpportunity(int $opportunityId): ?int
     {
-        return $this->cached(
-            self::CACHE_TIPO_ACAO . $opportunityId,
-            fn() => $this->provider()->fetchParTipoAcao(new OpportunityId($opportunityId)),
+        $chave = self::CACHE_TIPO_ACAO . $opportunityId;
+        $app = App::i();
+        $ttl = $this->formularioCacheTtl();
+
+        if ($ttl > 0 && $app->cache->contains($chave)) {
+            return $app->cache->fetch($chave)['valor'];
+        }
+
+        $doMetadado = $this->tipoAcaoFromMeta($opportunityId);
+        if ($doMetadado !== null) {
+            $this->warmCache($chave, $doMetadado, $ttl);
+            return $doMetadado;
+        }
+
+        $idTipoAcao = $this->provider()->fetchParTipoAcao(new OpportunityId($opportunityId));
+        if ($idTipoAcao !== null) {
+            $this->upsertMeta($opportunityId, Controller::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID, (string) $idTipoAcao);
+        }
+        $this->warmCache($chave, $idTipoAcao, $ttl);
+
+        return $idTipoAcao;
+    }
+
+    private function tipoAcaoFromMeta(int $opportunityId): ?int
+    {
+        $bruto = App::i()->em->getConnection()->fetchOne(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $opportunityId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID],
         );
+        $idTipoAcao = filter_var($bruto, FILTER_VALIDATE_INT);
+
+        return $idTipoAcao === false || $idTipoAcao < 1 ? null : $idTipoAcao;
+    }
+
+    private function warmCache(string $chave, mixed $valor, int $ttl): void
+    {
+        if ($ttl > 0) {
+            App::i()->cache->save($chave, ['valor' => $valor], $ttl);
+        }
+    }
+
+    private function formularioCacheTtl(): int
+    {
+        return (int) (Plugin::getInstance()->config['integration']['formularioCacheTTL'] ?? 0);
     }
 
     /** O retrato que a tela do edital consome: estado do ciclo, estrutura e respostas salvas. */
@@ -555,14 +599,13 @@ class FormularioResultadoService
     }
 
     /** O null (sem formulário / não sincronizada) também é cacheado — por isso o embrulho em array. */
-    private function cached(string $chave, callable $busca): mixed
+    private function cached(string $chave, callable $busca, int $ttl): mixed
     {
-        $app = App::i();
-        $ttl = (int) (Plugin::getInstance()->config['integration']['cacheTTL'] ?? 0);
-
         if ($ttl <= 0) {
             return $busca();
         }
+
+        $app = App::i();
 
         if ($app->cache->contains($chave)) {
             return $app->cache->fetch($chave)['valor'];

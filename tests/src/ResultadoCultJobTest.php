@@ -41,7 +41,7 @@ class ResultadoCultJobTest extends TestCase
     {
         $this->comConfigDoPlugin(
             function (array $config) {
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },

@@ -122,7 +122,7 @@ trait BuildsPublishedFinalPhase
         $this->comConfigDoPlugin(
             function (array $config) {
                 $config['client']['provider'] = FakeIntegrationProvider::class;
-                $config['integration']['cacheTTL'] = 0;
+                $config['integration']['formularioCacheTTL'] = 0;
 
                 return $config;
             },
