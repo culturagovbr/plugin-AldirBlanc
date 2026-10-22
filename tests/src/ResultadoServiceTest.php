@@ -5,8 +5,10 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Controller;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\ResultadoService;
+use MapasCulturais\Entities\Opportunity;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\Traits\UserDirector;
@@ -16,6 +18,7 @@ class ResultadoServiceTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
+    use BuildsContempladas;
     use ConfiguresPlugin;
 
     private function service(): ResultadoService
@@ -94,6 +97,45 @@ class ResultadoServiceTest extends TestCase
             $this->assertSame(2, $payload['id_tipo']);
             $this->assertSame(3, $payload['id_status']);
             $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
+        });
+    }
+
+    /** Contemplada com o mínimo que o validador exige; sem categoria, fica sem valor e segura a planilha. */
+    private function contempladaCompleta(Opportunity $raiz, Opportunity $fase, bool $semCategoria = false): void
+    {
+        $this->app->disableAccessControl();
+        $raiz->registrationRanges = [['label' => 'Faixa A', 'value' => '15000']];
+        $raiz->save(true);
+        $this->app->enableAccessControl();
+
+        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', $semCategoria ? '' : 'Faixa A');
+    }
+
+    function testPlanilhaEntraNoCorpoQuandoAsContempladasEstaoCompletas()
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->service()->buildResultado($fase)->toArray();
+
+            $this->assertSame('acao_cultural_realizada', $payload['tipo_planilha']);
+            $this->assertCount(1, $payload['linhas']);
+            $this->assertSame('15000.00', $payload['linhas'][0]['valor_recebido_pnab']);
+        });
+    }
+
+    function testContempladaIncompletaDeixaOResultadoSairSemPlanilha()
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+        $this->contempladaCompleta($raiz, $fase, semCategoria: true);
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->service()->buildResultado($fase)->toArray();
+
+            $this->assertArrayNotHasKey('linhas', $payload, 'o resultado publica, e a planilha espera o gestor completar a grade');
+            $this->assertArrayNotHasKey('tipo_planilha', $payload);
         });
     }
 
