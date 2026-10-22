@@ -37,6 +37,32 @@ class BeneficiariosService
         $criterio = ['opportunity' => $faseFinal, 'status' => Registration::STATUS_APPROVED];
 
         $contempladas = $repo->findBy($criterio, ['number' => 'ASC'], $limit, $skip);
+
+        return ['linhas' => $this->montar($raiz, $contempladas), 'total' => (int) $repo->count($criterio)];
+    }
+
+    /** Linhas das contempladas informadas, na ordem em que a tabela as listou. */
+    public function linhasDe(Opportunity $raiz, array $registrationIds): array
+    {
+        $faseFinal = $this->faseFinalPublicada($raiz);
+        if ($faseFinal === null || $registrationIds === []) {
+            return [];
+        }
+
+        $contempladas = App::i()->repo('Registration')->findBy([
+            'id' => $registrationIds,
+            'opportunity' => $faseFinal,
+            'status' => Registration::STATUS_APPROVED,
+        ]);
+
+        $posicao = array_flip(array_values($registrationIds));
+        usort($contempladas, fn($a, $b) => ($posicao[(int) $a->id] ?? PHP_INT_MAX) <=> ($posicao[(int) $b->id] ?? PHP_INT_MAX));
+
+        return $this->montar($raiz, $contempladas);
+    }
+
+    private function montar(Opportunity $raiz, array $contempladas): array
+    {
         $campos = $this->camposMapeados($raiz);
         $inscricoes = $this->inscricoesPorNumero($raiz, $campos, $contempladas);
 
@@ -46,7 +72,7 @@ class BeneficiariosService
             $linhas[] = $this->linha($raiz, $contemplada, $this->ancora($raiz, $contemplada, $porFase), $this->daFicha($campos, $porFase));
         }
 
-        return ['linhas' => $linhas, 'total' => (int) $repo->count($criterio)];
+        return $linhas;
     }
 
     /** Grava na inscrição de origem o que o gestor digitou e devolve a linha recalculada. */

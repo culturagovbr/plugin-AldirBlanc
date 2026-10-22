@@ -339,4 +339,49 @@ class BeneficiariosServiceTest extends TestCase
 
         $this->assertSame(['Sim - Governo Estadual', 'Sim - Setor Privado'], $this->celula($linha, 'recebeu_recursos_outras_fontes'), 'o contrato pede lista, e quem converte é a definição do metadado registrado');
     }
+
+    function testLinhasDeTrazSomenteAsContempladasInformadas()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $primeira = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+
+        $linhas = $this->service()->linhasDe($raiz, [(int) $primeira->id]);
+
+        $this->assertCount(1, $linhas);
+        $this->assertSame((int) $primeira->id, $linhas[0]['registrationId']);
+    }
+
+    function testLinhasDeRespeitaAOrdemRecebida()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $primeira = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $segunda = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+
+        $linhas = $this->service()->linhasDe($raiz, [(int) $segunda->id, (int) $primeira->id]);
+
+        $ordem = array_column($linhas, 'registrationId');
+        $this->assertSame([(int) $segunda->id, (int) $primeira->id], $ordem, 'a tabela ordena, e as células precisam casar com a linha que ela desenhou');
+    }
+
+    function testLinhasDeIgnoraInscricaoQueNaoEstaContempladaNaFaseFinal()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $outra = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $this->mudaStatus($outra, Registration::STATUS_NOTAPPROVED);
+
+        $linhas = $this->service()->linhasDe($raiz, [(int) $contemplada->id, (int) $outra->id]);
+
+        $this->assertCount(1, $linhas);
+        $this->assertSame((int) $contemplada->id, $linhas[0]['registrationId']);
+    }
+
+    function testLinhasDeSemIdentificadoresVoltaVazio()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+
+        $this->assertSame([], $this->service()->linhasDe($raiz, []));
+    }
 }
