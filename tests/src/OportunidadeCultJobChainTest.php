@@ -14,7 +14,7 @@ use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
-/** Sucesso no envio da oportunidade dispara o de resultado — guarda: nunca enviado OU alteração pendente. */
+/** O envio da oportunidade não encadeia mais o do resultado: nada sai sem o gestor apertar o botão. */
 class OportunidadeCultJobChainTest extends TestCase
 {
     use UserDirector;
@@ -63,34 +63,23 @@ class OportunidadeCultJobChainTest extends TestCase
         return $this->app->repo(Job::class)->findBy(['type' => ResultadoCultJob::SLUG]);
     }
 
-    function testSucessoComResultadoNuncaEnviadoEncadeia()
+    function testSucessoComResultadoNuncaEnviadoNaoEncadeia()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->enviaOportunidade($raiz);
 
-        $this->assertCount(1, $this->jobsDeResultado(), 'primeiro envio do resultado entra pelo encadeamento');
+        $this->assertCount(0, $this->jobsDeResultado(), 'o primeiro envio é do botão: nenhum caminho automático o produz');
     }
 
-    function testJaEnviadoSemAlteracaoPendenteNaoEncadeia()
+    function testJaEnviadoComAlteracaoPendenteTambemNaoEncadeia()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
 
         $this->enviaOportunidade($raiz);
 
-        $this->assertCount(0, $this->jobsDeResultado(), 'reenvio sem mudança criaria retificado idêntico no PAR a cada login');
-    }
-
-    function testJaEnviadoComAlteracaoPendenteEncadeia()
-    {
-        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
-        $this->gravaMeta((int) $fase->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE, '2026-10-16 20:00:00');
-
-        $this->enviaOportunidade($raiz);
-
-        $this->assertCount(1, $this->jobsDeResultado(), 'alteração pendente é exatamente o que o retificado existe para levar');
+        $this->assertCount(0, $this->jobsDeResultado(), 'o retificado é o botão Retificar, não um efeito do envio da oportunidade');
     }
 
     function testSemResultadoPublicadoNaoEncadeia()
@@ -113,24 +102,6 @@ class OportunidadeCultJobChainTest extends TestCase
         $this->enviaOportunidade($raiz, ['result' => SendResult::Error, 'httpStatus' => 502]);
 
         $this->assertCount(0, $this->jobsDeResultado(), 'sem oportunidade aceita não há resultado a enviar');
-    }
-
-    /** Hook de publicação e encadeamento próximos não podem duplicar o envio. */
-    function testGatilhoDuplicadoResultaEmUmJobSo()
-    {
-        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-
-        // Gatilho 1: o sucesso do envio de oportunidade encadeia (nunca enviado).
-        $this->enviaOportunidade($raiz);
-
-        // Gatilho 2: a republicação dispara o hook do tema — sem limpar a fila entre os dois.
-        $this->comFormularioResultado(function () use ($fase) {
-            $this->app->disableAccessControl();
-            $fase->publishRegistrations();
-            $this->app->enableAccessControl();
-        });
-
-        $this->assertCount(1, $this->jobsDeResultado(), 'dois gatilhos próximos, um job: enqueueOrReplaceJob deduplica pelo id');
     }
 
     function testSucessoComFormularioIncompletoNaoEncadeia()

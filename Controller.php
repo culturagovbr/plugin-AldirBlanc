@@ -278,11 +278,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $formState = $service->formStateForOpportunity($opportunity);
 
-        // O save que deixa o formulário completo é um gatilho de envio como a publicação.
-        if ($formState['estado'] === FormularioResultadoService::ESTADO_COMPLETO) {
-            (new ResultadoService())->enqueueResultadoSync($opportunity);
-        }
-
         $this->json($formState);
     }
 

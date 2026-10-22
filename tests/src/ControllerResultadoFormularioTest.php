@@ -204,7 +204,7 @@ class ControllerResultadoFormularioTest extends TestCase
         return $this->app->repo('Job')->findBy(['type' => \AldirBlanc\Jobs\ResultadoCultJob::SLUG]);
     }
 
-    function testSaveQueCompletaOFormularioEnfileiraOEnvio()
+    function testSaveQueCompletaOFormularioNaoProduzOPrimeiroEnvio()
     {
         $this->comFormulario(function () {
             [, $raiz] = $this->cenario();
@@ -212,7 +212,20 @@ class ControllerResultadoFormularioTest extends TestCase
             $payload = $this->postRespostas($raiz, [10 => 7, 11 => 'Processo concluído sem intercorrências.']);
 
             $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado']);
-            $this->assertCount(1, $this->jobsDeResultado(), 'completar o formulário é um gatilho de envio');
+            $this->assertCount(0, $this->jobsDeResultado(), 'completar o formulário habilita o botão; não envia por conta própria');
+        });
+    }
+
+    function testSaveDeRespostaEmEditalJaEnviadoNaoEnvia()
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
+
+            $this->postRespostas($raiz, [10 => 7, 11 => 'Processo concluído sem intercorrências.']);
+
+            $this->assertCount(0, $this->jobsDeResultado(), 'mudar resposta não retifica sozinho: o gestor decide quando');
         });
     }
 

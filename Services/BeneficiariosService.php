@@ -149,9 +149,6 @@ class BeneficiariosService
 
         $this->gravaOverride($ancora, $candidato);
 
-        // Completar a grade muda o corpo do resultado; o reenvio sai coalescido e só se já houver o que retificar.
-        (new ResultadoService())->deferResultadoResync($faseFinal);
-
         return ['linha' => $this->linha($raiz, $contemplada, $ancora, $daFicha)];
     }
 
