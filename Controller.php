@@ -74,6 +74,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_FORM = 'cultBrResultadoFormData';
 
+    /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
+
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
     private const CULT_LOGS_MAX_LIMIT = 100;
