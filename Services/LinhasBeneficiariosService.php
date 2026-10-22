@@ -182,10 +182,6 @@ class LinhasBeneficiariosService
     {
         $achadas = [];
 
-        if ($this->quantidadeRemuneradosDeclarada($linhaMesclada) && !$this->cpfsBatemComAQuantidade($linhaMesclada)) {
-            $achadas[] = 'cpfs_remunerados';
-        }
-
         if ($this->valorDeOutrasFontesNaoBateComAResposta($linhaMesclada)) {
             $achadas[] = 'valor_recursos_outras_fontes';
         }
@@ -217,11 +213,6 @@ class LinhasBeneficiariosService
     {
         return $this->preenchido($linhaMesclada['cpf_responsavel_execucao']['valor'] ?? null)
             || $this->preenchido($linhaMesclada['cnpj_responsavel_execucao']['valor'] ?? null);
-    }
-
-    private function quantidadeRemuneradosDeclarada(array $linhaMesclada): bool
-    {
-        return $this->quantidadeRemunerados($linhaMesclada) > 0;
     }
 
     /**
@@ -280,19 +271,6 @@ class LinhasBeneficiariosService
         return preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', (string) $valor, $partes)
             ? $partes[3] . $partes[2] . $partes[1]
             : null;
-    }
-
-    /** O validador não aceita lista mais curta nem mais longa que a quantidade declarada. */
-    private function cpfsBatemComAQuantidade(array $linhaMesclada): bool
-    {
-        $cpfs = $linhaMesclada['cpfs_remunerados']['valor'] ?? null;
-
-        return count(is_array($cpfs) ? $cpfs : array_filter([$cpfs])) === $this->quantidadeRemunerados($linhaMesclada);
-    }
-
-    private function quantidadeRemunerados(array $linhaMesclada): int
-    {
-        return (int) ($linhaMesclada['qtd_pessoas_remuneradas_exec']['valor'] ?? 0);
     }
 
     private function preenchido(mixed $valor): bool

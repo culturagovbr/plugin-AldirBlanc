@@ -173,37 +173,6 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame([], $service->pendencias($comCnpj), 'só o CNPJ já satisfaz a exigência');
     }
 
-    function testQuantidadeDeRemuneradosExigeOsCpfs()
-    {
-        $service = $this->service();
-        $base = $this->linhaMinima();
-
-        $comQuantidade = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '2'], ['data_recebimento_recurso' => '10/01/2026']);
-        $this->assertSame(['cpfs_remunerados'], $service->pendencias($comQuantidade));
-
-        $comCpfs = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '2'], ['data_recebimento_recurso' => '10/01/2026', 'cpfs_remunerados' => ['11144477735', '52998224725']]);
-        $this->assertSame([], $service->pendencias($comCpfs));
-
-        $zero = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '0'], ['data_recebimento_recurso' => '10/01/2026']);
-        $this->assertSame([], $service->pendencias($zero), 'zero remunerados não cobra CPF nenhum');
-    }
-
-    function testQuantidadeDeCpfsPrecisaBaterComAQuantidadeDeclarada()
-    {
-        $service = $this->service();
-        $base = $this->linhaMinima();
-        $comum = ['data_recebimento_recurso' => '10/01/2026'];
-
-        $faltando = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '3'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
-        $this->assertSame(['cpfs_remunerados'], $service->pendencias($faltando), 'lista mais curta que o declarado toma 422 no validador');
-
-        $sobrando = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '1'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
-        $this->assertSame(['cpfs_remunerados'], $service->pendencias($sobrando), 'lista mais longa também é recusada');
-
-        $exato = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '2'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
-        $this->assertSame([], $service->pendencias($exato));
-    }
-
     function testNegarOutrasFontesDispensaOValorERecusaValorInformado()
     {
         $service = $this->service();
