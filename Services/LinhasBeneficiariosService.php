@@ -146,13 +146,16 @@ class LinhasBeneficiariosService
             $pendentes[] = self::PENDENCIA_RESPONSAVEL;
         }
 
-        if ($this->quantidadeRemuneradosDeclarada($linhaMesclada) && !$this->preenchido($linhaMesclada['cpfs_remunerados']['valor'] ?? null)) {
+        if ($this->quantidadeRemuneradosDeclarada($linhaMesclada) && !$this->cpfsBatemComAQuantidade($linhaMesclada)) {
             $pendentes[] = 'cpfs_remunerados';
         }
 
-        if ($this->preenchido($linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null)
-            && !$this->preenchido($linhaMesclada['valor_recursos_outras_fontes']['valor'] ?? null)) {
+        if ($this->valorDeOutrasFontesNaoBateComAResposta($linhaMesclada)) {
             $pendentes[] = 'valor_recursos_outras_fontes';
+        }
+
+        foreach ($this->datasForaDaOrdem($linhaMesclada) as $chave) {
+            $pendentes[] = $chave;
         }
 
         return $pendentes;
@@ -167,7 +170,79 @@ class LinhasBeneficiariosService
 
     private function quantidadeRemuneradosDeclarada(array $linhaMesclada): bool
     {
-        return (int) ($linhaMesclada['qtd_pessoas_remuneradas_exec']['valor'] ?? 0) > 0;
+        return $this->quantidadeRemunerados($linhaMesclada) > 0;
+    }
+
+    /**
+     * Declarar fonte sem dizer quanto, ou negar e mesmo assim informar valor: as duas são
+     * contradição na mesma linha, e o validador recusa a planilha por qualquer uma delas.
+     */
+    private function valorDeOutrasFontesNaoBateComAResposta(array $linhaMesclada): bool
+    {
+        $respondeu = $this->preenchido($linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null);
+        $temValor = $this->preenchido($linhaMesclada['valor_recursos_outras_fontes']['valor'] ?? null);
+
+        if (!$respondeu) {
+            return false;
+        }
+
+        return $this->negouOutrasFontes($linhaMesclada) ? $temValor : !$temValor;
+    }
+
+    private function negouOutrasFontes(array $linhaMesclada): bool
+    {
+        $resposta = $linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null;
+
+        return array_values(array_filter(is_array($resposta) ? $resposta : [$resposta])) === [self::RESPOSTA_SEM_OUTRAS_FONTES];
+    }
+
+    /**
+     * O recurso chega antes de a execução começar, e ela só termina depois de começada.
+     * Data que quebra essa ordem é erro de digitação, e o gestor precisa ver na hora.
+     *
+     * @return string[] as colunas cuja data contraria a data válida anterior
+     */
+    public function datasForaDaOrdem(array $linhaMesclada): array
+    {
+        $foraDaOrdem = [];
+        $ultimaValida = null;
+
+        foreach (self::SEQUENCIA_DAS_DATAS as $chave) {
+            $data = $this->dataComparavel($linhaMesclada[$chave]['valor'] ?? null);
+
+            if ($data === null) {
+                continue;
+            }
+
+            if ($ultimaValida !== null && $data < $ultimaValida) {
+                $foraDaOrdem[] = $chave;
+                continue;
+            }
+
+            $ultimaValida = $data;
+        }
+
+        return $foraDaOrdem;
+    }
+
+    private function dataComparavel(mixed $valor): ?string
+    {
+        return preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', (string) $valor, $partes)
+            ? $partes[3] . $partes[2] . $partes[1]
+            : null;
+    }
+
+    /** O validador não aceita lista mais curta nem mais longa que a quantidade declarada. */
+    private function cpfsBatemComAQuantidade(array $linhaMesclada): bool
+    {
+        $cpfs = $linhaMesclada['cpfs_remunerados']['valor'] ?? null;
+
+        return count(is_array($cpfs) ? $cpfs : array_filter([$cpfs])) === $this->quantidadeRemunerados($linhaMesclada);
+    }
+
+    private function quantidadeRemunerados(array $linhaMesclada): int
+    {
+        return (int) ($linhaMesclada['qtd_pessoas_remuneradas_exec']['valor'] ?? 0);
     }
 
     private function preenchido(mixed $valor): bool

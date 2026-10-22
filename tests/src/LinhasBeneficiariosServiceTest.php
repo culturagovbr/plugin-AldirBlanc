@@ -188,6 +188,56 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame([], $service->pendencias($zero), 'zero remunerados não cobra CPF nenhum');
     }
 
+    function testQuantidadeDeCpfsPrecisaBaterComAQuantidadeDeclarada()
+    {
+        $service = $this->service();
+        $base = $this->linhaMinima();
+        $comum = ['data_recebimento_recurso' => '10/01/2026'];
+
+        $faltando = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '3'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
+        $this->assertSame(['cpfs_remunerados'], $service->pendencias($faltando), 'lista mais curta que o declarado toma 422 no validador');
+
+        $sobrando = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '1'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
+        $this->assertSame(['cpfs_remunerados'], $service->pendencias($sobrando), 'lista mais longa também é recusada');
+
+        $exato = $service->mesclar($base, ['qtd_pessoas_remuneradas_exec' => '2'], $comum + ['cpfs_remunerados' => ['11144477735', '52998224725']]);
+        $this->assertSame([], $service->pendencias($exato));
+    }
+    function testNegarOutrasFontesDispensaOValorERecusaValorInformado()
+    {
+        $service = $this->service();
+        $base = $this->linhaMinima();
+        $comum = ['data_recebimento_recurso' => '10/01/2026'];
+
+        $negouSemValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não']]);
+        $this->assertSame([], $service->pendencias($negouSemValor), 'quem nega não tem valor a informar');
+
+        $negouComValor = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Não'], 'valor_recursos_outras_fontes' => '1000.00']);
+        $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($negouComValor), 'negar e informar valor é contradição na mesma linha');
+
+        $declarouFonte = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']]);
+        $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($declarouFonte), 'declarou a fonte, tem que dizer quanto');
+    }
+    function testAsDatasDaLinhaSeguemAOrdemDosFatos()
+    {
+        $service = $this->service();
+        $base = $this->linhaMinima();
+
+        $terminoAntesDoInicio = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/01/2026', 'data_inicio_execucao' => '01/02/2026', 'data_termino_execucao' => '01/01/2026']);
+        $this->assertSame(['data_termino_execucao'], $service->pendencias($terminoAntesDoInicio));
+
+        $execucaoAntesDoRecurso = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/03/2026', 'data_inicio_execucao' => '01/02/2026']);
+        $this->assertSame(['data_inicio_execucao'], $service->pendencias($execucaoAntesDoRecurso), 'não se executa antes de receber o recurso');
+
+        $naOrdem = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/01/2026', 'data_inicio_execucao' => '01/02/2026', 'data_termino_execucao' => '01/03/2026']);
+        $this->assertSame([], $service->pendencias($naOrdem));
+
+        $mesmoDia = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/01/2026', 'data_inicio_execucao' => '10/01/2026', 'data_termino_execucao' => '10/01/2026']);
+        $this->assertSame([], $service->pendencias($mesmoDia), 'receber e executar no mesmo dia é válido');
+
+        $soInicio = $service->mesclar($base, [], ['data_recebimento_recurso' => '10/01/2026', 'data_inicio_execucao' => '01/02/2026']);
+        $this->assertSame([], $service->pendencias($soInicio), 'sem término não há o que comparar');
+    }
     function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
     {
         $porChave = array_column($this->service()->colunas(), null, 'chave');
