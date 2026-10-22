@@ -95,10 +95,22 @@ class BeneficiariosService
         $campos = $this->camposMapeados($raiz);
         $porFase = $this->inscricoesPorNumero($raiz, $campos, [$contemplada])[$contemplada->number] ?? [];
         $ancora = $this->ancora($raiz, $contemplada, $porFase);
+        $daFicha = $this->daFicha($campos, $porFase);
+        $candidato = $this->celulasAceitas($celulas, $this->override($ancora));
 
-        $this->gravaOverride($ancora, $this->celulasAceitas($celulas, $this->override($ancora)));
+        $automatico = $this->automatico($raiz, $contemplada, $ancora);
+        $jaEstavamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $this->override($ancora)));
+        $ficariamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $candidato));
 
-        return $this->linha($raiz, $contemplada, $ancora, $this->daFicha($campos, $porFase));
+        // Recusa o que esta edição quebra, não o que já estava quebrado: senão a linha trava por inteiro.
+        $recusadas = array_values(array_diff($ficariamForaDaOrdem, $jaEstavamForaDaOrdem));
+        if ($recusadas !== []) {
+            return ['recusadas' => $recusadas];
+        }
+
+        $this->gravaOverride($ancora, $candidato);
+
+        return ['linha' => $this->linha($raiz, $contemplada, $ancora, $daFicha)];
     }
 
     /** Fase final publicada do edital, ou null quando o resultado ainda não saiu. */

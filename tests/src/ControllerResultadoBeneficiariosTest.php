@@ -58,6 +58,17 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         return is_string($bruto) ? (array) json_decode($bruto, true) : [];
     }
 
+    /** Grava o override sem passar pelo endpoint, para montar o estado que antecede a regra. */
+    private function gravaDireto(Opportunity $raiz, string $number, array $override): void
+    {
+        $ancora = $this->app->repo('Registration')->findOneBy(['opportunity' => $raiz, 'number' => $number]);
+
+        $this->app->disableAccessControl();
+        $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA} = $override;
+        $ancora->saveMetadata(true);
+        $this->app->enableAccessControl();
+    }
+
     private function postLinha(Opportunity $raiz, array $dados): array
     {
         $controller = new TestableController();
@@ -79,6 +90,36 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $this->assertSame(0, $payload['skip']);
         $this->assertCount(count(LinhasBeneficiariosService::COLUNAS), $payload['colunas']);
         $this->assertSame('11144477735', $payload['data'][0]['celulas']['cpf_responsavel_execucao']['valor']);
+    }
+
+    function testPostRecusaDataQueQuebraAOrdemDaExecucao()
+    {
+        [$raiz, $fase, $owner] = $this->editalComCategorias();
+        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->login($owner);
+
+        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_inicio_execucao' => '01/02/2026']]);
+        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_termino_execucao' => '01/01/2026']]);
+
+        $this->assertSame(400, $this->responseStatus(), 'término anterior ao início não chega a ser gravado');
+
+        $linha = $this->getPagina($raiz)['data'][0];
+        $this->assertNull($linha['celulas']['data_termino_execucao']['valor'] ?? null, 'e a célula recusada continua vazia');
+    }
+
+    function testDataJaForaDaOrdemNaoImpedeEditarAsDemaisColunas()
+    {
+        [$raiz, $fase, $owner] = $this->editalComCategorias();
+        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->login($owner);
+
+        // Deixa a linha inconsistente por fora do endpoint, como as gravadas antes de a regra existir.
+        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_inicio_execucao' => '01/02/2026']]);
+        $this->gravaDireto($raiz, (string) $contemplada->number, ['data_inicio_execucao' => '01/02/2026', 'data_termino_execucao' => '01/01/2026']);
+
+        $payload = $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['cep_local_execucao' => '57072-900']]);
+
+        $this->assertSame('57072-900', $payload['linha']['celulas']['cep_local_execucao']['valor'], 'o defeito antigo não pode travar a linha inteira');
     }
 
     function testGetPorListaDeInscricoesDevolveSoAsPedidas()

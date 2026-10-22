@@ -411,13 +411,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $linha = $service->salvarCelulas($opportunity, $registrationId, $celulas);
-        if ($linha === null) {
+        $resultado = $service->salvarCelulas($opportunity, $registrationId, $celulas);
+        if ($resultado === null) {
             $this->errorJson(i::__('Inscrição contemplada não encontrada neste edital.'), 404);
             return;
         }
 
-        $this->json(['linha' => $linha]);
+        if (isset($resultado['recusadas'])) {
+            $this->errorJson(i::__('O recurso é recebido antes da execução começar, e ela termina depois de começada. Confira as datas da linha.'), 400);
+            return;
+        }
+
+        $this->json(['linha' => $resultado['linha']]);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */

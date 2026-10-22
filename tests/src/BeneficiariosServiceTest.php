@@ -300,7 +300,7 @@ class BeneficiariosServiceTest extends TestCase
         $this->assertSame((int) $soNaFaseFinal->id, $linha['origemId']);
 
         $salva = $service->salvarCelulas($raiz, (int) $soNaFaseFinal->id, ['data_recebimento_recurso' => '10/01/2026']);
-        $this->assertSame('10/01/2026', $salva['celulas']['data_recebimento_recurso']['valor'], 'e a célula digitada tem onde ser gravada');
+        $this->assertSame('10/01/2026', $salva['linha']['celulas']['data_recebimento_recurso']['valor'], 'e a célula digitada tem onde ser gravada');
         $this->assertSame('10/01/2026', $service->pagina($raiz, 0, 20)['linhas'][0]['celulas']['data_recebimento_recurso']['valor']);
     }
 
