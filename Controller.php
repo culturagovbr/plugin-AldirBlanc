@@ -24,6 +24,7 @@ use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
@@ -275,6 +276,53 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $this->json($formState);
+    }
+
+    /**
+     * Campos da ficha do edital, colunas mapeáveis e o de/para salvo (ou a sugestão, se ainda não há).
+     *
+     * GET /aldirblanc/resultadoDePara?opportunityId=
+     */
+    public function GET_resultadoDePara(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        $service = new ResultadoDeParaService();
+        $campos = $service->camposDaFicha($opportunity);
+        $salvo = $service->mapeamento((int) $opportunity->id);
+
+        $this->json([
+            'campos' => $campos,
+            'colunas' => $service->colunas(),
+            'mapeamento' => $salvo !== [] ? $salvo : $service->sugestao($campos),
+            'temMapeamentoSalvo' => $salvo !== [],
+        ]);
+    }
+
+    /**
+     * Salva o de/para das colunas da planilha de resultado.
+     *
+     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: idCampo|null}
+     */
+    public function POST_resultadoDePara(): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        if ($opportunity === null) {
+            return;
+        }
+
+        $mapeamento = $this->data['mapeamento'] ?? null;
+        if (!is_array($mapeamento)) {
+            $this->errorJson(i::__('Informe o de/para.'), 400);
+            return;
+        }
+
+        $salvo = (new ResultadoDeParaService())->salvarMapeamento($opportunity, $mapeamento);
+
+        $this->json(['mapeamento' => $salvo]);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */
