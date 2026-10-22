@@ -4,6 +4,7 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
@@ -242,5 +243,26 @@ class ResultadoResyncTest extends TestCase
 
         $this->assertCount(1, $this->jobsDeResultado(), 'alteração após a execução abre a rodada seguinte');
         $this->assertNotFalse($this->dirtySince((int) $fase->id));
+    }
+
+    function testCelulaDaGradeGravadaAbreAJanelaDeReenvio()
+    {
+        [$raiz, $fase, $inscricao] = $this->cenarioEnviado('Subsite Resync Grade');
+
+        $this->app->disableAccessControl();
+        $inscricao->status = Registration::STATUS_APPROVED;
+        $inscricao->save(true);
+        $this->app->enableAccessControl();
+
+        // A promoção a contemplada já abre uma janela; a deste teste tem que vir da célula gravada.
+        (new ResultadoService())->clearResultadoDirtySince((int) $fase->id);
+        $this->clearJobQueue();
+
+        (new BeneficiariosService())->salvarCelulas($raiz, (int) $inscricao->id, ['data_recebimento_recurso' => '10/01/2026']);
+
+        // Em produção quem dispara é o shutdown, para não enfileirar dentro do flush do Doctrine.
+        (new ResultadoService())->flushDeferredResultadoResyncs();
+
+        $this->assertNotFalse($this->dirtySince((int) $fase->id), 'completar a grade muda o corpo e precisa virar retificado');
     }
 }
