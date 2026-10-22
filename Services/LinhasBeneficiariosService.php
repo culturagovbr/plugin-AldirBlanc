@@ -50,6 +50,12 @@ class LinhasBeneficiariosService
         'data_recebimento_recurso',
     ];
 
+    /** Menos do que a grade cobra: no envio a data de recebimento deixou de ser obrigatória. */
+    public const OBRIGATORIAS_NO_ENVIO = [
+        'identificador_edital',
+        'valor_recebido_pnab',
+    ];
+
     /** Escolha que não convive com as outras da mesma coluna: marcá-la desmarca o resto. */
     public const OPCOES_EXCLUSIVAS = [
         'recebeu_recursos_outras_fontes' => self::RESPOSTA_SEM_OUTRAS_FONTES,
@@ -137,6 +143,15 @@ class LinhasBeneficiariosService
     {
         return array_merge(
             $this->faltando(self::OBRIGATORIAS, $linhaMesclada),
+            $this->contradicoes($linhaMesclada),
+        );
+    }
+
+    /** @return string[] o que impede esta linha de ir no envio; vazio significa pronta */
+    public function faltasParaEnvio(array $linhaMesclada): array
+    {
+        return array_merge(
+            $this->faltando(self::OBRIGATORIAS_NO_ENVIO, $linhaMesclada),
             $this->contradicoes($linhaMesclada),
         );
     }

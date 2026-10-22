@@ -241,6 +241,43 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame([], $service->pendencias($soInicio), 'sem término não há o que comparar');
     }
 
+    function testOEnvioNaoCobraADataQueDeixouDeSerObrigatoria()
+    {
+        $service = $this->service();
+        $semData = $service->mesclar($this->linhaMinima(), [], []);
+
+        $this->assertSame([], $service->faltasParaEnvio($semData), 'a data de recebimento não segura a planilha');
+        $this->assertSame(['data_recebimento_recurso'], $service->pendencias($semData), 'mas a grade segue cobrando do gestor');
+    }
+
+    function testEnvioSeguraALinhaQueSeContradiz()
+    {
+        $service = $this->service();
+
+        $qtdSemOsCpfs = $service->mesclar($this->linhaMinima(), ['qtd_pessoas_remuneradas_exec' => '2'], []);
+        $this->assertSame(['cpfs_remunerados'], $service->faltasParaEnvio($qtdSemOsCpfs), 'contradição recusa a planilha inteira, não só a linha');
+
+        $outraFonteSemValor = $service->mesclar($this->linhaMinima(), ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']], []);
+        $this->assertSame(['valor_recursos_outras_fontes'], $service->faltasParaEnvio($outraFonteSemValor));
+
+        $terminoAntesDoInicio = $service->mesclar($this->linhaMinima(), [], ['data_inicio_execucao' => '10/03/2026', 'data_termino_execucao' => '01/03/2026']);
+        $this->assertSame(['data_termino_execucao'], $service->faltasParaEnvio($terminoAntesDoInicio));
+    }
+
+    function testEnvioExigeIdentificadorValorEResponsavel()
+    {
+        $service = $this->service();
+
+        $semValor = $service->mesclar(['identificador_edital' => 'Edital X', 'cpf_responsavel_execucao' => '11144477735'], [], []);
+        $this->assertSame(['valor_recebido_pnab'], $service->faltasParaEnvio($semValor));
+
+        $semResponsavel = $service->mesclar(['identificador_edital' => 'Edital X', 'valor_recebido_pnab' => '15000.00'], [], []);
+        $this->assertSame([LinhasBeneficiariosService::PENDENCIA_RESPONSAVEL], $service->faltasParaEnvio($semResponsavel));
+
+        $soCnpj = $service->mesclar(['identificador_edital' => 'Edital X', 'valor_recebido_pnab' => '15000.00', 'cnpj_responsavel_execucao' => '11222333000181'], [], []);
+        $this->assertSame([], $service->faltasParaEnvio($soCnpj), 'CNPJ basta no lugar do CPF');
+    }
+
     function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
     {
         $porChave = array_column($this->service()->colunas(), null, 'chave');
