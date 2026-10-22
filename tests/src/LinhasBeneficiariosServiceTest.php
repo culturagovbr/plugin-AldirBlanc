@@ -188,6 +188,15 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame([], $service->pendencias($zero), 'zero remunerados não cobra CPF nenhum');
     }
 
+    function testColunaDeOutrasFontesOfereceOVocabularioDoContrato()
+    {
+        $porChave = array_column($this->service()->colunas(), null, 'chave');
+
+        $opcoes = $porChave['recebeu_recursos_outras_fontes']['opcoes'];
+        $this->assertContains('Não', $opcoes, 'é assim que o modelo de planilha nega a pergunta');
+        $this->assertContains('Sim - Governo Estadual', $opcoes, 'e assim que o payload de referência nomeia a fonte');
+        $this->assertNull($porChave['formato_execucao']['opcoes'], 'sem lista oficial, o gestor digita');
+    }
     function testOutrasFontesExigemOValor()
     {
         $service = $this->service();

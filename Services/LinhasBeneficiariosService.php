@@ -31,11 +31,37 @@ class LinhasBeneficiariosService
         'cep_local_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'texto', 'editavel' => true],
     ];
 
+    /**
+     * Só os valores atestados pelo modelo de planilha e pelo payload de referência do CultBr.
+     * A lista completa não está documentada, e valor fora dela derruba a planilha inteira.
+     */
+    public const OPCOES = [
+        'recebeu_recursos_outras_fontes' => [
+            'Não',
+            'Sim - Governo Estadual',
+            'Sim - Setor Privado',
+        ],
+    ];
+
     /** Sem estes o validador do CultBr recusa a planilha inteira, com 422 e nada salvo. */
     public const OBRIGATORIAS = [
         'identificador_edital',
         'valor_recebido_pnab',
         'data_recebimento_recurso',
+    ];
+
+    /** Escolha que não convive com as outras da mesma coluna: marcá-la desmarca o resto. */
+    public const OPCOES_EXCLUSIVAS = [
+        'recebeu_recursos_outras_fontes' => self::RESPOSTA_SEM_OUTRAS_FONTES,
+    ];
+
+    public const RESPOSTA_SEM_OUTRAS_FONTES = 'Não';
+
+    /** As datas da linha, na ordem em que os fatos acontecem. */
+    private const SEQUENCIA_DAS_DATAS = [
+        'data_recebimento_recurso',
+        'data_inicio_execucao',
+        'data_termino_execucao',
     ];
 
     /** CPF e CNPJ satisfazem a mesma exigência, então a dupla pende como um item só. */
@@ -69,6 +95,8 @@ class LinhasBeneficiariosService
                 'tipo' => $def['tipo'],
                 'editavel' => $def['editavel'],
                 'obrigatoria' => in_array($chave, self::OBRIGATORIAS, true),
+                'opcoes' => self::OPCOES[$chave] ?? null,
+                'opcaoExclusiva' => self::OPCOES_EXCLUSIVAS[$chave] ?? null,
             ];
         }
 
