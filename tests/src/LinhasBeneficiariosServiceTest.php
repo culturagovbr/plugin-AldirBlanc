@@ -186,6 +186,9 @@ class LinhasBeneficiariosServiceTest extends TestCase
 
         $declarouFonte = $service->mesclar($base, [], $comum + ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']]);
         $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($declarouFonte), 'declarou a fonte, tem que dizer quanto');
+
+        $valorSemResposta = $service->mesclar($base, ['valor_recursos_outras_fontes' => '1000.00'], $comum);
+        $this->assertSame(['valor_recursos_outras_fontes'], $service->pendencias($valorSemResposta), 'o validador exige a fonte junto do valor');
     }
 
     function testAsDatasDaLinhaSeguemAOrdemDosFatos()

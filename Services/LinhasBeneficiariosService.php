@@ -251,8 +251,9 @@ class LinhasBeneficiariosService
         $respondeu = $this->preenchido($linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null);
         $temValor = $this->preenchido($linhaMesclada['valor_recursos_outras_fontes']['valor'] ?? null);
 
+        // Valor sem resposta nenhuma também é contradição: o validador exige a fonte junto do valor.
         if (!$respondeu) {
-            return false;
+            return $temValor;
         }
 
         return $this->negouOutrasFontes($linhaMesclada) ? $temValor : !$temValor;
