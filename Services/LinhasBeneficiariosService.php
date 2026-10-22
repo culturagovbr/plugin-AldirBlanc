@@ -85,6 +85,12 @@ class LinhasBeneficiariosService
         $linha = [];
 
         foreach (self::COLUNAS as $chave => $def) {
+            // Célula que o gestor apagou fica apagada: a ficha não volta a preencher o que ele tirou.
+            if (array_key_exists($chave, $override) && !$this->preenchido($override[$chave])) {
+                $linha[$chave] = ['valor' => null, 'fonte' => self::FONTE_GESTOR];
+                continue;
+            }
+
             foreach ([self::FONTE_GESTOR => $override, self::FONTE_FICHA => $daFicha, self::FONTE_AUTOMATICA => $automatico] as $fonte => $valores) {
                 if ($this->preenchido($valores[$chave] ?? null)) {
                     $linha[$chave] = ['valor' => $valores[$chave], 'fonte' => $fonte];

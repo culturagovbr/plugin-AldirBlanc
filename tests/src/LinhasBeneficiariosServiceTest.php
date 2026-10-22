@@ -90,7 +90,7 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame(LinhasBeneficiariosService::FONTE_AUTOMATICA, $linha['valor_recebido_pnab']['fonte']);
     }
 
-    function testCelulaApagadaNoOverrideVoltaParaAFonteDeBaixo()
+    function testCelulaApagadaPeloGestorNaoVoltaAserPreenchidaPelaFicha()
     {
         $linha = $this->service()->mesclar(
             ['cep_local_execucao' => '00000-000'],
@@ -98,7 +98,19 @@ class LinhasBeneficiariosServiceTest extends TestCase
             ['cep_local_execucao' => ''],
         );
 
-        $this->assertSame('57072-900', $linha['cep_local_execucao']['valor'], 'apagar a célula não grava vazio, devolve o calculado');
+        $this->assertNull($linha['cep_local_execucao']['valor'], 'apagar é decisão do gestor, e a ficha não a desfaz');
+        $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $linha['cep_local_execucao']['fonte']);
+    }
+
+    function testColunaIntocadaPeloGestorSegueVindoDaFicha()
+    {
+        $linha = $this->service()->mesclar(
+            ['cep_local_execucao' => '00000-000'],
+            ['cep_local_execucao' => '57072-900'],
+            [],
+        );
+
+        $this->assertSame('57072-900', $linha['cep_local_execucao']['valor']);
         $this->assertSame(LinhasBeneficiariosService::FONTE_FICHA, $linha['cep_local_execucao']['fonte']);
     }
 
@@ -114,9 +126,11 @@ class LinhasBeneficiariosServiceTest extends TestCase
 
     function testListaVaziaNaoContaComoPreenchida()
     {
-        $linha = $this->service()->mesclar([], ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']], ['recebeu_recursos_outras_fontes' => []]);
+        $daFicha = $this->service()->mesclar([], ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']], []);
+        $this->assertSame(['Sim - Setor Privado'], $daFicha['recebeu_recursos_outras_fontes']['valor']);
 
-        $this->assertSame(['Sim - Setor Privado'], $linha['recebeu_recursos_outras_fontes']['valor']);
+        $esvaziada = $this->service()->mesclar([], ['recebeu_recursos_outras_fontes' => ['Sim - Setor Privado']], ['recebeu_recursos_outras_fontes' => []]);
+        $this->assertNull($esvaziada['recebeu_recursos_outras_fontes']['valor'], 'lista esvaziada pelo gestor fica vazia');
     }
 
     function testBooleanoFalsoNaFichaNaoDeclaraOutrasFontes()

@@ -284,11 +284,8 @@ class BeneficiariosService
                 continue;
             }
 
-            if (is_array($valor) ? $valor === [] : trim((string) $valor) === '') {
-                unset($override[$coluna]);
-            } else {
-                $override[$coluna] = $valor;
-            }
+            // Guarda o vazio em vez de remover a chave: apagar é uma decisão do gestor, não ausência dela.
+            $override[$coluna] = is_array($valor) ? $valor : (string) $valor;
         }
 
         return $override;

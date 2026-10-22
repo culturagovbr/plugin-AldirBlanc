@@ -165,7 +165,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
 
         $this->assertNull($payload['linha']['celulas']['data_recebimento_recurso']['valor']);
         $this->assertContains('data_recebimento_recurso', $payload['linha']['pendencias'], 'apagada, a coluna obrigatória volta a pender');
-        $this->assertSame([], $this->overrideGravado($raiz, (string) $contemplada->number), 'a coluna sai do override em vez de guardar vazio');
+        $this->assertSame(['data_recebimento_recurso' => ''], $this->overrideGravado($raiz, (string) $contemplada->number), 'o vazio fica gravado, para a ficha não repor o que o gestor tirou');
     }
 
     function testPostDeAprovadaForaDaFaseFinalResponde404()
