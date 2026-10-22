@@ -61,7 +61,17 @@ class BeneficiariosServiceTest extends TestCase
 
         $this->assertSame('11222333000181', $this->celula($linha, 'cnpj_responsavel_execucao'));
         $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'o CPF do representante não responde pela execução da pessoa jurídica');
-        $this->assertSame('Pessoa Jurídica', $this->celula($linha, 'tipo_agente'));
+        $this->assertSame('Pessoa jurídica', $this->celula($linha, 'tipo_agente'), 'o CultBr só conhece as duas naturezas, e com esta grafia');
+    }
+
+    function testTipoDeAgenteSaiDoDocumentoENaoDoTipoDeProponenteDoEdital()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'MEI');
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertSame('Pessoa física', $this->celula($linha, 'tipo_agente'), 'MEI não existe no vocabulário do CultBr');
     }
 
     function testDocumentoGenericoEClassificadoPelaQuantidadeDeDigitos()

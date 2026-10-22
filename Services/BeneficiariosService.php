@@ -206,11 +206,14 @@ class BeneficiariosService
         // O snapshot dos agentes é gravado no envio e não é copiado para as fases seguintes.
         $agente = $this->agenteResponsavel($contemplada, $ancora->agentsData ?: []);
 
+        $cpf = $this->documento($agente, self::CPF_DIGITOS);
+        $cnpj = $this->documento($agente, self::CNPJ_DIGITOS);
+
         return [
-            'tipo_agente' => (string) $contemplada->proponentType,
+            'tipo_agente' => $this->tipoDeAgente($cpf, $cnpj),
             'identificador_edital' => (string) $raiz->name,
-            'cpf_responsavel_execucao' => $this->documento($agente, self::CPF_DIGITOS),
-            'cnpj_responsavel_execucao' => $this->documento($agente, self::CNPJ_DIGITOS),
+            'cpf_responsavel_execucao' => $cpf,
+            'cnpj_responsavel_execucao' => $cnpj,
             'valor_recebido_pnab' => $this->valorDaCategoria($raiz, $contemplada),
         ];
     }
@@ -225,6 +228,19 @@ class BeneficiariosService
         $grupo = $mapa[(string) $contemplada->proponentType] ?? 'owner';
 
         return $agentsData[$grupo] ?? [];
+    }
+
+    /**
+     * O CultBr só conhece as duas naturezas, com esta grafia; os tipos de proponente do edital
+     * (MEI, Coletivo) não existem lá, e quem decide é o documento do responsável.
+     */
+    private function tipoDeAgente(?string $cpf, ?string $cnpj): string
+    {
+        if ($cnpj !== null) {
+            return 'Pessoa jurídica';
+        }
+
+        return $cpf !== null ? 'Pessoa física' : '';
     }
 
     /** O documento vem mascarado no cadastro; a quantidade de dígitos diz se é CPF ou CNPJ. */
