@@ -131,7 +131,7 @@ class ResultadoServiceTest extends TestCase
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1,
-            'respostas' => [51 => 'Comentário salvo pelo gestor.', 56 => 'Resposta sem endereço no PAR.'],
+            'respostas' => [51 => 'Comentário salvo pelo gestor.', 56 => 'Resposta sem endereço no PAR.', 59 => ['heteroidentificacao']],
         ]));
 
         $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
@@ -140,6 +140,10 @@ class ResultadoServiceTest extends TestCase
             ['id_questao' => 54, 'id_questao_etapa' => 954, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
             ['id_questao' => 55, 'id_questao_etapa' => 955, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
             ['id_questao' => 56, 'nome' => 'Questão sem id de etapa', 'tipo_questao' => 'textarea', 'requerida' => false],
+            ['id_questao' => 59, 'id_questao_etapa' => 959, 'nome' => 'Procedimentos de cotas', 'tipo_questao' => 'múltipla escolha', 'requerida' => true, 'opcao' => ['itens' => [
+                ['valor' => 'heteroidentificacao', 'label' => 'Heteroidentificação para pessoas negras'],
+                ['valor' => 'carta_consubstanciada', 'label' => 'Solicitação de carta consubstanciada'],
+            ]]],
         ]]]]]];
 
         $this->comFormularioResultado(function () use ($fase) {
@@ -149,7 +153,8 @@ class ResultadoServiceTest extends TestCase
             $porQuestao = array_column($respostas, 'resposta', 'id_par_questao');
             $this->assertSame(0, $porQuestao[950]['resposta'], 'a contagem automática do edital entra no envio');
             $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[951]['resposta']);
-            $this->assertStringStartsWith('2026-10-10T12:00:00', $porQuestao[954]['resposta'], 'a questão de data de publicação repete a data do campo próprio');
+            $this->assertSame('2026-10-10', $porQuestao[954]['resposta'], 'a data de publicação viaja só como Y-m-d, sem hora/fuso');
+            $this->assertSame(['Heteroidentificação para pessoas negras'], $porQuestao[959]['resposta'], 'múltipla escolha viaja com o label, não o slug salvo');
             $this->assertArrayNotHasKey(955, $porQuestao, 'questão sem resposta não viaja');
             $this->assertArrayNotHasKey(0, $porQuestao, 'questão sem id_questao_etapa não viaja');
         }, $estrutura);

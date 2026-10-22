@@ -415,12 +415,53 @@ class FormularioResultadoService
                         continue;
                     }
 
-                    $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $valor]];
+                    $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $valor)]];
                 }
             }
         }
 
         return $respostas;
+    }
+
+    /** Ajusta o valor ao que o formulário do PAR espera por tipo de questão; os demais tipos viajam como estão. */
+    private function valorParaEnvio(array $questao, mixed $valor): mixed
+    {
+        return match ($questao['tipo_questao'] ?? '') {
+            'data' => $this->comoDataSimples($valor),
+            'múltipla escolha' => $this->comoRotulosDasOpcoes($questao, $valor),
+            default => $valor,
+        };
+    }
+
+    /** O campo de data do PAR só lê Y-m-d; datetime com fuso não renderiza. */
+    private function comoDataSimples(mixed $valor): mixed
+    {
+        if (!is_string($valor) || $valor === '') {
+            return $valor;
+        }
+
+        try {
+            return (new \DateTimeImmutable($valor))->format('Y-m-d');
+        } catch (\Exception) {
+            return $valor;
+        }
+    }
+
+    /** Múltipla escolha viaja com o texto (label) da opção; salvamos o valor/slug e o PAR casa por label. */
+    private function comoRotulosDasOpcoes(array $questao, mixed $valor): mixed
+    {
+        if (!is_array($valor)) {
+            return $valor;
+        }
+
+        $rotuloPorValor = [];
+        foreach ($questao['opcao']['itens'] ?? [] as $item) {
+            if (isset($item['valor'], $item['label'])) {
+                $rotuloPorValor[$item['valor']] = $item['label'];
+            }
+        }
+
+        return array_map(fn($escolha) => $rotuloPorValor[$escolha] ?? $escolha, $valor);
     }
 
     /** O travamento do card tem espelho aqui: sem a publicação final, nada se edita nem se salva. */
