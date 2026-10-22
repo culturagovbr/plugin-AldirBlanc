@@ -135,30 +135,47 @@ class LinhasBeneficiariosService
     /** Colunas obrigatórias que a linha ainda não tem; vazio significa pronta para o envio. */
     public function pendencias(array $linhaMesclada): array
     {
-        $pendentes = [];
-        foreach (self::OBRIGATORIAS as $chave) {
+        return array_merge(
+            $this->faltando(self::OBRIGATORIAS, $linhaMesclada),
+            $this->contradicoes($linhaMesclada),
+        );
+    }
+
+    /** @return string[] */
+    private function faltando(array $obrigatorias, array $linhaMesclada): array
+    {
+        $faltas = [];
+        foreach ($obrigatorias as $chave) {
             if (!$this->preenchido($linhaMesclada[$chave]['valor'] ?? null)) {
-                $pendentes[] = $chave;
+                $faltas[] = $chave;
             }
         }
 
         if (!$this->temResponsavel($linhaMesclada)) {
-            $pendentes[] = self::PENDENCIA_RESPONSAVEL;
+            $faltas[] = self::PENDENCIA_RESPONSAVEL;
         }
 
+        return $faltas;
+    }
+
+    /**
+     * Linha que se contradiz: cobrada na grade e também no envio, porque o validador recusa a planilha inteira por qualquer uma delas.
+     *
+     * @return string[]
+     */
+    private function contradicoes(array $linhaMesclada): array
+    {
+        $achadas = [];
+
         if ($this->quantidadeRemuneradosDeclarada($linhaMesclada) && !$this->cpfsBatemComAQuantidade($linhaMesclada)) {
-            $pendentes[] = 'cpfs_remunerados';
+            $achadas[] = 'cpfs_remunerados';
         }
 
         if ($this->valorDeOutrasFontesNaoBateComAResposta($linhaMesclada)) {
-            $pendentes[] = 'valor_recursos_outras_fontes';
+            $achadas[] = 'valor_recursos_outras_fontes';
         }
 
-        foreach ($this->datasForaDaOrdem($linhaMesclada) as $chave) {
-            $pendentes[] = $chave;
-        }
-
-        return $pendentes;
+        return array_merge($achadas, $this->datasForaDaOrdem($linhaMesclada));
     }
 
     /** Só o CPF ou só o CNPJ basta ao validador, então a dupla conta como uma exigência. */
