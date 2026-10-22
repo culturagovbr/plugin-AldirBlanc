@@ -88,12 +88,20 @@ class ResultadoCultJobTest extends TestCase
     function testSegundoEnvioViraRetificado()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 60, 'id_questao_etapa' => 960, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
 
         // O dublê é resetado a cada rodada: o tipo de cada envio é capturado na sua vez.
-        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'respostas' => [60 => 'Primeira versão'],
+        ]));
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $estrutura);
         $primeiroTipo = FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo;
 
-        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}');
+        // O conteúdo muda, senão o reenvio idêntico seria dispensado (dedup do envio).
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => 'Segunda versão']);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $estrutura);
         $segundoTipo = FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo;
 
         // Literais de propósito: o contrato do PAR é 2 = final, 3 = retificado.
@@ -196,6 +204,53 @@ class ResultadoCultJobTest extends TestCase
         );
         $this->assertSame(['simulated'], $status, 'simulado não pode se passar por envio aceito pela API');
         $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'simulado conclui sem retry');
+    }
+
+    function testReenvioComConteudoIdenticoNaoViraRetificado()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados, 'o primeiro envio sempre sai');
+
+        // Nada mudou no conteúdo entre os dois: o segundo é dispensado.
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}');
+
+        $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados, 'payload idêntico ao último não vira retificado novo');
+        $this->assertSame('777', $this->resultadoId((int) $raiz->id), 'sem reenvio, o id vigente permanece o do primeiro');
+    }
+
+    function testAlteracaoRealDeConteudoReenvia()
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 60, 'id_questao_etapa' => 960, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
+        ]]]]]];
+
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'respostas' => [60 => 'Primeira versão'],
+        ]));
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $estrutura);
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
+
+        // O gestor muda o conteúdo da resposta: o hash difere e o reenvio sai.
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => 'Segunda versão']);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $estrutura);
+
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados, 'conteúdo diferente gera novo envio');
+        $this->assertSame('888', $this->resultadoId((int) $raiz->id));
+    }
+
+    private function atualizaRespostasSalvas(int $raizId, array $respostas): void
+    {
+        $this->app->em->getConnection()->executeStatement(
+            'UPDATE opportunity_meta SET value = :value WHERE object_id = :id AND key = :key',
+            [
+                'value' => json_encode(['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'respostas' => $respostas]),
+                'id' => $raizId,
+                'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM,
+            ]
+        );
     }
 
     function testProvedorSemACapacidadeEncerraSemRetry()

@@ -8,6 +8,7 @@ use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
 use AldirBlanc\Dtos\ParEditalId;
+use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\SendRunner;
@@ -73,6 +74,22 @@ class ResultadoCultJob extends JobType
 		// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
 		$service->clearResultadoDirtySince((int) $faseFinal->id);
 
+		// Montar aqui é só para o hash; se falhar, cai no null e o runner remonta, loga e decide o retry (como antes).
+		try {
+			$payload = $service->buildResultado($faseFinal);
+		} catch (\Throwable $e) {
+			$payload = null;
+		}
+
+		$hash = $payload !== null ? $this->contentHash($payload) : null;
+
+		// Alteração que não muda o conteúdo não vira retificado novo (eles coexistem publicados).
+		if ($hash !== null && $service->resultadoLastPayloadHash($raizId) === $hash) {
+			$app->log->info("ResultadoCultJob: edital {$raizId} - payload idêntico ao último enviado, reenvio dispensado");
+
+			return true;
+		}
+
 		$runner = new SendRunner('ResultadoCultJob', self::MAX_ATTEMPTS, new CultBrRequestLogService());
 
 		$runner->run(
@@ -81,8 +98,13 @@ class ResultadoCultJob extends JobType
 			requestUuid: $job->requestUuid ?? null,
 			user: $job->user ?? null,
 			attempt: $attempt,
-			send: fn() => $this->sendToCult($service, $faseFinal, $raizId),
-			onSuccess: fn(SendOutcome $outcome) => $this->persistResultadoId($app, $service, $raizId, $outcome->response),
+			send: fn() => $this->sendToCult($payload ?? $service->buildResultado($faseFinal), $raizId, $service),
+			onSuccess: function (SendOutcome $outcome) use ($app, $service, $raizId, $hash) {
+				$this->persistResultadoId($app, $service, $raizId, $outcome->response);
+				if ($hash !== null) {
+					$service->persistResultadoLastPayloadHash($raizId, $hash);
+				}
+			},
 			scheduleRetry: fn(?string $requestUuid) => $app->enqueueOrReplaceJob(self::SLUG, [
 				'opportunity' => $raiz,
 				'attempt'     => $attempt + 1,
@@ -93,7 +115,7 @@ class ResultadoCultJob extends JobType
 		return true;
 	}
 
-	private function sendToCult(ResultadoService $service, Opportunity $faseFinal, int $raizId): SendOutcome
+	private function sendToCult(Resultado $payload, int $raizId, ResultadoService $service): SendOutcome
 	{
 		$provider = Plugin::getInstance()->integrationProvider();
 
@@ -101,10 +123,27 @@ class ResultadoCultJob extends JobType
 			throw IntegrationError::configuration('client.provider', 'o provedor configurado não envia resultado');
 		}
 
-		return $provider->sendResultado(
-			new ParEditalId((int) $service->parEditalId($raizId)),
-			$service->buildResultado($faseFinal),
-		);
+		return $provider->sendResultado(new ParEditalId((int) $service->parEditalId($raizId)), $payload);
+	}
+
+	/** Hash do CONTEÚDO do envio (respostas/linhas/anexos), ignorando id_tipo/id_status/data_publicacao — voláteis entre final e retificado. */
+	private function contentHash(Resultado $payload): string
+	{
+		$data = $payload->toArray();
+		unset($data['id_tipo'], $data['id_status'], $data['data_publicacao']);
+		$this->ksortRecursivo($data);
+
+		return hash('sha256', (string) json_encode($data, JSON_UNESCAPED_UNICODE));
+	}
+
+	private function ksortRecursivo(array &$data): void
+	{
+		ksort($data);
+		foreach ($data as &$valor) {
+			if (is_array($valor)) {
+				$this->ksortRecursivo($valor);
+			}
+		}
 	}
 
 	/** Resposta sem o id (ou não-JSON) não falha o envio: a captura se recupera num reenvio. */

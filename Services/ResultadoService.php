@@ -227,17 +227,32 @@ class ResultadoService
 
     public function persistParEditalResultadoId(int $raizId, int $id): void
     {
+        $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, (string) $id);
+    }
+
+    /** Hash do conteúdo do último resultado enviado (null se nunca enviou). */
+    public function resultadoLastPayloadHash(int $raizId): ?string
+    {
+        return $this->meta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH);
+    }
+
+    public function persistResultadoLastPayloadHash(int $raizId, string $hash): void
+    {
+        $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH, $hash);
+    }
+
+    private function upsertMeta(int $raizId, string $key, string $value): void
+    {
         $conn = App::i()->em->getConnection();
-        $key = Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID;
 
         $updated = $conn->executeStatement(
             'UPDATE opportunity_meta SET value = :value WHERE object_id = :id AND key = :key',
-            ['value' => (string) $id, 'id' => $raizId, 'key' => $key]
+            ['value' => $value, 'id' => $raizId, 'key' => $key]
         );
         if ($updated === 0) {
             $conn->executeStatement(
                 'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
-                ['id' => $raizId, 'key' => $key, 'value' => (string) $id]
+                ['id' => $raizId, 'key' => $key, 'value' => $value]
             );
         }
     }
