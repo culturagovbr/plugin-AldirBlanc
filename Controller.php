@@ -346,19 +346,44 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        $service = new BeneficiariosService();
+        $colunas = (new LinhasBeneficiariosService())->colunas();
+        $faseFinal = $service->faseFinalPublicada($opportunity);
+
+        // A tabela da aplicação já pagina e filtra; aqui só vêm as células das inscrições que ela listou.
+        if (isset($this->data['registrationIds'])) {
+            $ids = array_slice($this->idsInformados($this->data['registrationIds']), 0, self::BENEFICIARIOS_MAX_LIMIT);
+
+            $this->json([
+                'data' => $service->linhasDe($opportunity, $ids),
+                'colunas' => $colunas,
+                'faseFinal' => $faseFinal ? (int) $faseFinal->id : null,
+            ]);
+            return;
+        }
+
         $skip = isset($this->data['skip']) ? max(0, (int) $this->data['skip']) : 0;
         $limit = isset($this->data['limit']) ? (int) $this->data['limit'] : self::BENEFICIARIOS_DEFAULT_LIMIT;
         $limit = max(1, min($limit, self::BENEFICIARIOS_MAX_LIMIT));
 
-        $pagina = (new BeneficiariosService())->pagina($opportunity, $skip, $limit);
+        $pagina = $service->pagina($opportunity, $skip, $limit);
 
         $this->json([
             'data' => $pagina['linhas'],
             'total' => $pagina['total'],
             'skip' => $skip,
             'limit' => $limit,
-            'colunas' => (new LinhasBeneficiariosService())->colunas(),
+            'colunas' => $colunas,
         ]);
+    }
+
+    /** Aceita a lista como array ou como string separada por vírgula, e descarta o que não for id. */
+    private function idsInformados(mixed $bruto): array
+    {
+        $itens = is_array($bruto) ? $bruto : explode(',', (string) $bruto);
+        $ids = array_filter(array_map('intval', $itens), fn(int $id) => $id > 0);
+
+        return array_values(array_unique($ids));
     }
 
     /**

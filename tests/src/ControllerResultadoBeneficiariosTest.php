@@ -81,6 +81,44 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $this->assertSame('11144477735', $payload['data'][0]['celulas']['cpf_responsavel_execucao']['valor']);
     }
 
+    function testGetPorListaDeInscricoesDevolveSoAsPedidas()
+    {
+        [$raiz, $fase, $owner] = $this->editalComCategorias();
+        $pedida = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $this->login($owner);
+
+        $payload = $this->getPagina($raiz, ['registrationIds' => [(int) $pedida->id]]);
+
+        $this->assertCount(1, $payload['data']);
+        $this->assertSame((int) $pedida->id, $payload['data'][0]['registrationId']);
+        $this->assertCount(count(LinhasBeneficiariosService::COLUNAS), $payload['colunas']);
+        $this->assertSame((int) $fase->id, $payload['faseFinal'], 'é dela que a tabela lista as contempladas');
+    }
+
+    function testGetPorListaAceitaIdentificadoresSeparadosPorVirgula()
+    {
+        [$raiz, $fase, $owner] = $this->editalComCategorias();
+        $pedida = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->login($owner);
+
+        $payload = $this->getPagina($raiz, ['registrationIds' => "{$pedida->id},0,abc"]);
+
+        $this->assertCount(1, $payload['data'], 'o que não for identificador é descartado em vez de derrubar a consulta');
+        $this->assertSame((int) $pedida->id, $payload['data'][0]['registrationId']);
+    }
+
+    function testGetPorListaSemControleResponde403()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->login($this->userDirector->createUser());
+
+        $this->getPagina($raiz, ['registrationIds' => [(int) $contemplada->id]]);
+
+        $this->assertSame(403, $this->responseStatus());
+    }
+
     function testGetLimitaOTamanhoDaPagina()
     {
         [$raiz, , $owner] = $this->editalComCategorias();
