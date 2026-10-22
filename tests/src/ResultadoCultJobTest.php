@@ -168,10 +168,9 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame([], $logs, 'sem envio não há nem registro de tentativa');
     }
 
-    function testFormularioIncompletoNaExecucaoNaoEnviaEMantemOCarimbo()
+    function testFormularioIncompletoNaExecucaoNaoEnvia()
     {
-        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-        $this->gravaMeta((int) $fase->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE, '2026-10-16 20:00:00');
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $estruturaComObrigatoria = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
             ['id_questao' => 52, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
@@ -179,15 +178,9 @@ class ResultadoCultJobTest extends TestCase
 
         $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $estruturaComObrigatoria);
 
-        $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados, 'entre enfileirar e rodar o formulário manda: incompleto não envia');
-        $carimbo = $this->app->em->getConnection()->fetchOne(
-            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
-            ['id' => (int) $fase->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE]
-        );
-        $this->assertNotFalse($carimbo, 'a janela de alterações fica aberta esperando o formulário');
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados, 'sem formulário completo o envio tomaria 422 do validador');
     }
 
-    /** O caminho de dev: provider conecta real em modo development — simula sem rede. */
     function testEnvioSimuladoFechaOLogComoSimuladoESemMetadado()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());

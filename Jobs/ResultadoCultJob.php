@@ -47,11 +47,6 @@ class ResultadoCultJob extends JobType
 		$faseFinal = $fresca?->lastPhase;
 
 		if (!$faseFinal || !$service->isEligibleForResultSync($faseFinal)) {
-			if ($faseFinal) {
-				// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
-				$service->clearResultadoDirtySince((int) $faseFinal->id);
-			}
-
 			$app->log->info("ResultadoCultJob: edital {$raizId} não está elegível para envio de resultado - nada enviado");
 
 			return true;
@@ -65,14 +60,10 @@ class ResultadoCultJob extends JobType
 		}
 
 		if (!$formCompleto) {
-			// Nada é limpo: a alteração pendente espera o formulário ficar completo.
 			$app->log->info("ResultadoCultJob: edital {$raizId} com formulário de resultado incompleto - nada enviado");
 
 			return true;
 		}
-
-		// O job rodando fecha a janela de alterações; mudanças a partir daqui abrem a próxima.
-		$service->clearResultadoDirtySince((int) $faseFinal->id);
 
 		// Montar aqui é só para o hash; se falhar, cai no null e o runner remonta, loga e decide o retry (como antes).
 		try {

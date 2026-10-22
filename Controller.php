@@ -70,7 +70,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     public const OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID = 'cultBrParEditalResultadoId';
 
     /** Carimbo de alteração pendente do resultado, na FASE FINAL; aberto pela mudança, limpo pelo envio. */
-    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DIRTY_SINCE = 'cultBrResultadoDirtySince';
 
     /** Hash do conteúdo do último resultado enviado; dispensa o reenvio quando a alteração não muda o payload. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH = 'cultBrResultadoLastPayloadHash';
