@@ -108,7 +108,7 @@ class ResultadoServiceTest extends TestCase
         $raiz->save(true);
         $this->app->enableAccessControl();
 
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', $semCategoria ? '' : 'Faixa A');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', $semCategoria ? '' : 'Faixa A');
     }
 
     function testPlanilhaEntraNoCorpoQuandoAsContempladasEstaoCompletas()

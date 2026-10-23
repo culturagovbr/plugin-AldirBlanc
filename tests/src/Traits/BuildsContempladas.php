@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc\Traits;
 
+use AldirBlanc\Controller;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use MapasCulturais\Entities\RegistrationFieldConfiguration;
@@ -96,6 +97,43 @@ trait BuildsContempladas
         $campo->displayOrder = 1;
         $campo->save(true);
         $this->app->enableAccessControl();
+
+        return $campo;
+    }
+
+    /** Um campo de documento por edital, reaproveitado entre as contempladas do mesmo cenário. */
+    private array $camposDeDocumentoPorEdital = [];
+
+    /** Contemplada cujo documento do responsável já está respondido no campo que o de/para aponta. */
+    protected function contempladaComDocumento(Opportunity $raiz, Opportunity $fase, string $documento, string $proponente = 'Pessoa Física', string $faixa = ''): Registration
+    {
+        $campo = $this->camposDeDocumentoPorEdital[(int) $raiz->id]
+            ??= $this->campoDeDocumento($raiz, $raiz, $this->app->config['registration.proponentTypes']);
+
+        $contemplada = $this->contemplada($raiz, $fase, [], $proponente, $faixa);
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, $documento);
+
+        return $contemplada;
+    }
+
+    /** O de/para do documento do responsável pela execução: tipo de proponente => id do campo da ficha. */
+    protected function mapeiaDocumentos(Opportunity $raiz, array $porTipo): void
+    {
+        $conn = $this->app->em->getConnection();
+        $parametros = ['id' => (int) $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO];
+
+        $conn->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', $parametros);
+        $conn->executeStatement(
+            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
+            $parametros + ['value' => json_encode($porTipo, JSON_UNESCAPED_UNICODE)],
+        );
+    }
+
+    /** Campo de documento na fase indicada, já apontado pelo de/para dos tipos informados. */
+    protected function campoDeDocumento(Opportunity $raiz, Opportunity $fase, array $tipos, string $title = 'Documento do responsável'): RegistrationFieldConfiguration
+    {
+        $campo = $this->campoDaFicha($fase, $title);
+        $this->mapeiaDocumentos($raiz, array_fill_keys($tipos, (int) $campo->id));
 
         return $campo;
     }

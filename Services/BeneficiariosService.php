@@ -103,12 +103,19 @@ class BeneficiariosService
     private function montar(Opportunity $raiz, array $contempladas): array
     {
         $campos = $this->camposMapeados($raiz);
-        $inscricoes = $this->inscricoesPorNumero($raiz, $campos, $contempladas);
+        $documentos = $this->camposDeDocumento($raiz);
+        $inscricoes = $this->inscricoesPorNumero($raiz, array_merge($campos, $documentos), $contempladas);
 
         $linhas = [];
         foreach ($contempladas as $contemplada) {
             $porFase = $inscricoes[$contemplada->number] ?? [];
-            $linhas[] = $this->linha($raiz, $contemplada, $this->ancora($raiz, $contemplada, $porFase), $this->daFicha($campos, $porFase));
+            $linhas[] = $this->linha(
+                $raiz,
+                $contemplada,
+                $this->ancora($raiz, $contemplada, $porFase),
+                $this->daFicha($campos, $porFase),
+                $this->documentoDaFicha($documentos, $contemplada, $porFase),
+            );
         }
 
         return $linhas;
@@ -132,12 +139,14 @@ class BeneficiariosService
         }
 
         $campos = $this->camposMapeados($raiz);
-        $porFase = $this->inscricoesPorNumero($raiz, $campos, [$contemplada])[$contemplada->number] ?? [];
+        $documentos = $this->camposDeDocumento($raiz);
+        $porFase = $this->inscricoesPorNumero($raiz, array_merge($campos, $documentos), [$contemplada])[$contemplada->number] ?? [];
         $ancora = $this->ancora($raiz, $contemplada, $porFase);
         $daFicha = $this->daFicha($campos, $porFase);
+        $documento = $this->documentoDaFicha($documentos, $contemplada, $porFase);
         $candidato = $this->celulasAceitas($celulas, $this->override($ancora));
 
-        $automatico = $this->automatico($raiz, $contemplada, $ancora);
+        $automatico = $this->automatico($raiz, $contemplada, $documento);
         $jaEstavamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $this->override($ancora)));
         $ficariamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $candidato));
 
@@ -149,7 +158,7 @@ class BeneficiariosService
 
         $this->gravaOverride($ancora, $candidato);
 
-        return ['linha' => $this->linha($raiz, $contemplada, $ancora, $daFicha)];
+        return ['linha' => $this->linha($raiz, $contemplada, $ancora, $daFicha, $documento)];
     }
 
     /** Fase final publicada do edital, ou null quando o resultado ainda não saiu. */
@@ -169,10 +178,10 @@ class BeneficiariosService
         return $inscricoesPorFase[(int) $raiz->id] ?? $contemplada;
     }
 
-    private function linha(Opportunity $raiz, Registration $contemplada, Registration $ancora, array $daFicha): array
+    private function linha(Opportunity $raiz, Registration $contemplada, Registration $ancora, array $daFicha, ?string $documento): array
     {
         $mesclada = $this->linhas->mesclar(
-            $this->automatico($raiz, $contemplada, $ancora),
+            $this->automatico($raiz, $contemplada, $documento),
             $daFicha,
             $this->override($ancora),
         );
@@ -190,6 +199,12 @@ class BeneficiariosService
     private function camposMapeados(Opportunity $raiz): array
     {
         return $this->camposDoMapeamento($this->dePara->mapeamento((int) $raiz->id));
+    }
+
+    /** O campo que guarda o documento do responsável, por tipo de proponente, pelo de/para do edital. */
+    private function camposDeDocumento(Opportunity $raiz): array
+    {
+        return $this->camposDoMapeamento($this->dePara->documentoPorTipo((int) $raiz->id));
     }
 
     private function camposDoMapeamento(array $mapeamento): array
@@ -257,13 +272,24 @@ class BeneficiariosService
         return $valores;
     }
 
-    private function automatico(Opportunity $raiz, Registration $contemplada, Registration $ancora): array
+    /** O documento respondido na ficha, pelo campo que o gestor indicou para o tipo de proponente da inscrição. */
+    private function documentoDaFicha(array $documentos, Registration $contemplada, array $inscricoesPorFase): ?string
     {
-        // O snapshot dos agentes é gravado no envio e não é copiado para as fases seguintes.
-        $agente = $this->agenteResponsavel($contemplada, $ancora->agentsData ?: []);
+        $campo = $documentos[(string) $contemplada->proponentType] ?? null;
+        if ($campo === null) {
+            return null;
+        }
 
-        $cpf = $this->documento($agente, self::CPF_DIGITOS);
-        $cnpj = $this->documento($agente, self::CNPJ_DIGITOS);
+        $valor = ($inscricoesPorFase[(int) $campo->owner->id] ?? null)?->{$campo->fieldName};
+
+        // O gestor pode apontar um campo de múltipla escolha, cujo valor é array.
+        return is_scalar($valor) ? (string) $valor : null;
+    }
+
+    private function automatico(Opportunity $raiz, Registration $contemplada, ?string $documento): array
+    {
+        $cpf = $this->documentoCom($documento, self::CPF_DIGITOS);
+        $cnpj = $this->documentoCom($documento, self::CNPJ_DIGITOS);
 
         return [
             'tipo_agente' => $this->tipoDeAgente($cpf, $cnpj),
@@ -272,18 +298,6 @@ class BeneficiariosService
             'cnpj_responsavel_execucao' => $cnpj,
             'valor_recebido_pnab' => $this->valorDaCategoria($raiz, $contemplada),
         ];
-    }
-
-    /**
-     * PF e MEI respondem pelo próprio cadastro; coletivo e pessoa jurídica, pelo agente do grupo.
-     * Sem o agente do grupo a linha fica sem documento, e não com o do representante.
-     */
-    private function agenteResponsavel(Registration $contemplada, array $agentsData): array
-    {
-        $mapa = App::i()->config['registration.proponentTypesToAgentsMap'] ?? [];
-        $grupo = $mapa[(string) $contemplada->proponentType] ?? 'owner';
-
-        return $agentsData[$grupo] ?? [];
     }
 
     /** Orienta o gestor na grade: as duas naturezas que o CultBr nomeia, decididas pelo documento do responsável. */
@@ -296,19 +310,12 @@ class BeneficiariosService
         return $cpf !== null ? 'Pessoa física' : '';
     }
 
-    /** O documento vem mascarado no cadastro; a quantidade de dígitos diz se é CPF ou CNPJ. */
-    private function documento(array $agente, int $digitos): ?string
+    /** O documento vem mascarado na ficha; a quantidade de dígitos diz se é CPF ou CNPJ. */
+    private function documentoCom(?string $respondido, int $digitos): ?string
     {
-        $chave = $digitos === self::CPF_DIGITOS ? 'cpf' : 'cnpj';
+        $limpo = preg_replace('/\D/', '', (string) $respondido);
 
-        foreach ([$agente[$chave] ?? '', $agente['documento'] ?? ''] as $candidato) {
-            $limpo = preg_replace('/\D/', '', (string) $candidato);
-            if (strlen($limpo) === $digitos) {
-                return $limpo;
-            }
-        }
-
-        return null;
+        return strlen($limpo) === $digitos ? $limpo : null;
     }
 
     private function valorDaCategoria(Opportunity $raiz, Registration $contemplada): ?string

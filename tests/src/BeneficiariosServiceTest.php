@@ -25,11 +25,22 @@ class BeneficiariosServiceTest extends TestCase
         return new BeneficiariosService();
     }
 
+    /** As linhas da página indexadas pelo número da inscrição; a ordem da grade é por número. */
+    private function linhasPorNumero(Opportunity $raiz): array
+    {
+        $linhas = [];
+        foreach ($this->service()->pagina($raiz, 0, 20)['linhas'] as $linha) {
+            $linhas[$linha['number']] = $linha;
+        }
+
+        return $linhas;
+    }
+
     function testPaginaTrazUmaLinhaPorContempladaComOTotal()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $this->contempladaComDocumento($raiz, $fase, '529.982.247-25');
 
         $pagina = $this->service()->pagina($raiz, 0, 20);
 
@@ -37,82 +48,116 @@ class BeneficiariosServiceTest extends TestCase
         $this->assertSame(2, $pagina['total']);
     }
 
-    function testCpfVemDoSnapshotDaInscricaoDeOrigemSemMascara()
+    function testCpfVemDoCampoQueOGestorIndicouSemMascara()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Pessoa Física']);
+        $contemplada = $this->contemplada($raiz, $fase, []);
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '111.444.777-35');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
-        $this->assertSame('11144477735', $this->celula($linha, 'cpf_responsavel_execucao'), 'a fase final não tem snapshot; o valor vem da origem, sem máscara');
+        $this->assertSame('11144477735', $this->celula($linha, 'cpf_responsavel_execucao'), 'o valor vem da ficha, sem máscara');
         $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'));
         $this->assertSame(LinhasBeneficiariosService::FONTE_AUTOMATICA, $linha['celulas']['cpf_responsavel_execucao']['fonte']);
     }
 
-    function testPessoaJuridicaRespondePeloAgenteDoColetivo()
+    function testCadaTipoDeProponenteLeOCampoQueOGestorIndicouParaEle()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, [
-            'owner' => ['cpf' => '111.444.777-35'],
-            'coletivo' => ['cnpj' => '11.222.333/0001-81'],
-        ], 'Pessoa Jurídica');
+        $campoDaPessoaFisica = $this->campoDaFicha($raiz, 'CPF do proponente');
+        $campoDaPessoaJuridica = $this->campoDaFicha($raiz, 'CNPJ do proponente');
+        $this->mapeiaDocumentos($raiz, [
+            'Pessoa Física' => (int) $campoDaPessoaFisica->id,
+            'Pessoa Jurídica' => (int) $campoDaPessoaJuridica->id,
+        ]);
 
-        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+        $pessoaFisica = $this->contemplada($raiz, $fase, [], 'Pessoa Física');
+        $pessoaJuridica = $this->contemplada($raiz, $fase, [], 'Pessoa Jurídica');
 
-        $this->assertSame('11222333000181', $this->celula($linha, 'cnpj_responsavel_execucao'));
-        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'o CPF do representante não responde pela execução da pessoa jurídica');
-        $this->assertSame('Pessoa jurídica', $this->celula($linha, 'tipo_agente'), 'o CultBr só conhece as duas naturezas, e com esta grafia');
+        // A pessoa física também respondeu o campo do CNPJ: é o tipo que decide qual dos dois vale.
+        $this->respondeFicha($raiz, (string) $pessoaFisica->number, $campoDaPessoaFisica, '111.444.777-35');
+        $this->respondeFicha($raiz, (string) $pessoaFisica->number, $campoDaPessoaJuridica, '11.222.333/0001-81');
+        $this->respondeFicha($raiz, (string) $pessoaJuridica->number, $campoDaPessoaJuridica, '11.222.333/0001-81');
+
+        $linhas = $this->linhasPorNumero($raiz);
+
+        $this->assertSame('11144477735', $this->celula($linhas[(string) $pessoaFisica->number], 'cpf_responsavel_execucao'));
+        $this->assertNull($this->celula($linhas[(string) $pessoaFisica->number], 'cnpj_responsavel_execucao'), 'o campo do outro tipo não entra na linha');
+        $this->assertSame('11222333000181', $this->celula($linhas[(string) $pessoaJuridica->number], 'cnpj_responsavel_execucao'));
     }
 
     function testTipoDeAgenteSaiDoDocumentoENaoDoTipoDeProponenteDoEdital()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'MEI');
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['MEI']);
+        $contemplada = $this->contemplada($raiz, $fase, [], 'MEI');
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '111.444.777-35');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
         $this->assertSame('Pessoa física', $this->celula($linha, 'tipo_agente'), 'MEI não existe no vocabulário do CultBr');
     }
 
-    function testDocumentoGenericoEClassificadoPelaQuantidadeDeDigitos()
+    function testDocumentoDeQuatorzeDigitosEhCnpjEDecideOTipoDeAgente()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['documento' => '007.898.359-24']]);
-
-        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
-
-        $this->assertSame('00789835924', $this->celula($linha, 'cpf_responsavel_execucao'));
-        $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'), 'onze dígitos não servem como CNPJ');
-    }
-
-    function testPessoaJuridicaSemAgenteDoColetivoFicaSemDocumento()
-    {
-        [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Jurídica');
-
-        $service = $this->service();
-        $linha = $service->pagina($raiz, 0, 20)['linhas'][0];
-
-        $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'));
-        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'o CPF do representante não pode virar o responsável da pessoa jurídica');
-        $this->assertContains(LinhasBeneficiariosService::PENDENCIA_RESPONSAVEL, $linha['pendencias'], 'sem documento a linha pende, em vez de sair com dado errado');
-    }
-
-    function testDocumentoGenericoDeQuatorzeDigitosEhCnpj()
-    {
-        [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['coletivo' => ['documento' => '11.222.333/0001-81']], 'Coletivo');
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Coletivo']);
+        $contemplada = $this->contemplada($raiz, $fase, [], 'Coletivo');
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '11.222.333/0001-81');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
         $this->assertSame('11222333000181', $this->celula($linha, 'cnpj_responsavel_execucao'));
         $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'quatorze dígitos não servem como CPF');
+        $this->assertSame('Pessoa jurídica', $this->celula($linha, 'tipo_agente'), 'o CultBr só conhece as duas naturezas, e com esta grafia');
+    }
+
+    function testTipoDeProponenteSemCampoIndicadoFicaSemDocumento()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Pessoa Jurídica']);
+        $contemplada = $this->contemplada($raiz, $fase, [], 'Pessoa Física');
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '111.444.777-35');
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'o de/para é por tipo: o campo de outro tipo não vale');
+        $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'));
+        $this->assertContains(LinhasBeneficiariosService::PENDENCIA_RESPONSAVEL, $linha['pendencias'], 'sem documento a linha pende, em vez de sair com dado errado');
+    }
+
+    function testCampoDeMultiplaEscolhaIndicadoNaoViraDocumento()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Pessoa Física'], 'Entregas previstas');
+        $contemplada = $this->contemplada($raiz, $fase, []);
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, ['11144477735', '52998224725']);
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'), 'valor que não é escalar não vira documento');
+        $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'));
+    }
+
+    function testRespostaSemTamanhoDeCpfNemDeCnpjNaoViraDocumento()
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Pessoa Física']);
+        $contemplada = $this->contemplada($raiz, $fase, []);
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, 'a combinar');
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'));
+        $this->assertNull($this->celula($linha, 'cnpj_responsavel_execucao'));
+        $this->assertNull($this->celula($linha, 'tipo_agente'));
     }
 
     function testIdentificadorDoEditalEONomeDaRaiz()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
@@ -125,7 +170,7 @@ class BeneficiariosServiceTest extends TestCase
             ['label' => 'faixa 1', 'value' => 1000],
             ['label' => 'faixa 2', 'value' => 5000],
         ]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', 'faixa 2');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'faixa 2');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
@@ -135,20 +180,20 @@ class BeneficiariosServiceTest extends TestCase
     function testSemCategoriaOValorFicaPendente()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
 
         $this->assertNull($this->celula($linha, 'valor_recebido_pnab'));
         $this->assertContains('valor_recebido_pnab', $linha['pendencias']);
         $this->assertContains('data_recebimento_recurso', $linha['pendencias']);
-        $this->assertNotContains(LinhasBeneficiariosService::PENDENCIA_RESPONSAVEL, $linha['pendencias'], 'o CPF do snapshot já satisfaz o responsável');
+        $this->assertNotContains(LinhasBeneficiariosService::PENDENCIA_RESPONSAVEL, $linha['pendencias'], 'o documento da ficha já satisfaz o responsável');
     }
 
     function testOQueOGestorDigitouVenceOCalculado()
     {
         [$raiz, $fase] = $this->editalComCategorias([['label' => 'faixa 1', 'value' => 1000]]);
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', 'faixa 1');
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'faixa 1');
 
         $this->app->disableAccessControl();
         $origem = $this->app->repo('Registration')->findOneBy(['opportunity' => $raiz, 'number' => $contemplada->number]);
@@ -160,14 +205,14 @@ class BeneficiariosServiceTest extends TestCase
 
         $this->assertSame('777.00', $this->celula($linha, 'valor_recebido_pnab'));
         $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $linha['celulas']['valor_recebido_pnab']['fonte']);
-        $this->assertSame([], $linha['pendencias'], 'com a data informada e o responsável no snapshot, a linha fica íntegra');
+        $this->assertSame([], $linha['pendencias'], 'com a data informada e o documento na ficha, a linha fica íntegra');
     }
 
     function testPaginaRespeitaORecorte()
     {
         [$raiz, $fase] = $this->editalComCategorias();
         foreach (['111.444.777-35', '529.982.247-25', '007.898.359-24'] as $cpf) {
-            $this->contemplada($raiz, $fase, ['owner' => ['cpf' => $cpf]]);
+            $this->contempladaComDocumento($raiz, $fase, $cpf);
         }
 
         $service = $this->service();
@@ -183,7 +228,7 @@ class BeneficiariosServiceTest extends TestCase
     function testNaoContaInscricaoQueNaoFoiContemplada()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $this->app->disableAccessControl();
         $naoSelecionada = new Registration();
@@ -205,7 +250,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($raiz, 'CEP do local de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['cep_local_execucao' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '57072-900');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
@@ -220,7 +265,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($fase, 'Formato de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['formato_execucao' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($fase, (string) $contemplada->number, $campo, 'Presencial Fixo');
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
@@ -235,7 +280,7 @@ class BeneficiariosServiceTest extends TestCase
         $formato = $this->campoDaFicha($fase, 'Formato de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['cep_local_execucao' => $cep->id, 'formato_execucao' => $formato->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $cep, '57072-900');
         $this->respondeFicha($fase, (string) $contemplada->number, $formato, 'Presencial Fixo');
 
@@ -251,7 +296,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($raiz, 'CEP do local de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['cep_local_execucao' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '57072-900');
 
         $this->app->disableAccessControl();
@@ -269,7 +314,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($raiz, 'CEP do local de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['cep_local_execucao' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '57072-900');
 
         $this->app->disableAccessControl();
@@ -288,15 +333,19 @@ class BeneficiariosServiceTest extends TestCase
     {
         [$raiz, $fase] = $this->editalComCategorias();
 
+        $campo = $this->campoDeDocumento($raiz, $fase, ['Pessoa Física']);
+
         $this->app->disableAccessControl();
-        $soNaFaseFinal = $this->inscricao($fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', '');
+        $soNaFaseFinal = $this->inscricao($fase, [], 'Pessoa Física', '');
         $this->mudaStatus($soNaFaseFinal, Registration::STATUS_APPROVED);
         $this->app->enableAccessControl();
+
+        $this->respondeFicha($fase, (string) $soNaFaseFinal->number, $campo, '111.444.777-35');
 
         $service = $this->service();
         $linha = $service->pagina($raiz, 0, 20)['linhas'][0];
 
-        $this->assertSame('11144477735', $this->celula($linha, 'cpf_responsavel_execucao'), 'sem inscrição na primeira fase, o cadastro vem da própria contemplada');
+        $this->assertSame('11144477735', $this->celula($linha, 'cpf_responsavel_execucao'), 'o campo indicado na própria fase final responde quando não há inscrição na primeira');
         $this->assertSame((int) $soNaFaseFinal->id, $linha['origemId']);
 
         $salva = $service->salvarCelulas($raiz, (int) $soNaFaseFinal->id, ['data_recebimento_recurso' => '10/01/2026']);
@@ -310,7 +359,7 @@ class BeneficiariosServiceTest extends TestCase
         $subsite = $this->integrationSubsite($owner, 'Subsite Sem Publicacao ' . uniqid());
         $raiz = $this->raizElegivel($owner, $subsite);
         $fase = $this->faseFinal($raiz, publicada: false);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $pagina = $this->service()->pagina($raiz, 0, 20);
 
@@ -325,7 +374,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($raiz, 'CEP do local de execução');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['cep_local_execucao' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '57072-900');
 
         // Numa requisição nova o campo não está registrado; criá-lo na fixture registra, e isso esconderia o passo.
@@ -342,7 +391,7 @@ class BeneficiariosServiceTest extends TestCase
         $campo = $this->campoDaFicha($raiz, 'Recebeu recursos de outras fontes?', 'checkboxes');
         (new ResultadoDeParaService())->salvarMapeamento($raiz, ['recebeu_recursos_outras_fontes' => $campo->id]);
 
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->respondeFicha($raiz, (string) $contemplada->number, $campo, ['Sim - Governo Estadual', 'Sim - Setor Privado']);
 
         $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
@@ -354,7 +403,7 @@ class BeneficiariosServiceTest extends TestCase
     {
         [$raiz, $fase] = $this->editalComCategorias();
         foreach (['111.444.777-35', '529.982.247-25', '007.898.359-24'] as $cpf) {
-            $this->contemplada($raiz, $fase, ['owner' => ['cpf' => $cpf]]);
+            $this->contempladaComDocumento($raiz, $fase, $cpf);
         }
 
         $lotes = 0;
@@ -371,8 +420,8 @@ class BeneficiariosServiceTest extends TestCase
     function testLinhasDeTrazSomenteAsContempladasInformadas()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $primeira = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $primeira = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $this->contempladaComDocumento($raiz, $fase, '529.982.247-25');
 
         $linhas = $this->service()->linhasDe($raiz, [(int) $primeira->id]);
 
@@ -383,8 +432,8 @@ class BeneficiariosServiceTest extends TestCase
     function testLinhasDeRespeitaAOrdemRecebida()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $primeira = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
-        $segunda = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $primeira = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $segunda = $this->contempladaComDocumento($raiz, $fase, '529.982.247-25');
 
         $linhas = $this->service()->linhasDe($raiz, [(int) $segunda->id, (int) $primeira->id]);
 
@@ -395,8 +444,8 @@ class BeneficiariosServiceTest extends TestCase
     function testLinhasDeIgnoraInscricaoQueNaoEstaContempladaNaFaseFinal()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
-        $outra = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $outra = $this->contempladaComDocumento($raiz, $fase, '529.982.247-25');
         $this->mudaStatus($outra, Registration::STATUS_NOTAPPROVED);
 
         $linhas = $this->service()->linhasDe($raiz, [(int) $contemplada->id, (int) $outra->id]);
@@ -408,7 +457,7 @@ class BeneficiariosServiceTest extends TestCase
     function testLinhasDeSemIdentificadoresVoltaVazio()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $this->assertSame([], $this->service()->linhasDe($raiz, []));
     }

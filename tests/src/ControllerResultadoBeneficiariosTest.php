@@ -80,7 +80,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testGetDevolveAPaginaComAsColunasDaPlanilha()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $payload = $this->getPagina($raiz);
@@ -95,7 +95,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostRecusaDataQueQuebraAOrdemDaExecucao()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_inicio_execucao' => '01/02/2026']]);
@@ -110,7 +110,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testDataJaForaDaOrdemNaoImpedeEditarAsDemaisColunas()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         // Deixa a linha inconsistente por fora do endpoint, como as gravadas antes de a regra existir.
@@ -125,8 +125,8 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testGetPorListaDeInscricoesDevolveSoAsPedidas()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $pedida = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $pedida = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $this->contempladaComDocumento($raiz, $fase, '529.982.247-25');
         $this->login($owner);
 
         $payload = $this->getPagina($raiz, ['registrationIds' => [(int) $pedida->id]]);
@@ -140,7 +140,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testGetPorListaAceitaIdentificadoresSeparadosPorVirgula()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $pedida = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $pedida = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $payload = $this->getPagina($raiz, ['registrationIds' => "{$pedida->id},0,abc"]);
@@ -152,7 +152,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testGetPorListaSemControleResponde403()
     {
         [$raiz, $fase] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($this->userDirector->createUser());
 
         $this->getPagina($raiz, ['registrationIds' => [(int) $contemplada->id]]);
@@ -182,7 +182,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostGravaACelulaDigitadaEDevolveALinha()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $payload = $this->postLinha($raiz, [
@@ -198,7 +198,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostApagaACelulaQuandoOValorVemVazio()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
@@ -212,7 +212,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostDeAprovadaForaDaFaseFinalResponde404()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
 
         $this->app->disableAccessControl();
         $aprovadaNaRaiz = $this->inscricao($raiz, ['owner' => ['cpf' => '529.982.247-25']], 'Pessoa Física', '');
@@ -228,7 +228,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostNaoDeixaOGestorEscreverColunaQueOSistemaResolve()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $payload = $this->postLinha($raiz, [
@@ -245,7 +245,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $subsite = $this->integrationSubsite($owner, 'Subsite Sem Publicacao ' . uniqid());
         $raiz = $this->raizElegivel($owner, $subsite);
         $fase = $this->faseFinal($raiz, publicada: false);
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
@@ -256,7 +256,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     function testPostSemCelulasResponde400()
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']]);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
         $this->postLinha($raiz, ['registrationId' => $contemplada->id]);
@@ -268,7 +268,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     {
         [$raiz, , $owner] = $this->editalComCategorias();
         [$outraRaiz, $outraFase] = $this->editalComCategorias();
-        $deOutroEdital = $this->contemplada($outraRaiz, $outraFase, ['owner' => ['cpf' => '529.982.247-25']]);
+        $deOutroEdital = $this->contempladaComDocumento($outraRaiz, $outraFase, '529.982.247-25');
         $this->login($owner);
 
         $this->postLinha($raiz, ['registrationId' => $deOutroEdital->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);

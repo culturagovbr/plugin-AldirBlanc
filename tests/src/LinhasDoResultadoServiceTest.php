@@ -23,7 +23,7 @@ class LinhasDoResultadoServiceTest extends TestCase
     function testMontaUmaLinhaPorContempladaComOsCamposDoContrato()
     {
         [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', 'Faixa A');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
 
         $linhas = $this->service()->montar($raiz);
 
@@ -37,8 +37,8 @@ class LinhasDoResultadoServiceTest extends TestCase
     function testUmaContempladaIncompletaSeguraAPlanilhaInteira()
     {
         [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', 'Faixa A');
-        $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']], 'Pessoa Física');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
+        $this->contempladaComDocumento($raiz, $fase, '529.982.247-25', 'Pessoa Física');
 
         $this->assertNull($this->service()->montar($raiz), 'o validador é atômico: linha incompleta derrubaria o resultado');
     }
@@ -53,8 +53,8 @@ class LinhasDoResultadoServiceTest extends TestCase
     function testLinhasSaemNaOrdemDoNumeroDaInscricao()
     {
         [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $uma = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '111.444.777-35']], 'Pessoa Física', 'Faixa A');
-        $outra = $this->contemplada($raiz, $fase, ['owner' => ['cpf' => '529.982.247-25']], 'Pessoa Física', 'Faixa A');
+        $uma = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
+        $outra = $this->contempladaComDocumento($raiz, $fase, '529.982.247-25', 'Pessoa Física', 'Faixa A');
 
         $cpfPorNumero = [(string) $uma->number => '11144477735', (string) $outra->number => '52998224725'];
         ksort($cpfPorNumero, SORT_STRING);
