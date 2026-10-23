@@ -189,7 +189,12 @@ class BeneficiariosService
     /** O campo da ficha que alimenta cada coluna mapeada, pelo de/para salvo no edital. */
     private function camposMapeados(Opportunity $raiz): array
     {
-        $mapeamento = array_filter($this->dePara->mapeamento((int) $raiz->id));
+        return $this->camposDoMapeamento($this->dePara->mapeamento((int) $raiz->id));
+    }
+
+    private function camposDoMapeamento(array $mapeamento): array
+    {
+        $mapeamento = array_filter($mapeamento);
         if ($mapeamento === []) {
             return [];
         }
@@ -199,14 +204,14 @@ class BeneficiariosService
             $configuracoes[(int) $campo->id] = $campo;
         }
 
-        $porColuna = [];
-        foreach ($mapeamento as $coluna => $id) {
+        $porChave = [];
+        foreach ($mapeamento as $chave => $id) {
             if (isset($configuracoes[(int) $id])) {
-                $porColuna[$coluna] = $configuracoes[(int) $id];
+                $porChave[$chave] = $configuracoes[(int) $id];
             }
         }
 
-        return $porColuna;
+        return $porChave;
     }
 
     /** As inscrições das contempladas da página, por número e fase, numa consulta só. */
