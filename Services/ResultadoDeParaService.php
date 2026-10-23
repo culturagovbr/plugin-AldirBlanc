@@ -69,13 +69,7 @@ class ResultadoDeParaService
     /** Mapeamento salvo (coluna => id do campo da ficha, ou null para "não se aplica"). */
     public function mapeamento(int $raizId): array
     {
-        $bruto = App::i()->em->getConnection()->fetchOne(
-            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
-            ['id' => $raizId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA],
-        );
-        $dados = is_string($bruto) && $bruto !== '' ? json_decode($bruto, true) : null;
-
-        return is_array($dados) ? $dados : [];
+        return $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA);
     }
 
     /** Pré-seleção por título normalizado + tipo do campo; é palpite, o gestor revisa e corrige. */
@@ -135,6 +129,17 @@ class ResultadoDeParaService
         $t = strtr($t, ['á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a', 'é' => 'e', 'ê' => 'e', 'í' => 'i', 'ó' => 'o', 'ô' => 'o', 'õ' => 'o', 'ú' => 'u', 'ç' => 'c']);
 
         return trim($t);
+    }
+
+    private function metaJson(int $raizId, string $key): array
+    {
+        $bruto = App::i()->em->getConnection()->fetchOne(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $raizId, 'key' => $key],
+        );
+        $dados = is_string($bruto) && $bruto !== '' ? json_decode($bruto, true) : null;
+
+        return is_array($dados) ? $dados : [];
     }
 
     private function upsertMeta(int $raizId, string $key, string $value): void
