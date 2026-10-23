@@ -41,6 +41,7 @@ class ResultadoDeParaService
                     'title' => (string) $campo->title,
                     'fieldType' => (string) $campo->fieldType,
                     'fase' => (string) $fase->name,
+                    'etapa' => (string) ($campo->step?->name ?? ''),
                 ];
             }
         }
