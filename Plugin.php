@@ -13,6 +13,7 @@ use AldirBlanc\Integration\ProviderResolver;
 use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
+use AldirBlanc\Jobs\ResultadoCultJob;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -48,6 +49,8 @@ class Plugin extends \MapasCulturais\Plugin
                         'parAcoesEndpoint' => 'par/acoes',
                         'oportunidadeEndpoint' => 'oportunidades/{id}',
                         'criarOportunidadeEndpoint' => 'oportunidades',
+                        'criarResultadoEndpoint' => 'editais/{id_edital}/resultado',
+                        'formularioEstruturaEndpoint' => 'par/formularios/estrutura',
                         'validarTokenEndpoint' => 'validar-token',
                     ],
                 ],
@@ -58,6 +61,8 @@ class Plugin extends \MapasCulturais\Plugin
                 'subsiteId' => env('ALDIRBLANC_SUBSITE_ID', null),
                 // Zero desabilita o cache, e é intencional: não trocar por um TTL sem decisão.
                 'cacheTTL' => env('ALDIRBLANC_INTEGRATION_CACHE_TTL', 0),
+                // Estrutura e tipo de ação do formulário mudam raramente; cache próprio, ligado por padrão.
+                'formularioCacheTTL' => env('ALDIRBLANC_FORMULARIO_CACHE_TTL', 900),
                 'delayJob' => env('ALDIRBLANC_INTEGRATION_DELAY_JOB', '+10 seconds'),
                 'retryDelayJob' => env('ALDIRBLANC_INTEGRATION_RETRY_DELAY_JOB', '+15 seconds'),
             ]
@@ -128,6 +133,25 @@ class Plugin extends \MapasCulturais\Plugin
             'aldirblanc',
             'integrationFederativeEntityOpportunities'
         ];
+
+        $app->config['routes']['shortcuts']['beneficiarios-do-resultado'] = [
+            'opportunity',
+            'resultadoBeneficiarios'
+        ];
+
+        // Tela da grade de beneficiários: action nova no controller de oportunidade, view no tema.
+        $app->hook('GET(opportunity.resultadoBeneficiarios)', function () use ($app) {
+            $this->requireAuthentication();
+
+            $opportunity = $this->requestedEntity;
+            if (!$opportunity) {
+                $app->pass();
+            }
+
+            $opportunity->checkPermission('@control');
+
+            $this->render('resultado-beneficiarios', ['entity' => $opportunity]);
+        });
 
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
@@ -216,7 +240,44 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, [
+            'label' => i::__('Id do edital no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID, [
+            'label' => i::__('Tipo de ação do edital no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, [
+            'label' => i::__('Id do resultado vigente no PAR (CultBR)'),
+            'type' => 'string',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, [
+            'label' => i::__('Respostas do formulário de resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA, [
+            'label' => i::__('De/para das colunas da planilha de resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
+        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA, [
+            'label' => i::__('Dados de execução informados pelo gestor para a planilha de resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
+        $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));
         $app->registerJobType(new OpportunityBatchSyncJob(OpportunityBatchSyncJob::SLUG));
         $app->registerJobType(new OpportunityForceResyncJob(OpportunityForceResyncJob::SLUG));
     }

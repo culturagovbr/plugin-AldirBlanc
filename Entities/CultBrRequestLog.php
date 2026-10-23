@@ -13,7 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
  * @property int $id
  * @property string $requestUuid Identificador exibido na aba "Logs CultBr"
  * @property int $opportunityId
- * @property string $action Ação do job (hoje só `update`)
+ * @property string $action Ação do envio (`create`/`update` de oportunidade, `resultado`)
  * @property string $result self::RESULT_*
  * @property \MapasCulturais\Entities\User|null $user Quem salvou a oportunidade que originou o envio
  * @property \DateTime $createTimestamp
