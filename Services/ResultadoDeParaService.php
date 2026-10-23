@@ -72,6 +72,48 @@ class ResultadoDeParaService
         return $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA);
     }
 
+    /** Todos os tipos de proponente do sistema: a inscrição pode trazer tipo que o edital já não aceita mais. */
+    public function tiposDeProponente(): array
+    {
+        return array_values(array_map('strval', App::i()->config['registration.proponentTypes'] ?? []));
+    }
+
+    /**
+     * Campo da ficha que guarda o documento do responsável, por tipo de proponente.
+     * Todos os tipos vêm na resposta: um mapa vazio viraria lista no json e perderia o que o gestor escolher.
+     */
+    public function documentoPorTipo(int $raizId): array
+    {
+        $salvo = $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO);
+
+        $porTipo = [];
+        foreach ($this->tiposDeProponente() as $tipo) {
+            $porTipo[$tipo] = isset($salvo[$tipo]) ? (int) $salvo[$tipo] : null;
+        }
+
+        return $porTipo;
+    }
+
+    /** Validado contra os campos reais do edital; devolve o mapeamento gravado. */
+    public function salvarDocumentoPorTipo(Opportunity $raiz, array $mapeamento): array
+    {
+        $idsValidos = array_column($this->camposDaFicha($raiz), 'id');
+
+        $limpo = [];
+        foreach ($this->tiposDeProponente() as $tipo) {
+            $valor = $mapeamento[$tipo] ?? null;
+            $limpo[$tipo] = ($valor !== null && in_array((int) $valor, $idsValidos, true)) ? (int) $valor : null;
+        }
+
+        $this->upsertMeta(
+            (int) $raiz->id,
+            Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO,
+            json_encode($limpo, JSON_UNESCAPED_UNICODE),
+        );
+
+        return $limpo;
+    }
+
     /** Pré-seleção por título normalizado + tipo do campo; é palpite, o gestor revisa e corrige. */
     public function sugestao(array $campos): array
     {

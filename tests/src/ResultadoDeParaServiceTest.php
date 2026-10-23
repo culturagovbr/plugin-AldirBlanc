@@ -118,4 +118,27 @@ class ResultadoDeParaServiceTest extends TestCase
 
         $this->assertSame([], $this->service()->mapeamento((int) $edital->id));
     }
+
+    function testDocumentoPorTipoTrazTodosOsTiposMesmoSemNadaSalvo()
+    {
+        $edital = $this->novoEdital();
+        $tipos = $this->service()->tiposDeProponente();
+
+        $porTipo = $this->service()->documentoPorTipo((int) $edital->id);
+
+        $this->assertSame($tipos, array_keys($porTipo), 'mapa sem chaves viraria lista no json e o front perderia a escolha');
+        $this->assertSame(array_fill(0, count($tipos), null), array_values($porTipo));
+    }
+
+    function testDocumentoPorTipoSoAceitaCampoDoProprioEdital()
+    {
+        $edital = $this->novoEdital();
+        $cpf = $this->addCampo($edital, 'CPF', 'cpf', 1);
+
+        $salvo = $this->service()->salvarDocumentoPorTipo($edital, ['Pessoa Física' => $cpf, 'MEI' => 999999]);
+
+        $this->assertSame($cpf, $salvo['Pessoa Física']);
+        $this->assertNull($salvo['MEI'], 'campo de outro edital não entra no de/para');
+        $this->assertSame($salvo, $this->service()->documentoPorTipo((int) $edital->id));
+    }
 }

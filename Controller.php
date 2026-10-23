@@ -78,6 +78,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO = 'cultBrResultadoDocumentoPorTipo';
 
     /** Células da linha digitadas pelo gestor, na inscrição de origem: coluna => valor. */
     public const REGISTRATION_META_CULT_BR_RESULTADO_LINHA = 'cultBrResultadoLinha';
@@ -340,13 +341,15 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'colunas' => $service->colunas(),
             'mapeamento' => $salvo !== [] ? $salvo : $service->sugestao($campos),
             'temMapeamentoSalvo' => $salvo !== [],
+            'tiposDeProponente' => $service->tiposDeProponente(),
+            'documentoPorTipo' => $service->documentoPorTipo((int) $opportunity->id),
         ]);
     }
 
     /**
      * Salva o de/para das colunas da planilha de resultado.
      *
-     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: idCampo|null}
+     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: id}, documentoPorTipo {tipo: id}
      */
     public function POST_resultadoDePara(): void
     {
@@ -361,9 +364,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $salvo = (new ResultadoDeParaService())->salvarMapeamento($opportunity, $mapeamento);
+        $service = new ResultadoDeParaService();
+        $salvo = $service->salvarMapeamento($opportunity, $mapeamento);
+        $documentoPorTipo = $service->salvarDocumentoPorTipo($opportunity, (array) ($this->data['documentoPorTipo'] ?? []));
 
-        $this->json(['mapeamento' => $salvo]);
+        $this->json(['mapeamento' => $salvo, 'documentoPorTipo' => $documentoPorTipo]);
     }
 
     /**
