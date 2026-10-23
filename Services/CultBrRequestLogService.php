@@ -19,6 +19,12 @@ class CultBrRequestLogService
     /** Teto do corpo de resposta gravado, em bytes. */
     private const MAX_RESPONSE_LENGTH = 65536;
 
+    /** Grupos de `action` das sub-abas da tela de logs: envio de oportunidade × envio de resultado. */
+    public const ACTION_GROUPS = [
+        'oportunidade' => ['create', 'update'],
+        'resultado' => ['resultado'],
+    ];
+
     /**
      * Recupera o envio pelo uuid (retentativa) ou cria um novo (primeira tentativa).
      * O autor só é gravado na criação: na retentativa o job roda no worker, sem usuário logado,
@@ -165,13 +171,14 @@ class CultBrRequestLogService
 
     /**
      * Envios de uma oportunidade, mais recentes primeiro, com as tentativas aninhadas.
+     * `$actionGroup` filtra por sub-aba (chave de ACTION_GROUPS); nulo ou desconhecido lista tudo.
      */
-    public function findByOpportunity(int $opportunityId, int $skip = 0, int $limit = 20): array
+    public function findByOpportunity(int $opportunityId, int $skip = 0, int $limit = 20, ?string $actionGroup = null): array
     {
         $app = App::i();
 
         $logs = $app->repo(CultBrRequestLog::class)->findBy(
-            ['opportunityId' => $opportunityId],
+            $this->opportunityCriteria($opportunityId, $actionGroup),
             ['createTimestamp' => 'DESC'],
             $limit,
             $skip
@@ -217,9 +224,20 @@ class CultBrRequestLogService
         return $last;
     }
 
-    public function countByOpportunity(int $opportunityId): int
+    public function countByOpportunity(int $opportunityId, ?string $actionGroup = null): int
     {
-        return App::i()->repo(CultBrRequestLog::class)->count(['opportunityId' => $opportunityId]);
+        return App::i()->repo(CultBrRequestLog::class)->count($this->opportunityCriteria($opportunityId, $actionGroup));
+    }
+
+    private function opportunityCriteria(int $opportunityId, ?string $actionGroup): array
+    {
+        $criteria = ['opportunityId' => $opportunityId];
+
+        if (isset(self::ACTION_GROUPS[$actionGroup])) {
+            $criteria['action'] = self::ACTION_GROUPS[$actionGroup];
+        }
+
+        return $criteria;
     }
 
     /**

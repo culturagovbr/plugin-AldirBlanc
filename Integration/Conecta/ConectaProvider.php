@@ -9,6 +9,8 @@ use AldirBlanc\Dtos\Opportunity as OpportunityDto;
 use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\ParActionPage;
+use AldirBlanc\Dtos\ParEditalId;
+use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Mode;
 use AldirBlanc\Enum\Provider;
@@ -16,18 +18,24 @@ use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Conecta\Http\EntesClient;
+use AldirBlanc\Integration\Conecta\Http\FormularioEstruturaClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeClient;
+use AldirBlanc\Integration\Conecta\Http\OportunidadeConsultaClient;
 use AldirBlanc\Integration\Conecta\Http\ParAcoesClient;
+use AldirBlanc\Integration\Conecta\Http\ResultadoClient;
 use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
+use AldirBlanc\Integration\FetchesFormularioResultado;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
+use AldirBlanc\Integration\RecordedResultadoSend;
 use AldirBlanc\Integration\RecordedSend;
+use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 
 /** A API Conecta MinC por trás do contrato. */
-final class ConectaProvider implements IntegrationProvider, ValidatesCredential
+final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado
 {
     /** A Gestão usa 403 para credencial; a Conecta usa 401. Os dois significam recusa. */
     private const REFUSED_STATUSES = [401, 403];
@@ -85,6 +93,27 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential
         $client = new OportunidadeClient($id, $this->transport, $action);
 
         return RecordedSend::perform($client, $payload, $this->provider());
+    }
+
+    public function sendResultado(ParEditalId $edital, Resultado $payload): SendOutcome
+    {
+        $client = new ResultadoClient($this->transport);
+
+        return RecordedResultadoSend::perform($client, $edital, $payload, $this->provider());
+    }
+
+    public function fetchFormularioResultado(int $idTipoAcao): ?array
+    {
+        return (new FormularioEstruturaClient($idTipoAcao, $this->transport))->fetch();
+    }
+
+    public function fetchParTipoAcao(OpportunityId $opportunity): ?int
+    {
+        $eco = (new OportunidadeConsultaClient($opportunity, $this->transport))->fetch();
+
+        $idTipoAcao = filter_var($eco['acao']['id_par_tipo_acao'] ?? null, FILTER_VALIDATE_INT);
+
+        return $idTipoAcao === false || $idTipoAcao < 1 ? null : $idTipoAcao;
     }
 
     public function validateCredential(): CredentialCheck
