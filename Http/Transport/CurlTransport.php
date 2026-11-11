@@ -9,6 +9,12 @@ class CurlTransport implements Transport
     private const CONNECT_TIMEOUT = 30;
     private const TIMEOUT = 60;
 
+    public function __construct(
+        public readonly int $connectTimeout = self::CONNECT_TIMEOUT,
+        public readonly int $timeout = self::TIMEOUT,
+    ) {
+    }
+
     public function send(string $method, string $url, array $headers, ?string $body = null): TransportResponse
     {
         $curl = $this->novoHandle();
@@ -17,8 +23,8 @@ class CurlTransport implements Transport
             $curl->setHeader($nome, $valor);
         }
 
-        $curl->setOpt(CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT);
-        $curl->setOpt(CURLOPT_TIMEOUT, self::TIMEOUT);
+        $curl->setOpt(CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+        $curl->setOpt(CURLOPT_TIMEOUT, $this->timeout);
         $curl->setOpt(CURLOPT_FAILONERROR, false);
 
         $this->suppressingDeprecations(fn() => $this->dispatch($curl, $method, $url, $body));
