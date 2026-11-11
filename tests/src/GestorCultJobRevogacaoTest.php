@@ -8,6 +8,7 @@ use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Entities\Role as MapasRole;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
@@ -15,8 +16,7 @@ use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
 use Tests\Traits\UserDirector;
 
 /**
- * A revogação apaga o papel do gestor e todas as relações dele, e só volta com um sync bom
- * depois. Por isso só pode acontecer quando a API de fato respondeu que não há ente nenhum.
+ * A origem dizer que não há ente marca os vínculos; o papel só cai quando o último deles expira.
  */
 class GestorCultJobRevogacaoTest extends TestCase
 {
@@ -131,18 +131,55 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "classificar a causa é do controller{$onde}");
     }
 
-    private function assertPapelERelacoesRevogados(object $user, ?Provider $provedor = null): void
+    private function assertPapelMantidoEVinculoMarcado(object $user, ?Provider $provedor = null): void
     {
         $onde = $provedor === null ? '' : " ({$provedor->value})";
 
-        $this->assertFalse(UserAccessService::isGestorCultBr(), "o papel precisava ter sido revogado{$onde}");
-        $this->assertCount(
-            0,
-            $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
-            "as relações precisavam ter sido apagadas{$onde}",
-        );
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "revogar não é falha{$onde}");
+        $this->assertTrue(UserAccessService::isGestorCultBr(), "o papel não podia ter sido revogado{$onde}");
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(1, $relations, "o vínculo não podia ter sido apagado{$onde}");
+        $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata, "o vínculo precisava ser marcado{$onde}");
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, "a tela precisa destravar{$onde}");
+    }
+
+    private function segundoEnteDoGestor(object $user): FederativeEntityAgentRelation
+    {
+        $entity = new FederativeEntity();
+        $entity->name = 'Segundo Ente de Teste';
+        $entity->document = '77222222222222';
+        $entity->exercices = [];
+        $entity->createTimestamp = new \DateTime();
+        $this->app->em->persist($entity);
+
+        $relation = new FederativeEntityAgentRelation();
+        $relation->agent = $user->profile;
+        $relation->owner = $entity;
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+
+        return $relation;
+    }
+
+    private function sincronizarComListaVazia(): ?\Throwable
+    {
+        $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->setGestorResponse(['entes_federados' => []]);
+
+        $falha = null;
+        try {
+            $job->sync();
+        } catch (\Throwable $e) {
+            $falha = $e;
+        }
+
+        $this->app->em->clear();
+
+        return $falha;
+    }
+
+    private function papelGravado(object $user): int
+    {
+        return count($this->app->repo(MapasRole::class)->findBy(['userId' => $user->id, 'name' => Role::GESTOR_CULT_BR]));
     }
 
     /** Corpo `null` num 200 chegava ao gate como "este gestor não tem ente nenhum". */
@@ -173,8 +210,8 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    /** Na Conecta o 404 com o texto da aplicação é resposta sobre a pessoa: ela não está lá. */
-    function testCpfDesconhecidoPelaConectaRevoga()
+    /** Na Conecta o 404 com o texto da aplicação é resposta sobre a pessoa: o vínculo fica marcado. */
+    public function testCpfDesconhecidoPelaConectaMarcaOVinculoEMantemOPapel(): void
     {
         $this->comModoReal(function () {
             $user = $this->gestorLogadoComUmEnte();
@@ -183,7 +220,7 @@ class GestorCultJobRevogacaoTest extends TestCase
             $falha = $this->sincronizarCom(new FakeTransport(404, $corpo), Provider::Conecta);
 
             $this->assertNull($falha, 'documento inexistente não é falha de integração');
-            $this->assertPapelERelacoesRevogados($user, Provider::Conecta);
+            $this->assertPapelMantidoEVinculoMarcado($user, Provider::Conecta);
         });
     }
 
@@ -226,8 +263,7 @@ class GestorCultJobRevogacaoTest extends TestCase
         });
     }
 
-    /** O `null` do contrato é a origem dizendo que não conhece o documento, e quem não existe lá não é gestor. */
-    function testDocumentoDesconhecidoPelaOrigemRevoga()
+    public function testDocumentoDesconhecidoPelaOrigemMarcaOVinculo(): void
     {
         $user = $this->gestorLogadoComUmEnte();
 
@@ -237,30 +273,29 @@ class GestorCultJobRevogacaoTest extends TestCase
 
         $this->app->em->clear();
 
-        $this->assertPapelERelacoesRevogados($user);
+        $this->assertPapelMantidoEVinculoMarcado($user);
     }
 
-    /** O caminho legítimo continua revogando: a API respondeu, e não há ente nenhum. */
-    function testListaVaziaBemFormadaRevoga()
+    public function testListaVaziaBemFormadaMarcaOVinculo(): void
     {
         $this->emCadaProvedor(function (Provider $provedor) {
             $user = $this->gestorLogadoComUmEnte();
 
             $this->sincronizarCom(new FakeTransport(200, '{"entes_federados":[]}'), $provedor);
 
-            $this->assertPapelERelacoesRevogados($user, $provedor);
+            $this->assertPapelMantidoEVinculoMarcado($user, $provedor);
         });
     }
 
-    /** A Gestão tolera a lista sem envelope; para a Conecta ela é erro de contrato, e não revoga. */
-    function testListaSemEnvelopeSoRevogaOndeElaEhContrato()
+    /** A Gestão tolera a lista sem envelope; para a Conecta ela é erro de contrato, e não toca em nada. */
+    public function testListaSemEnvelopeSoMarcaOndeElaEhContrato(): void
     {
         $this->comModoReal(function () {
             $this->gestorLogadoComUmEnte();
             $falha = $this->sincronizarCom(new FakeTransport(200, '[]'), Provider::Gestao);
 
             $this->assertNull($falha, 'a Gestão aceita a lista sem envelope');
-            $this->assertFalse(UserAccessService::isGestorCultBr(), 'e zero entes revoga');
+            $this->assertTrue(UserAccessService::isGestorCultBr(), 'e zero entes só marca o vínculo');
         });
 
         $this->comModoReal(function () {
@@ -270,5 +305,57 @@ class GestorCultJobRevogacaoTest extends TestCase
             $this->assertNotNull($falha, 'a Conecta recusa a lista sem envelope');
             $this->assertPapelERelacoesIntactos($user, Provider::Conecta);
         });
+    }
+
+    public function testGestorSemNenhumVinculoPerdeOPapelComListaVazia(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->app->disableAccessControl();
+        $this->app->user->addRole(Role::GESTOR_CULT_BR);
+        $this->app->enableAccessControl();
+
+        $this->sincronizarComListaVazia();
+
+        $this->assertSame(0, $this->papelGravado($user));
+    }
+
+    public function testUsuarioSemPapelNaoGanhaPapelComListaVazia(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComListaVazia();
+
+        $this->assertSame(0, $this->papelGravado($user));
+    }
+
+    public function testListaVaziaNaoAtualizaOPerfilNemADataDaSincronizacao(): void
+    {
+        $user = $this->gestorLogadoComUmEnte();
+
+        $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->setGestorResponse(['nome' => 'Nome Vindo Da Origem', 'entes_federados' => []]);
+        $job->sync();
+        $this->app->em->clear();
+
+        $agent = $this->app->repo(\MapasCulturais\Entities\Agent::class)->find($user->profile->id);
+        $this->assertNull($agent->getMetadata('gestorCultBrLastSyncedAt'));
+        $this->assertNotSame('Nome Vindo Da Origem', $agent->getMetadata('nomeCompleto'));
+    }
+
+    public function testListaVaziaMarcaTodosOsVinculosEMantemOPapel(): void
+    {
+        $user = $this->gestorLogadoComUmEnte();
+        $this->segundoEnteDoGestor($user);
+
+        $this->sincronizarComListaVazia();
+
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(2, $relations);
+        foreach ($relations as $relation) {
+            $this->assertArrayHasKey('missingSince', (array) $relation->metadata);
+        }
+        $this->assertSame(1, $this->papelGravado($user));
     }
 }

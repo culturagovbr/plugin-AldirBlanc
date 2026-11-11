@@ -272,7 +272,7 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertSame($novaArvore, $updated->exercices);
     }
 
-    function testEnteQueSaiuDaRespostaTemRelationRemovida()
+    public function testEnteQueSaiuDaRespostaTemOVinculoMantidoEMarcado(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -281,17 +281,39 @@ class GestorCultJobAssociationTest extends TestCase
         $entityQueSai = $this->persistFederativeEntity('44444444444444', 'Vai Sair');
         $this->persistRelation($agent, $entityQueSai);
 
-        // API só retorna um ente diferente: o anterior deve ter a relation removida (diff)
         $this->job()->callAssociateFederativeEntities($agent, [
             ['document' => '55555555555555', 'name' => 'Ente Atual', 'exercicios' => $this->parMinimo()],
         ]);
         $this->app->em->clear();
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entityQueSai]);
-        $this->assertCount(0, $relations, 'A relation do ente que saiu da resposta deve ser removida');
+        $this->assertCount(1, $relations, 'O vínculo do ente que saiu da resposta continua');
+        $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata);
 
         $novaEntidade = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '55555555555555']);
         $this->assertNotNull($novaEntidade);
+    }
+
+    public function testEnteQueVoltaARespostaPerdeAMarca(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $entity = $this->persistFederativeEntity('44444444444445', 'Volta');
+        $relation = $this->persistRelation($agent, $entity);
+        $relation->metadata = ['missingSince' => (new \DateTime('-3 days'))->format('Y-m-d H:i:s')];
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+
+        $this->job()->callAssociateFederativeEntities($agent, [
+            ['document' => '44444444444445', 'name' => 'Volta', 'exercicios' => $this->parMinimo()],
+        ]);
+        $this->app->em->clear();
+
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entity]);
+        $this->assertCount(1, $relations);
+        $this->assertArrayNotHasKey('missingSince', (array) $relations[0]->metadata);
     }
 
     // ===== Contrato, PAR vazio e volume =====
@@ -378,7 +400,7 @@ class GestorCultJobAssociationTest extends TestCase
         }
     }
 
-    function testMudancaDeQuinzeParaDezEntesRemoveSomenteRelationsDoAgenteAtual()
+    public function testMudancaDeQuinzeParaDezEntesMarcaSomenteVinculosDoAgenteAtual(): void
     {
         $userA = $this->userDirector->createUser();
         $userB = $this->userDirector->createUser();
@@ -397,11 +419,12 @@ class GestorCultJobAssociationTest extends TestCase
 
         $relationsA = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $userA->profile]);
         $relationsB = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $userB->profile]);
-        $entityStillExists = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $removedDocument]);
+        $marcadasA = array_filter($relationsA, fn($relation) => isset(((array) $relation->metadata)['missingSince']));
 
-        $this->assertCount(10, $relationsA);
+        $this->assertCount(15, $relationsA);
+        $this->assertCount(5, $marcadasA);
         $this->assertCount(1, $relationsB);
-        $this->assertNotNull($entityStillExists);
+        $this->assertArrayNotHasKey('missingSince', (array) $relationsB[0]->metadata);
     }
 
     function testPayloadMistoPersisteTodosEntesMesmoSemPar()

@@ -27,6 +27,9 @@ class GestorCultJob
     /** TTL de segurança do lock de concorrência: cobre o tempo de uma sincronização real (chamada à API), liberado no finally ao terminar. */
     private const SYNC_LOCK_TTL = 300;
 
+    private const MISSING_SINCE_KEY = 'missingSince';
+    private const MISSING_SINCE_FORMAT = 'Y-m-d H:i:s';
+
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
@@ -91,35 +94,15 @@ class GestorCultJob
             throw $e;
         }
 
-        // Só revoga o que a origem respondeu sobre o documento — nenhum ente, ou não o conhece.
-        // Falha de rede e corpo ilegível saem pelo catch acima, sem chegar aqui.
-        if ($federativeEntities === []) {
-            $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
-
-            if (UserAccessService::isGestorCultBr()) {
-                $app->disableAccessControl();
-                $app->user->removeRole(Role::GESTOR_CULT_BR);
-                $app->enableAccessControl();
-                $app->log->info("[Gestores CultBR] Role GestorCultBr removida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-            }
-
-            $this->removeFederativeEntityAgentRelations($agent);
-
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            $app->log->info("[Gestores CultBR] Sync concluído (revogação) | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-            return;
-        }
-
-        $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
+        $hasFederativeEntities = $federativeEntities !== [];
+        $shouldGrantGestorRole = $hasFederativeEntities && !UserAccessService::isGestorCultBr();
 
         try {
-            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $shouldGrantGestorRole, $userId) {
+            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $hasFederativeEntities, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
 
                 try {
-                    if ($snapshot !== null) {
+                    if ($snapshot !== null && $hasFederativeEntities) {
                         $this->updateAgentFromGestorResponse($agent, $snapshot);
                         $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
                         $agent->save(false);
@@ -479,47 +462,50 @@ class GestorCultJob
         return true;
     }
 
-    /**
-     * Remove somente as associações entre o agente e Entes Federados.
-     *
-     * @param \MapasCulturais\Entities\Agent $agent
-     * @return void
-     */
-    private function removeFederativeEntityAgentRelations(Agent $agent): void
+    /** Grava a data em que o ente deixou de vir da origem; devolve se a marca é nova. */
+    private function markMissing(FederativeEntityAgentRelation $relation): bool
     {
-        $app = App::i();
-        $em = $app->em;
+        $metadata = (array) ($relation->metadata ?? []);
+        if (isset($metadata[self::MISSING_SINCE_KEY])) {
+            return false;
+        }
 
-        $relations = $app->repo(FederativeEntityAgentRelation::class)->findBy([
-            'agent' => $agent
-        ]);
+        $metadata[self::MISSING_SINCE_KEY] = (new \DateTime())->format(self::MISSING_SINCE_FORMAT);
+        $relation->metadata = $metadata;
+        App::i()->em->persist($relation);
 
-        if (empty($relations)) {
-            $app->log->info("[Gestores CultBR] Nenhuma associação de Ente Federado para remover | Agente ID: {$agent->id}");
+        return true;
+    }
+
+    private function clearMissingMark(FederativeEntityAgentRelation $relation): void
+    {
+        $metadata = (array) ($relation->metadata ?? []);
+        if (!isset($metadata[self::MISSING_SINCE_KEY])) {
             return;
         }
 
-        $em->beginTransaction();
+        unset($metadata[self::MISSING_SINCE_KEY]);
+        $relation->metadata = $metadata === [] ? null : $metadata;
+        App::i()->em->persist($relation);
+        App::i()->log->info("[Gestores CultBR] Ente federado voltou a ser informado pela origem, marca removida | Ente ID: {$relation->owner->id}");
+    }
 
-        try {
-            $removedCount = 0;
-            foreach ($relations as $relation) {
-                if (!$relation->owner instanceof FederativeEntity) {
-                    continue;
-                }
-
-                $em->remove($relation);
-                $removedCount++;
-            }
-
-            $em->flush();
-            $em->commit();
-            $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
-        } catch (\Throwable $e) {
-            $em->rollback();
-            $app->log->error("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
-            throw $e;
+    private function revokeGestorRoleOf(Agent $agent): void
+    {
+        $app = App::i();
+        $user = $agent->user;
+        if (!$user || !$user->is(Role::GESTOR_CULT_BR)) {
+            return;
         }
+
+        $app->disableAccessControl();
+        try {
+            $user->removeRole(Role::GESTOR_CULT_BR);
+        } finally {
+            $app->enableAccessControl();
+        }
+
+        $app->log->warning("[Gestores CultBR] Nenhum vínculo com ente restante, papel GestorCultBr removido | Usuário ID: {$user->id} | Agente ID: {$agent->id}");
     }
 
     /**
@@ -564,12 +550,17 @@ class GestorCultJob
         $em->beginTransaction();
 
         try {
-            // Remove os Entes Federados Associados ao Agente que não estão na API
             $removedCount = 0;
+            $markedCount = 0;
             foreach ($currentByDoc as $doc => $relation) {
-                if (!isset($apiLookup[$doc])) {
-                    $em->remove($relation);
-                    $removedCount++;
+                if (isset($apiLookup[$doc])) {
+                    $this->clearMissingMark($relation);
+                    continue;
+                }
+
+                if ($this->markMissing($relation)) {
+                    $markedCount++;
+                    $app->log->warning("[Gestores CultBR] Ente federado não informado pela origem, vínculo mantido e marcado | Agente ID: {$agent->id} | Ente ID: {$relation->owner->id}");
                 }
             }
 
@@ -616,6 +607,10 @@ class GestorCultJob
                 }
             }
 
+            if (count($currentByDoc) - $removedCount + $newAssociationsCount === 0) {
+                $this->revokeGestorRoleOf($agent);
+            }
+
             // Salva as alterações no banco de dados
             $this->beforeFlushFederativeEntityAssociations();
             if ($beforeFlush) {
@@ -624,7 +619,7 @@ class GestorCultJob
 
             $em->flush();
             $em->commit();
-            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
+            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Marcadas: {$markedCount} | Removidas: {$removedCount}");
         } catch (\Throwable $e) {
             $em->rollback();
             $app->log->error("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());

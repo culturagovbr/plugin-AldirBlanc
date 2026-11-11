@@ -203,7 +203,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
-    function testRespostaSemEntesRevogaRoleERemoveRelations()
+    public function testRespostaSemEntesMantemORoleEMarcaOVinculo(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -216,10 +216,12 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse([])->sync();
         $this->app->em->clear();
 
-        $this->assertFalse(UserAccessService::isGestorCultBr());
+        $this->assertTrue(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
-        $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(1, $relations);
+        $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata);
     }
 
     function testRespostaSemEntesSemRoleEhIdempotente()
