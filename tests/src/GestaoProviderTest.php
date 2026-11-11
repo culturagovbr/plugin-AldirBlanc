@@ -10,6 +10,8 @@ use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
+use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
@@ -38,6 +40,14 @@ class GestaoProviderTest extends TestCase
     private function comResposta(string $json, callable $exercicio): void
     {
         $this->emModoReal([], fn() => $exercicio(new FakeTransport(200, $json)));
+    }
+
+    private function managerTransportOf(GestaoProvider $provider): Transport
+    {
+        $metodo = new \ReflectionMethod(GestaoProvider::class, 'managerTransport');
+        $metodo->setAccessible(true);
+
+        return $metodo->invoke($provider);
     }
 
     function testSeIdentificaComoAGestao()
@@ -261,5 +271,21 @@ class GestaoProviderTest extends TestCase
             $this->assertSame('PUT', $outcome->method);
             $this->assertSame(self::HOST . '/integracao/oportunidades/7', $outcome->endpoint);
         });
+    }
+
+    public function testBuscaDoGestorSemTransporteInjetadoUsaOTempoCurtoDoLogin(): void
+    {
+        $transporte = $this->managerTransportOf(new GestaoProvider());
+
+        $this->assertInstanceOf(CurlTransport::class, $transporte);
+        $this->assertSame(10, $transporte->connectTimeout);
+        $this->assertSame(10, $transporte->timeout);
+    }
+
+    public function testBuscaDoGestorComTransporteInjetadoUsaOInjetado(): void
+    {
+        $injetado = new FakeTransport();
+
+        $this->assertSame($injetado, $this->managerTransportOf(new GestaoProvider($injetado)));
     }
 }
