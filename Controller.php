@@ -926,12 +926,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         if ($syncStarted && !$syncCompleted && $this->isSyncSessionStale()) {
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+            $this->enterDespiteSyncFailure('sessão de sincronização vencida');
             $syncCompleted = true;
-            $hasError = true;
-            $errorMessage = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+            $hasError = false;
         }
 
         // Se o sync foi concluído, retorna pronto (com ou sem erro)

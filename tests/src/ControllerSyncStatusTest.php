@@ -367,7 +367,7 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
     }
 
-    function testCheckSyncStatusStaleMarcaErroControlado()
+    public function testCheckSyncStatusSessaoVencidaEntraMesmoAssim(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
@@ -375,13 +375,8 @@ class ControllerSyncStatusTest extends TestCase
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => true,
-            'errorMessage' => GestorCultJob::API_UNAVAILABLE_MESSAGE,
-        ], $payload);
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+        $this->assertSame(['ready' => true, 'error' => false, 'errorMessage' => null], $payload);
+        $this->assertSessaoDegradada();
     }
 
     function testLogoutOnErrorLimpaFlagsERetornaRedirect()
