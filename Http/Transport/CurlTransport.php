@@ -8,11 +8,18 @@ class CurlTransport implements Transport
 {
     private const CONNECT_TIMEOUT = 30;
     private const TIMEOUT = 60;
+    private const LOGIN_SYNC_TIMEOUT = 10;
 
     public function __construct(
         public readonly int $connectTimeout = self::CONNECT_TIMEOUT,
         public readonly int $timeout = self::TIMEOUT,
     ) {
+    }
+
+    /** Transporte da busca do gestor no login, que não pode segurar o usuário esperando a API. */
+    public static function forLoginSync(): static
+    {
+        return new static(self::LOGIN_SYNC_TIMEOUT, self::LOGIN_SYNC_TIMEOUT);
     }
 
     public function send(string $method, string $url, array $headers, ?string $body = null): TransportResponse

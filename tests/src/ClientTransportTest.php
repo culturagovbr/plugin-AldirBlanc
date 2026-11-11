@@ -235,4 +235,14 @@ class ClientTransportTest extends TestCase
         $this->assertSame(30, $transporte->handles[0]->opcoes[CURLOPT_CONNECTTIMEOUT]);
         $this->assertSame(60, $transporte->handles[0]->opcoes[CURLOPT_TIMEOUT]);
     }
+
+    public function testTransporteDoLoginEsperaDezSegundosNoMaximo(): void
+    {
+        $transporte = SpyCurlTransport::forLoginSync();
+
+        $transporte->send('GET', self::HOST . '/auth/pessoa/06575305300/entes', []);
+
+        $this->assertSame(10, $transporte->handles[0]->opcoes[CURLOPT_CONNECTTIMEOUT]);
+        $this->assertSame(10, $transporte->handles[0]->opcoes[CURLOPT_TIMEOUT]);
+    }
 }
