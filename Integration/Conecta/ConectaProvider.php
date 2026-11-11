@@ -42,7 +42,7 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
     private const REFUSED_STATUSES = [401, 403];
 
     /** A Conecta responde 404 tanto para CPF que ela não conhece quanto para rota inexistente. */
-    private const UNKNOWN_DOCUMENT_DETAIL = '/n[ãa]o\s+(?:foi\s+)?encontrad[ao]/iu';
+    private const UNKNOWN_DOCUMENT_DETAIL = '/\bpessoa\b.*\bn[ãa]o\s+(?:foi\s+)?encontrad[ao]\b/iu';
 
     public function __construct(private readonly ?Transport $transport = null)
     {

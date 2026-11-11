@@ -144,6 +144,52 @@ class ConectaProviderTest extends TestCase
         }, 404);
     }
 
+    public function testVariacaoDoTextoDaPessoaContinuaDocumentoInexistente(): void
+    {
+        foreach ([
+            'Pessoa não encontrada',
+            'Pessoa com o CPF informado não foi encontrada.',
+            'PESSOA COM O CPF FORNECIDO NAO ENCONTRADA NO SISTEMA',
+        ] as $detail) {
+            $this->comResposta(json_encode(['detail' => $detail]), function (FakeTransport $transporte) use ($detail) {
+                $snapshot = (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+
+                $this->assertNull($snapshot, $detail);
+            }, 404);
+        }
+    }
+
+    /** "Não encontrado" de outro recurso não diz nada sobre a pessoa, e não pode revogar ninguém. */
+    public function testQuatrocentosEQuatroDeOutroRecursoContinuaErro(): void
+    {
+        foreach ([
+            'Oportunidade não encontrada',
+            'Ente federado não encontrado',
+            'Recurso não foi encontrado',
+        ] as $detail) {
+            $this->comResposta(json_encode(['detail' => $detail]), function (FakeTransport $transporte) use ($detail) {
+                try {
+                    (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+                    $this->fail("Esperava erro no 404 \"{$detail}\"");
+                } catch (IntegrationError $e) {
+                    $this->assertSame(404, $e->httpStatus(), $detail);
+                }
+            }, 404);
+        }
+    }
+
+    public function testQuatrocentosEQuatroComCorpoVazioContinuaErro(): void
+    {
+        $this->comResposta('', function (FakeTransport $transporte) {
+            try {
+                (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+                $this->fail('Esperava erro no 404 de corpo vazio');
+            } catch (IntegrationError $e) {
+                $this->assertSame(404, $e->httpStatus());
+            }
+        }, 404);
+    }
+
     function testEnvelopeDaConectaViraSnapshotComOsEntes()
     {
         $json = json_encode([
