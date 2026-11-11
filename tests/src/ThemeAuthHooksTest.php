@@ -35,6 +35,7 @@ class ThemeAuthHooksTest extends TestCase
         'gestor_cult_sync_started_at',
         'gestor_cult_sync_error',
         'gestor_cult_sync_error_message',
+        'gestor_cult_sync_degraded',
     ];
 
     protected function setUp(): void
@@ -326,5 +327,15 @@ class ThemeAuthHooksTest extends TestCase
         $_SESSION['gestor_cult_sync_completed'] = true;
 
         $this->assertRedirectPara('completeProfile', 'GET', 'panel', 'index');
+    }
+
+    public function testAuthSuccessfulLimpaMarcaDeModoDegradado(): void
+    {
+        $this->login($this->userDirector->createUser());
+        $_SESSION['gestor_cult_sync_degraded'] = true;
+
+        $this->app->applyHookBoundTo($this->app->user, 'auth.successful');
+
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
     }
 }
