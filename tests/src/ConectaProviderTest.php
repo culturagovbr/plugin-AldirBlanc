@@ -8,6 +8,8 @@ use AldirBlanc\Dtos\OpportunityId;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Integration\ValidatesCredential;
@@ -53,6 +55,14 @@ class ConectaProviderTest extends TestCase
     private function comResposta(string $json, callable $exercicio, int $status = 200): void
     {
         $this->comConfig([], fn() => $exercicio(new FakeTransport($status, $json)));
+    }
+
+    private function managerTransportOf(ConectaProvider $provider): Transport
+    {
+        $metodo = new \ReflectionMethod(ConectaProvider::class, 'managerTransport');
+        $metodo->setAccessible(true);
+
+        return $metodo->invoke($provider);
     }
 
     function testSeIdentificaComoAConecta()
@@ -290,5 +300,21 @@ class ConectaProviderTest extends TestCase
             $this->assertFalse($check->verified);
             $this->assertFalse($check->valid);
         });
+    }
+
+    public function testBuscaDoGestorSemTransporteInjetadoUsaOTempoCurtoDoLogin(): void
+    {
+        $transporte = $this->managerTransportOf(new ConectaProvider());
+
+        $this->assertInstanceOf(CurlTransport::class, $transporte);
+        $this->assertSame(10, $transporte->connectTimeout);
+        $this->assertSame(10, $transporte->timeout);
+    }
+
+    public function testBuscaDoGestorComTransporteInjetadoUsaOInjetado(): void
+    {
+        $injetado = new FakeTransport();
+
+        $this->assertSame($injetado, $this->managerTransportOf(new ConectaProvider($injetado)));
     }
 }

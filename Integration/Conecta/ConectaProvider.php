@@ -16,6 +16,7 @@ use AldirBlanc\Enum\Mode;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Http\Transport\CurlTransport;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Conecta\Http\EntesClient;
 use AldirBlanc\Integration\Conecta\Http\FormularioEstruturaClient;
@@ -59,7 +60,7 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
     public function fetchManager(GestorDocument $document): ?ManagerSnapshot
     {
         try {
-            $resposta = (new EntesClient($document, $this->transport))->get();
+            $resposta = (new EntesClient($document, $this->managerTransport()))->get();
         } catch (IntegrationError $e) {
             if ($this->isUnknownDocument($e)) {
                 return null;
@@ -69,6 +70,11 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
         }
 
         return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: false, documento: $document->document);
+    }
+
+    private function managerTransport(): Transport
+    {
+        return $this->transport ?? CurlTransport::forLoginSync();
     }
 
     /** O 404 genérico pode ser endereço errado, e revogaria todo gestor que passasse por ele. */
