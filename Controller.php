@@ -746,6 +746,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $_SESSION['gestor_cult_sync_started_at'] = time();
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['gestor_cult_sync_degraded']);
 
         // Dispara a sincronização em background
         try {
@@ -763,14 +764,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             }
 
             if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
-                $_SESSION['gestor_cult_sync_completed'] = true;
-
-                $this->json([
-                    'started' => false,
-                    'error' => true,
-                    'retryable' => true,
-                    'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
-                ]);
+                $this->enterDespiteSyncFailure((string) $_SESSION['gestor_cult_sync_error']);
+                $this->json(['started' => true, 'degraded' => true]);
                 return;
             }
 
@@ -780,24 +775,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             throw $e;
         } catch (\Throwable $e) {
             $falha = $this->syncFailureFor($e);
-
-            $mensagem = $falha->message();
             $userId = $app->user->id ?? 'N/A';
 
             // Único alerta da falha: o job registra o contexto, mas não sabe classificar a causa.
             $app->log->critical("[Gestores CultBR] Sincronização falhou ({$falha->value}) | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
 
-            // Em caso de erro, marca como concluído para não travar
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            $_SESSION['gestor_cult_sync_error'] = $falha->value;
-            $_SESSION['gestor_cult_sync_error_message'] = $mensagem;
-
-            $this->json([
-                'started' => false,
-                'error' => true,
-                'retryable' => $falha->isRetryable(),
-                'errorMessage' => $mensagem,
-            ]);
+            $this->enterDespiteSyncFailure($falha->value);
+            $this->json(['started' => true, 'degraded' => true]);
             return;
         }
 
@@ -858,6 +842,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ]);
     }
 
+    /** Falha da sincronização nunca barra a entrada: papel e vínculos gravados ficam como estão. */
+    private function enterDespiteSyncFailure(string $causa): void
+    {
+        $_SESSION['gestor_cult_sync_completed'] = true;
+        $_SESSION['gestor_cult_sync_degraded'] = true;
+        unset($_SESSION['gestor_cult_sync_error']);
+        unset($_SESSION['gestor_cult_sync_error_message']);
+
+        $userId = App::i()->user->id ?? 'N/A';
+        App::i()->log->warning("[Gestores CultBR] Entrando apesar da falha da sincronização (modo degradado) | Usuário ID: {$userId} | Causa: {$causa}");
+    }
+
     protected function isSyncSessionStale(): bool
     {
         $startedAt = $_SESSION['gestor_cult_sync_started_at'] ?? null;
@@ -882,6 +878,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         unset($_SESSION['gestor_cult_sync_started_at']);
         unset($_SESSION['gestor_cult_sync_error']);
         unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['gestor_cult_sync_degraded']);
         unset($_SESSION['selectedFederativeEntity']);
         unset($_SESSION['federative_entity_redirect_uri']);
         
