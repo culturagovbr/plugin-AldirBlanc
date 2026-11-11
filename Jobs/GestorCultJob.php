@@ -5,6 +5,7 @@ namespace AldirBlanc\Jobs;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
+use MapasCulturais\Entities\OpportunityMeta;
 use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
@@ -27,6 +28,7 @@ class GestorCultJob
     /** TTL de segurança do lock de concorrência: cobre o tempo de uma sincronização real (chamada à API), liberado no finally ao terminar. */
     private const SYNC_LOCK_TTL = 300;
 
+    private const MISSING_ENTITY_GRACE_DAYS = 7;
     private const MISSING_SINCE_KEY = 'missingSince';
     private const MISSING_SINCE_FORMAT = 'Y-m-d H:i:s';
 
@@ -490,6 +492,30 @@ class GestorCultJob
         App::i()->log->info("[Gestores CultBR] Ente federado voltou a ser informado pela origem, marca removida | Ente ID: {$relation->owner->id}");
     }
 
+    private function isMissingMarkExpired(FederativeEntityAgentRelation $relation): bool
+    {
+        $missingSince = ((array) ($relation->metadata ?? []))[self::MISSING_SINCE_KEY] ?? null;
+        $markedAt = is_string($missingSince) ? \DateTime::createFromFormat(self::MISSING_SINCE_FORMAT, $missingSince) : false;
+
+        return $markedAt !== false && $markedAt <= new \DateTime('-' . self::MISSING_ENTITY_GRACE_DAYS . ' days');
+    }
+
+    private function agentOwnsOpportunityInEntity(Agent $agent, FederativeEntity $entity): bool
+    {
+        $metas = App::i()->repo(OpportunityMeta::class)->findBy([
+            'key' => 'federativeEntityId',
+            'value' => (string) $entity->id,
+        ]);
+
+        foreach ($metas as $meta) {
+            if ($meta->owner?->owner?->id === $agent->id) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function revokeGestorRoleOf(Agent $agent): void
     {
         $app = App::i();
@@ -555,6 +581,13 @@ class GestorCultJob
             foreach ($currentByDoc as $doc => $relation) {
                 if (isset($apiLookup[$doc])) {
                     $this->clearMissingMark($relation);
+                    continue;
+                }
+
+                if ($this->isMissingMarkExpired($relation) && !$this->agentOwnsOpportunityInEntity($agent, $relation->owner)) {
+                    $em->remove($relation);
+                    $removedCount++;
+                    $app->log->warning("[Gestores CultBR] Vínculo com ente não informado pela origem há mais de " . self::MISSING_ENTITY_GRACE_DAYS . " dias removido | Agente ID: {$agent->id} | Ente ID: {$relation->owner->id}");
                     continue;
                 }
 
