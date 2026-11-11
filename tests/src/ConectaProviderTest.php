@@ -190,6 +190,20 @@ class ConectaProviderTest extends TestCase
         }, 404);
     }
 
+    public function testTextoDaPessoaForaDeUmQuatrocentosEQuatroContinuaErro(): void
+    {
+        $json = json_encode(['detail' => 'Pessoa com o CPF fornecido não encontrada no sistema.']);
+
+        $this->comResposta($json, function (FakeTransport $transporte) {
+            try {
+                (new ConectaProvider($transporte))->fetchManager(new GestorDocument(self::DOCUMENTO));
+                $this->fail('Esperava erro no 500, mesmo com o texto da pessoa');
+            } catch (IntegrationError $e) {
+                $this->assertSame(500, $e->httpStatus());
+            }
+        }, 500);
+    }
+
     function testEnvelopeDaConectaViraSnapshotComOsEntes()
     {
         $json = json_encode([
