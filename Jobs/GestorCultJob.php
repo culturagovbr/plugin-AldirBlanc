@@ -8,7 +8,6 @@ use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\OpportunityMeta;
 use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
-use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Dtos\FederativeEntitySnapshot;
@@ -21,7 +20,6 @@ use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
-    public const API_UNAVAILABLE_MESSAGE = SyncFailure::MENSAGEM_API_INDISPONIVEL;
     private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
