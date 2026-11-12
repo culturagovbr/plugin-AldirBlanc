@@ -806,4 +806,84 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertCount(1, $relacoes);
         $this->assertSame('01612689000178', $relacoes[0]->owner->document);
     }
+
+    private static int $proximoDocumento = 92000000001;
+
+    private function sincronizarComEntes(array $entes): void
+    {
+        $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->setGestorResponse(['entes_federados' => $entes]);
+        $job->sync();
+        $this->app->em->clear();
+    }
+
+    private function vinculoDoAgente($agent, string $document): ?FederativeEntityAgentRelation
+    {
+        foreach ($this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $agent]) as $relation) {
+            if ($relation->owner->document === $document) {
+                return $relation;
+            }
+        }
+
+        return null;
+    }
+
+    public function testExerciciosNuloOuAusenteAssociaOEnteSemArvore(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000001', 'name' => 'Exercicios Nulo', 'exercicios' => null],
+            ['document' => '67000000000002', 'name' => 'Sem Exercicios'],
+        ]);
+
+        foreach (['67000000000001', '67000000000002'] as $document) {
+            $this->assertNotNull($this->vinculoDoAgente($user->profile, $document), $document);
+            $this->assertSame([], $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $document])->exercices);
+        }
+    }
+
+    public function testCampoExtraNoEnteEhIgnorado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000003', 'name' => 'Com Campo Novo', 'uf' => 'DF', 'situacao_par' => 'em_analise', 'exercicios' => $this->parMinimo()],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '67000000000003'));
+    }
+
+    public function testDocumentoComPontuacaoCasaComOVinculoExistente(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('00394601000126', 'Distrito Federal'));
+
+        $this->sincronizarComEntes([
+            ['document' => '00.394.601/0001-26', 'name' => 'Distrito Federal', 'exercicios' => []],
+        ]);
+
+        $this->assertCount(1, $this->app->repo(FederativeEntity::class)->findBy(['document' => '00394601000126']));
+        $relation = $this->vinculoDoAgente($user->profile, '00394601000126');
+        $this->assertNotNull($relation);
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
+    public function testEnteSemDocumentoEhSoDescartado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['name' => 'Sem Documento', 'exercicios' => []],
+            ['document' => '67000000000006', 'name' => 'Ente Valido', 'exercicios' => []],
+        ]);
+
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(1, $relations);
+        $this->assertSame('67000000000006', $relations[0]->owner->document);
+    }
 }
