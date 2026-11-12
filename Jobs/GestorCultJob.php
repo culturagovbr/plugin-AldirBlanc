@@ -32,6 +32,9 @@ class GestorCultJob
     private const MISSING_SINCE_KEY = 'missingSince';
     private const MISSING_SINCE_FORMAT = 'Y-m-d H:i:s';
 
+    /** Chave dos filhos em cada nível da árvore do PAR: exercício, meta, ação. */
+    private const PAR_TREE_CHILDREN = ['metas', 'acoes', 'atividades'];
+
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
@@ -317,11 +320,43 @@ class GestorCultJob
         return array_keys($data) === range(0, count($data) - 1);
     }
 
-    private function normalizeEntityExercises(array $data): array
+    /** Devolve a árvore do PAR só com os nós válidos. */
+    private function sanitizeEntityExercises(array $data): array
     {
-        $exercises = $data['exercicios'] ?? [];
+        return $this->sanitizeParNodes($data['exercicios'] ?? null, 0);
+    }
 
-        return is_array($exercises) && ($exercises === [] || $this->isValidExercisesList($exercises)) ? $exercises : [];
+    /** Mantém os nós com id, descendo pelos filhos. */
+    private function sanitizeParNodes(mixed $nodes, int $level): array
+    {
+        if ($nodes === null) {
+            return [];
+        }
+
+        if (!is_array($nodes) || !$this->isListArray($nodes)) {
+            return [];
+        }
+
+        $childKey = self::PAR_TREE_CHILDREN[$level] ?? null;
+        $kept = [];
+        foreach ($nodes as $node) {
+            if (!is_array($node) || !$this->hasParNodeId($node)) {
+                continue;
+            }
+
+            if ($childKey !== null && array_key_exists($childKey, $node)) {
+                $node[$childKey] = $this->sanitizeParNodes($node[$childKey], $level + 1);
+            }
+
+            $kept[] = $node;
+        }
+
+        return $kept;
+    }
+
+    private function hasParNodeId(array $node): bool
+    {
+        return isset($node['id']) && is_scalar($node['id']) && trim((string) $node['id']) !== '';
     }
 
     /** Resposta sem árvore válida não apaga a gravada: sem ela o gestor não cria oportunidade. */
@@ -436,29 +471,6 @@ class GestorCultJob
         }
 
         return null;
-    }
-
-    private function isValidExercisesList($exercises): bool
-    {
-        if (!is_array($exercises) || $exercises === [] || !$this->isListArray($exercises)) {
-            return false;
-        }
-
-        foreach ($exercises as $exercise) {
-            if (!is_array($exercise)) {
-                return false;
-            }
-
-            if (!array_key_exists('id', $exercise) || !array_key_exists('ano', $exercise) || !array_key_exists('metas', $exercise)) {
-                return false;
-            }
-
-            if (!is_array($exercise['metas'])) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /** Grava a data em que o ente deixou de vir da origem; devolve se a marca é nova. */
@@ -604,7 +616,7 @@ class GestorCultJob
             foreach ($federativeEntities as $data) {
                 $doc = trim((string) $data['document']);
                 $name = trim((string) $data['name']);
-                $exercicios = $this->normalizeEntityExercises($data);
+                $exercicios = $this->sanitizeEntityExercises($data);
                 $isMalformedTree = !empty($data['exercicios']) && $exercicios === [];
 
                 $entity = $entitiesByDoc[$doc] ?? null;

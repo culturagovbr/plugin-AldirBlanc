@@ -957,4 +957,104 @@ class GestorCultJobAssociationTest extends TestCase
 
         $this->assertArrayNotHasKey('missingSince', (array) $this->vinculoDoAgente($user->profile, '67000000000008')->metadata);
     }
+
+    /** @return array{0: ?array, 1: \Monolog\Handler\TestHandler} a árvore gravada do ente e o log da sincronização */
+    private function arvoreGravadaApos(string $document, array $exercicios): array
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
+            ['document' => $document, 'name' => 'Ente da Árvore', 'exercicios' => $exercicios],
+        ]));
+
+        return [$this->app->repo(FederativeEntity::class)->findOneBy(['document' => $document])->exercices, $capturado];
+    }
+
+    public function testMetaComAcoesNulaGravaListaVazia(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000001', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => null]]],
+        ]);
+
+        $this->assertSame([['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => []]]]], $arvore);
+    }
+
+    public function testAcaoSemIdEntreValidasEhDescartadaComAvisoEORestoEhGravado(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000002', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [
+                ['id' => 100, 'nome' => 'Primeira'],
+                ['nome' => 'Sem id'],
+                ['id' => 102, 'nome' => 'Terceira'],
+            ]]]],
+        ]);
+
+        $this->assertSame([['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [
+            ['id' => 100, 'nome' => 'Primeira'],
+            ['id' => 102, 'nome' => 'Terceira'],
+        ]]]]], $arvore);
+        $this->assertFalse($log->hasWarningThatContains('Árvore do PAR preservada'));
+    }
+
+    public function testExercicioSemAnoEhMantido(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000003', [['id' => 1, 'metas' => []]]);
+
+        $this->assertSame([['id' => 1, 'metas' => []]], $arvore);
+    }
+
+    public function testExercicioSemIdEhDescartadoEOsDemaisGravados(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000004', [
+            ['ano' => 2025, 'metas' => []],
+            ['id' => 2, 'ano' => 2026],
+        ]);
+
+        $this->assertSame([['id' => 2, 'ano' => 2026]], $arvore, 'nó sem a lista de filhos fica sem a chave');
+    }
+
+    public function testAtividadeComIdAusenteVazioOuInvalidoEhDescartada(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000005', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => [
+                ['id' => 1000],
+                ['id' => ' '],
+                ['id' => null],
+                ['id' => ['1001']],
+            ]]]]]],
+        ]);
+
+        $this->assertSame([['id' => 1000]], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+    }
+
+    public function testNoQueNaoEhObjetoEhDescartado(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000006', [
+            ['id' => 1, 'ano' => 2025, 'metas' => ['meta solta', ['id' => 11]]],
+        ]);
+
+        $this->assertSame([['id' => 11]], $arvore[0]['metas']);
+    }
+
+    public function testListaDeFilhosForaDoFormatoViraVaziaComAviso(): void
+    {
+        [$arvore] = $this->arvoreGravadaApos('68000000000007', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [
+                ['id' => 10, 'acoes' => ['id' => 100]],
+                ['id' => 11, 'acoes' => 'nenhuma'],
+            ]],
+        ]);
+
+        $this->assertSame([['id' => 10, 'acoes' => []], ['id' => 11, 'acoes' => []]], $arvore[0]['metas']);
+    }
+
+    public function testAtividadeNaoTemFilhosSaneados(): void
+    {
+        $atividade = ['id' => 1000, 'itens' => [['sem' => 'id']]];
+        [$arvore] = $this->arvoreGravadaApos('68000000000008', [
+            ['id' => 1, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => [$atividade]]]]]],
+        ]);
+
+        $this->assertSame([$atividade], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+    }
 }
