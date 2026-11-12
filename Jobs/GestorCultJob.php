@@ -35,6 +35,8 @@ class GestorCultJob
     /** Chave dos filhos em cada nível da árvore do PAR: exercício, meta, ação. */
     private const PAR_TREE_CHILDREN = ['metas', 'acoes', 'atividades'];
 
+    private const PAR_DISCARD_LOG_SAMPLE = 5;
+
     public function __construct(GestorDocument $gestorDocument)
     {
         $this->gestorDocument = $gestorDocument;
@@ -320,32 +322,47 @@ class GestorCultJob
         return array_keys($data) === range(0, count($data) - 1);
     }
 
-    /** Devolve a árvore do PAR só com os nós válidos. */
+    /** Devolve a árvore do PAR só com os nós válidos e registra os descartes no log, numa linha por ente. */
     private function sanitizeEntityExercises(array $data): array
     {
-        return $this->sanitizeParNodes($data['exercicios'] ?? null, 0);
+        $discards = [];
+        $exercises = $this->sanitizeParNodes($data['exercicios'] ?? null, 0, 'exercicios', $discards);
+
+        if ($discards !== []) {
+            $sample = implode(', ', array_map(
+                fn(array $discard) => "{$discard[0]} ({$discard[1]})",
+                array_slice($discards, 0, self::PAR_DISCARD_LOG_SAMPLE),
+            ));
+            App::i()->log->warning("[Gestores CultBR] Nós da árvore do PAR descartados | Ente: {$data['document']} | Quantidade: " . count($discards) . " | Primeiros: {$sample}");
+        }
+
+        return $exercises;
     }
 
-    /** Mantém os nós com id, descendo pelos filhos. */
-    private function sanitizeParNodes(mixed $nodes, int $level): array
+    /** Mantém os nós com id, descendo pelos filhos; cada descarte entra em $discards com o caminho e o motivo. */
+    private function sanitizeParNodes(mixed $nodes, int $level, string $path, array &$discards): array
     {
         if ($nodes === null) {
             return [];
         }
 
         if (!is_array($nodes) || !$this->isListArray($nodes)) {
+            $discards[] = [$path, 'não é lista'];
+
             return [];
         }
 
         $childKey = self::PAR_TREE_CHILDREN[$level] ?? null;
         $kept = [];
-        foreach ($nodes as $node) {
+        foreach ($nodes as $index => $node) {
+            $nodePath = "{$path}[{$index}]";
             if (!is_array($node) || !$this->hasParNodeId($node)) {
+                $discards[] = [$nodePath, is_array($node) ? 'sem id' : 'não é objeto'];
                 continue;
             }
 
             if ($childKey !== null && array_key_exists($childKey, $node)) {
-                $node[$childKey] = $this->sanitizeParNodes($node[$childKey], $level + 1);
+                $node[$childKey] = $this->sanitizeParNodes($node[$childKey], $level + 1, "{$nodePath}.{$childKey}", $discards);
             }
 
             $kept[] = $node;

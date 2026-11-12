@@ -972,11 +972,12 @@ class GestorCultJobAssociationTest extends TestCase
 
     public function testMetaComAcoesNulaGravaListaVazia(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000001', [
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000001', [
             ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => null]]],
         ]);
 
         $this->assertSame([['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => []]]]], $arvore);
+        $this->assertFalse($log->hasWarningThatContains('Nós da árvore do PAR descartados'));
     }
 
     public function testAcaoSemIdEntreValidasEhDescartadaComAvisoEORestoEhGravado(): void
@@ -993,29 +994,32 @@ class GestorCultJobAssociationTest extends TestCase
             ['id' => 100, 'nome' => 'Primeira'],
             ['id' => 102, 'nome' => 'Terceira'],
         ]]]]], $arvore);
+        $this->assertTrue($log->hasWarningThatContains('Nós da árvore do PAR descartados | Ente: 68000000000002 | Quantidade: 1 | Primeiros: exercicios[0].metas[0].acoes[1] (sem id)'));
         $this->assertFalse($log->hasWarningThatContains('Árvore do PAR preservada'));
     }
 
     public function testExercicioSemAnoEhMantido(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000003', [['id' => 1, 'metas' => []]]);
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000003', [['id' => 1, 'metas' => []]]);
 
         $this->assertSame([['id' => 1, 'metas' => []]], $arvore);
+        $this->assertFalse($log->hasWarningThatContains('Nós da árvore do PAR descartados'));
     }
 
     public function testExercicioSemIdEhDescartadoEOsDemaisGravados(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000004', [
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000004', [
             ['ano' => 2025, 'metas' => []],
             ['id' => 2, 'ano' => 2026],
         ]);
 
         $this->assertSame([['id' => 2, 'ano' => 2026]], $arvore, 'nó sem a lista de filhos fica sem a chave');
+        $this->assertTrue($log->hasWarningThatContains('Primeiros: exercicios[0] (sem id)'));
     }
 
     public function testAtividadeComIdAusenteVazioOuInvalidoEhDescartada(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000005', [
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000005', [
             ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => [
                 ['id' => 1000],
                 ['id' => ' '],
@@ -1025,20 +1029,24 @@ class GestorCultJobAssociationTest extends TestCase
         ]);
 
         $this->assertSame([['id' => 1000]], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[3] (sem id)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[1] (sem id)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[2] (sem id)'));
     }
 
     public function testNoQueNaoEhObjetoEhDescartado(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000006', [
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000006', [
             ['id' => 1, 'ano' => 2025, 'metas' => ['meta solta', ['id' => 11]]],
         ]);
 
         $this->assertSame([['id' => 11]], $arvore[0]['metas']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0] (não é objeto)'));
     }
 
     public function testListaDeFilhosForaDoFormatoViraVaziaComAviso(): void
     {
-        [$arvore] = $this->arvoreGravadaApos('68000000000007', [
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000007', [
             ['id' => 1, 'ano' => 2025, 'metas' => [
                 ['id' => 10, 'acoes' => ['id' => 100]],
                 ['id' => 11, 'acoes' => 'nenhuma'],
@@ -1046,6 +1054,8 @@ class GestorCultJobAssociationTest extends TestCase
         ]);
 
         $this->assertSame([['id' => 10, 'acoes' => []], ['id' => 11, 'acoes' => []]], $arvore[0]['metas']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes (não é lista)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[1].acoes (não é lista)'));
     }
 
     public function testAtividadeNaoTemFilhosSaneados(): void
@@ -1056,5 +1066,22 @@ class GestorCultJobAssociationTest extends TestCase
         ]);
 
         $this->assertSame([$atividade], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+    }
+
+    public function testDescartesDoEnteSaemNumaLinhaSoComOsPrimeirosCaminhos(): void
+    {
+        $atividadesSemId = array_fill(0, 7, ['nome' => 'Sem id']);
+        [, $log] = $this->arvoreGravadaApos('68000000000009', [
+            ['id' => 1, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => $atividadesSemId]]]]],
+        ]);
+
+        $linhas = array_values(array_filter(
+            $log->getRecords(),
+            fn($registro) => str_contains($registro['message'], 'Nós da árvore do PAR descartados'),
+        ));
+        $this->assertCount(1, $linhas);
+        $this->assertStringContainsString('Quantidade: 7', $linhas[0]['message']);
+        $this->assertStringContainsString('atividades[4] (sem id)', $linhas[0]['message']);
+        $this->assertStringNotContainsString('atividades[5]', $linhas[0]['message']);
     }
 }
