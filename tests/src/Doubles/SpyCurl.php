@@ -9,6 +9,8 @@ class SpyCurl extends Curl
 {
     public array $chamadas = [];
 
+    public array $opcoes = [];
+
     public function get($url, $data = array())
     {
         $this->chamadas[] = 'GET';
@@ -21,6 +23,8 @@ class SpyCurl extends Curl
 
     public function setOpt($option, $value)
     {
+        $this->opcoes[$option] = $value;
+
         if ($option === CURLOPT_CUSTOMREQUEST) {
             $this->chamadas[] = "CUSTOMREQUEST:{$value}";
         }

@@ -445,4 +445,24 @@ class ControllerFederativeEntityOpportunitiesTest extends TestCase
         $result2 = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
         $this->assertCount(1, $result2['data'], 'Cache de entity1 não deve ser reutilizado para entity2');
     }
+
+    public function testDocumentoDaUrlEhPadronizadoAntesDaBusca(): void
+    {
+        $user = $this->userDirector->createUser();
+        $subsite = $this->subsite($user);
+        $alfanumerico = $this->federativeEntity('12ABC34501DE35', 'Ente Alfanumérico');
+        $numerico = $this->federativeEntity('01234567000189', 'Ente Numérico');
+        $daAlfanumerica = $this->eligibleOpportunity($user, $subsite, $alfanumerico, 'Oportunidade Alfanumérica');
+        $daNumerica = $this->eligibleOpportunity($user, $subsite, $numerico, 'Oportunidade Numérica');
+
+        foreach (['12abc34501de35' => $daAlfanumerica->id, '1234567000189' => $daNumerica->id] as $naUrl => $esperada) {
+            $this->setRequest('GET', $naUrl);
+            $controller = $this->controller($subsite->id);
+
+            $payload = $this->callJson(fn() => $controller->callGetIntegrationFederativeEntityOpportunities());
+
+            $this->assertSame(200, $this->responseStatus(), $naUrl);
+            $this->assertSame([$esperada], array_column($payload['data'], 'id'), $naUrl);
+        }
+    }
 }

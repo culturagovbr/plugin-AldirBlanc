@@ -72,4 +72,12 @@ class ThemeFederativeEntityAdminServiceTest extends TestCase
 
         $this->assertSame([], $dados['parExercicios']);
     }
+
+    public function testCnpjAlfanumericoEhFormatadoComAMascaraDoCnpj(): void
+    {
+        $service = new FederativeEntityAdminService($this->app);
+
+        $this->assertSame('12.ABC.345/01DE-35', $service->getRequestedEntityData($this->federativeEntity('12ABC34501DE35', []))['cnpj']);
+        $this->assertSame('71.111.111/1111-19', $service->getRequestedEntityData($this->federativeEntity('71111111111119', []))['cnpj']);
+    }
 }

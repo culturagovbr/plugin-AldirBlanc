@@ -2,10 +2,12 @@
 
 namespace Tests\AldirBlanc;
 
-use AldirBlanc\Enum\SyncFailure;
+use AldirBlanc\Entities\FederativeEntity;
+use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Enum\Role;
 use AldirBlanc\Exceptions\IntegrationError;
-use AldirBlanc\Jobs\GestorCultJob;
 use Laminas\Diactoros\Response;
+use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Exceptions\Halt;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableController;
@@ -21,8 +23,7 @@ class ControllerSyncStatusTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
+        'gestor_cult_sync_degraded',
     ];
 
     protected function setUp(): void
@@ -30,6 +31,17 @@ class ControllerSyncStatusTest extends TestCase
         parent::setUp();
         $this->login($this->userDirector->createUser());
         $this->clearSyncSession();
+    }
+
+    private function comMarcaDeErroAntiga(callable $exercicio): mixed
+    {
+        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+
+        try {
+            return $exercicio();
+        } finally {
+            unset($_SESSION['gestor_cult_sync_error']);
+        }
     }
 
     private function clearSyncSession(): void
@@ -42,6 +54,66 @@ class ControllerSyncStatusTest extends TestCase
     private function controller(): TestableController
     {
         return new TestableController();
+    }
+
+    private function loginGestorComVinculo(): void
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+
+        $ente = new FederativeEntity();
+        $ente->name = 'Ente Gravado';
+        $ente->document = '55555555000155';
+        $ente->exercices = [];
+        $ente->createTimestamp = new \DateTime();
+        $this->app->em->persist($ente);
+
+        $relation = new FederativeEntityAgentRelation();
+        $relation->agent = $user->profile;
+        $relation->owner = $ente;
+        $relation->hasControl = false;
+        $relation->status = AgentRelation::STATUS_ENABLED;
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+    }
+
+    private function falhaDeTransporte(): TestableController
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback(function () {
+            throw IntegrationError::transport('Connection timed out', 28);
+        });
+
+        return $controller;
+    }
+
+    private function assertEntrouDegradado(array $payload): void
+    {
+        $this->assertSame(['started' => true, 'degraded' => true], $payload);
+        $this->assertSessaoDegradada();
+    }
+
+    private function alertaDaFalha(callable $falha): string
+    {
+        $controller = $this->controller();
+        $controller->setSyncCallback($falha);
+
+        $capturado = $this->capturandoLog(fn() => $this->callJson(fn() => $controller->callStartSync()));
+        $criticos = array_values(array_filter(
+            $capturado->getRecords(),
+            fn($registro) => $registro['level_name'] === 'CRITICAL',
+        ));
+
+        $this->assertCount(1, $criticos);
+        $this->assertEntrouDegradado(json_decode((string) $this->app->response->getBody(), true));
+
+        return $criticos[0]['message'];
+    }
+
+    private function assertSessaoDegradada(): void
+    {
+        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
+        $this->assertTrue($_SESSION['gestor_cult_sync_degraded']);
     }
 
     private function callJson(callable $callback): array
@@ -68,7 +140,6 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertTrue($_SESSION['gestor_cult_sync_started']);
         $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
         $this->assertArrayHasKey('gestor_cult_sync_started_at', $_SESSION);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
     }
 
     function testStartSyncEmAndamentoNaoRechamaJob()
@@ -97,73 +168,22 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(1, $controller->getSyncCalls());
     }
 
-    function testStartSyncComErroMarcadoPeloJobSemExcecaoPreservaErro()
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = 'Falha preservada';
-            return true;
-        });
-
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertSame([
-            'started' => false,
-            'error' => true,
-            'retryable' => true,
-            'errorMessage' => 'Falha preservada',
-        ], $payload);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
-        $this->assertSame('Falha preservada', $_SESSION['gestor_cult_sync_error_message']);
-    }
-
-    function testStartSyncComFalhaAoObterCpfRespondeErroSeguro()
+    public function testFalhaAoObterCpfEntraMesmoAssimSemChamarAApi(): void
     {
         $controller = $this->controller();
         $controller->setCpfException(new \RuntimeException('CPF interno quebrado'));
 
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertEntrouDegradado($this->callJson(fn() => $controller->callStartSync()));
         $this->assertSame(0, $controller->getSyncCalls());
     }
 
-    /** Classificação parcial deixada na sessão não pode vencer a do controller, que vê a exceção. */
-    function testStartSyncComErroRelancadoIgnoraClassificacaoJaGravadaNaSessao()
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = 'Mensagem antiga';
-            throw IntegrationError::http('Credencial recusada', 401);
-        });
-
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('credential_refused', $_SESSION['gestor_cult_sync_error']);
-        $this->assertSame(SyncFailure::CredentialRefused->message(), $payload['errorMessage']);
-        $this->assertFalse($payload['retryable']);
-    }
-
-    /** 401 na Conecta e 403 na Gestão são a mesma causa: credencial que nenhuma espera conserta. */
-    function testCredencialRecusadaNaoEhRetentavelNosDoisStatus()
+    /** 401 na Conecta e 403 na Gestão são a mesma causa. */
+    public function testCredencialRecusadaEhClassificadaNosDoisStatus(): void
     {
         foreach ([401, 403] as $status) {
-            $controller = $this->controller();
-            $controller->setSyncCallback(function () use ($status) {
-                throw IntegrationError::http('Credencial recusada', $status);
-            });
+            $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::http('Credencial recusada', $status));
 
-            $payload = $this->callJson(fn() => $controller->callStartSync());
-
-            $this->assertSame('credential_refused', $_SESSION['gestor_cult_sync_error'], "status {$status}");
-            $this->assertFalse($payload['retryable'], "status {$status}");
-            $this->assertStringNotContainsString('Tente novamente', $payload['errorMessage'], "status {$status}");
+            $this->assertStringContainsString('(credential_refused)', $alerta, "status {$status}");
         }
     }
 
@@ -188,86 +208,78 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertStringContainsString('credential_refused', reset($criticos)['message']);
     }
 
-    /** A tela desiste na hora diante de falha permanente; o texto não pode pedir o contrário. */
-    function testNenhumaFalhaPermanenteConvidaARepetir()
+    public function testCpfAusenteEhErroInternoSemChamarAApi(): void
     {
-        $permanentes = array_filter(SyncFailure::cases(), fn(SyncFailure $falha) => !$falha->isRetryable());
+        $controller = $this->controller();
+        $controller->setGestorCpf('');
 
-        $this->assertNotEmpty($permanentes);
+        $capturado = $this->capturandoLog(fn() => $this->assertEntrouDegradado($this->callJson(fn() => $controller->callStartSync())));
 
-        foreach ($permanentes as $falha) {
-            $this->assertStringNotContainsString('Tente novamente', $falha->message(), $falha->value);
-            $this->assertStringContainsString('repetir não resolve', $falha->message(), $falha->value);
+        $this->assertTrue($capturado->hasCriticalThatContains('Sincronização falhou (internal_error) | Usuário ID: '));
+        $this->assertTrue($capturado->hasCriticalThatContains('Erro: CPF do gestor ausente no perfil'));
+        $this->assertSame(0, $controller->getSyncCalls());
+    }
+
+    public function testCpfNuloNoPerfilEhErroInterno(): void
+    {
+        $controller = $this->controller();
+        $controller->setCpfException(new \TypeError('documentOnlyNumbers(): Argument #1 must be of type string, null given'));
+
+        $capturado = $this->capturandoLog(fn() => $this->callJson(fn() => $controller->callStartSync()));
+
+        $this->assertTrue($capturado->hasCriticalThatContains('Sincronização falhou (internal_error)'));
+    }
+
+    public function testFalhaDeBancoEhErroInterno(): void
+    {
+        $alerta = $this->alertaDaFalha(fn() => throw new \PDOException('SQLSTATE[08006] could not connect to server'));
+
+        $this->assertStringContainsString('(internal_error)', $alerta);
+    }
+
+    /** 404 não é credencial: continua no ramo genérico. */
+    public function testOutroErroHttpNaoViraCredencialRecusada(): void
+    {
+        $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::http('Não encontrado', 404));
+
+        $this->assertStringContainsString('(api_unavailable)', $alerta);
+    }
+
+    public function testFalhaDeConfiguracaoEhClassificadaComoTal(): void
+    {
+        $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::configuration('PNAB_CULTBR_PROVIDER', 'sem valor'));
+
+        $this->assertStringContainsString('(configuration_error)', $alerta);
+    }
+
+    public function testExcecaoDeValorInesperadoDeForaDaIntegracaoEhErroInterno(): void
+    {
+        $alerta = $this->alertaDaFalha(fn() => throw new \UnexpectedValueException('The stream or file "/var/log/app.log" could not be opened'));
+
+        $this->assertStringContainsString('(internal_error)', $alerta);
+    }
+
+    public function testContratoOuCorpoIlegivelDaIntegracaoEhRespostaInesperada(): void
+    {
+        foreach ([IntegrationError::contract('entes_federados deve ser array'), IntegrationError::parse('JSON inválido', 200)] as $erro) {
+            $alerta = $this->alertaDaFalha(fn() => throw $erro);
+
+            $this->assertStringContainsString('(unexpected_response)', $alerta, $erro->kind());
         }
     }
 
-    /** 404 não é credencial: continua no ramo genérico, para a mudança não endurecer demais. */
-    function testOutroErroHttpNaoViraCredencialRecusada()
+    public function testFalhaDeTransporteEhClassificadaComoApiIndisponivel(): void
     {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            throw IntegrationError::http('Não encontrado', 404);
-        });
+        $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::transport('Connection timed out', 28));
 
-        $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+        $this->assertStringContainsString('(api_unavailable)', $alerta);
     }
 
-    /** Nenhuma dessas causas depende do gestor, mas cada uma diz a sua, e nenhuma pede repetição. */
-    function testFalhaDeConfiguracaoNaoEhRetentavelETemMensagemPropria()
+    public function testErroDoServidorEhClassificadoComoApiIndisponivel(): void
     {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            throw IntegrationError::configuration('PNAB_CULTBR_PROVIDER', 'sem valor');
-        });
+        $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::http('Erro HTTP 500', 500));
 
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertFalse($payload['retryable']);
-        $this->assertSame(SyncFailure::ConfigurationError->message(), $payload['errorMessage']);
-        $this->assertStringContainsString('mal configurada', $payload['errorMessage']);
-        $this->assertSame('configuration_error', $_SESSION['gestor_cult_sync_error']);
-    }
-
-    function testRespostaForaDoContratoNaoEhRetentavel()
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            throw new \UnexpectedValueException('Resposta da API CultBr fora do contrato esperado');
-        });
-
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertFalse($payload['retryable']);
-        $this->assertSame(SyncFailure::UnexpectedResponse->message(), $payload['errorMessage']);
-        $this->assertStringContainsString('fora do esperado', $payload['errorMessage']);
-        $this->assertSame('unexpected_response', $_SESSION['gestor_cult_sync_error']);
-    }
-
-    /** Timeout e erro do servidor melhoram na tentativa seguinte, e seguem sendo retentados. */
-    function testFalhaDeTransporteContinuaRetentavelComAMensagemDeSempre()
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            throw IntegrationError::transport('Connection timed out', 28);
-        });
-
-        $payload = $this->callJson(fn() => $controller->callStartSync());
-
-        $this->assertTrue($payload['retryable']);
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
-    }
-
-    function testErroDoServidorContinuaRetentavel()
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            throw IntegrationError::http('Erro HTTP 500', 500);
-        });
-
-        $this->assertTrue($this->callJson(fn() => $controller->callStartSync())['retryable']);
+        $this->assertStringContainsString('(api_unavailable)', $alerta);
     }
 
     /**
@@ -282,7 +294,6 @@ class ControllerSyncStatusTest extends TestCase
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
         $this->assertSame(['started' => true], $payload);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
     }
 
     function testStartSyncComSessaoStalePermiteReexecutar()
@@ -317,38 +328,39 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(['ready' => false], $payload);
     }
 
-    function testCheckSyncStatusConcluidoSemErroRetornaProntoELimpaMensagemAntiga()
+    public function testCheckSyncStatusConcluidoRetornaPronto(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = '';
-        $_SESSION['gestor_cult_sync_error_message'] = 'Mensagem velha';
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => false,
-            'errorMessage' => null,
-        ], $payload);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error_message', $_SESSION);
+        $this->assertSame(['ready' => true], $payload);
     }
 
-    function testCheckSyncStatusConcluidoComErroRetornaMensagem()
+    public function testMarcaDeErroAntigaNaSessaoNaoMudaOStatus(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-        $_SESSION['gestor_cult_sync_error_message'] = 'Falha esperada';
 
-        $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
+        $payload = $this->comMarcaDeErroAntiga(fn() => $this->callJson(fn() => $this->controller()->callCheckSyncStatus()));
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => true,
-            'errorMessage' => 'Falha esperada',
-        ], $payload);
+        $this->assertSame(['ready' => true], $payload);
+    }
+
+    public function testConsolidacaoConcluidaComMarcaDeErroAntigaVaiParaOPainel(): void
+    {
+        $_SESSION['gestor_cult_sync_completed'] = true;
+
+        $this->comMarcaDeErroAntiga(function () {
+            try {
+                $this->controller()->callConsolidatingData();
+                $this->fail('Esperava o redirecionamento para o painel');
+            } catch (Halt) {
+            }
+        });
+
+        $this->assertStringContainsString('painel', $this->app->response->getHeaderLine('Location'));
     }
 
     function testCheckSyncStatusConcluidoSemStartedNaoFicaEmPolling()
@@ -357,25 +369,10 @@ class ControllerSyncStatusTest extends TestCase
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => false,
-            'errorMessage' => null,
-        ], $payload);
+        $this->assertSame(['ready' => true], $payload);
     }
 
-    function testCheckSyncStatusErroSemMensagemUsaPadraoSeguro()
-    {
-        $_SESSION['gestor_cult_sync_started'] = true;
-        $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-
-        $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
-
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
-    }
-
-    function testCheckSyncStatusStaleMarcaErroControlado()
+    public function testCheckSyncStatusSessaoVencidaEntraMesmoAssim(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
@@ -383,13 +380,8 @@ class ControllerSyncStatusTest extends TestCase
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => true,
-            'errorMessage' => GestorCultJob::API_UNAVAILABLE_MESSAGE,
-        ], $payload);
-        $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
-        $this->assertSame('api_unavailable', $_SESSION['gestor_cult_sync_error']);
+        $this->assertSame(['ready' => true], $payload);
+        $this->assertSessaoDegradada();
     }
 
     function testLogoutOnErrorLimpaFlagsERetornaRedirect()
@@ -409,5 +401,75 @@ class ControllerSyncStatusTest extends TestCase
         }
         $this->assertArrayNotHasKey('selectedFederativeEntity', $_SESSION);
         $this->assertArrayNotHasKey('federative_entity_redirect_uri', $_SESSION);
+    }
+
+    public function testFalhaDaSyncDeGestorComVinculoEntraComOsDadosGravados(): void
+    {
+        $this->loginGestorComVinculo();
+
+        $capturado = $this->capturandoLog(fn() => $this->assertEntrouDegradado($this->callJson(fn() => $this->falhaDeTransporte()->callStartSync())));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Entrando apesar da falha da sincronização (modo degradado)'));
+    }
+
+    public function testFalhaDaSyncDeUsuarioSemPapelEntraComoUsuarioComum(): void
+    {
+        $this->assertEntrouDegradado($this->callJson(fn() => $this->falhaDeTransporte()->callStartSync()));
+        $this->assertFalse($this->app->user->is(Role::GESTOR_CULT_BR));
+    }
+
+    public function testModoDegradadoMantemPapelEVinculo(): void
+    {
+        $this->loginGestorComVinculo();
+
+        $this->callJson(fn() => $this->falhaDeTransporte()->callStartSync());
+
+        $this->assertTrue($this->app->user->is(Role::GESTOR_CULT_BR));
+        $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy([
+            'agent' => $this->app->user->profile,
+        ]));
+    }
+
+    public function testNovaSincronizacaoLimpaMarcaDeModoDegradado(): void
+    {
+        $this->loginGestorComVinculo();
+        $_SESSION['gestor_cult_sync_degraded'] = true;
+
+        $this->callJson(fn() => $this->controller()->callStartSync());
+
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
+    }
+
+    public function testEntradaDegradadaDepoisDeTentativaSemRespostaMarcaASessao(): void
+    {
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = false;
+        $_SESSION['gestor_cult_sync_started_at'] = time();
+
+        $capturado = $this->capturandoLog(fn() => $this->assertSame(
+            ['entered' => true, 'degraded' => true],
+            $this->callJson(fn() => $this->controller()->callEnterDegraded()),
+        ));
+
+        $this->assertSessaoDegradada();
+        $this->assertTrue($capturado->hasWarningThatContains('Causa: requisição de sincronização sem resposta'));
+    }
+
+    public function testEntradaDegradadaSemTentativaNaSessaoEhRecusada(): void
+    {
+        $this->callJson(fn() => $this->controller()->callEnterDegraded());
+
+        $this->assertSame(409, $this->app->response->getStatusCode());
+        $this->assertArrayNotHasKey('gestor_cult_sync_completed', $_SESSION);
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
+    }
+
+    public function testEntradaDepoisDeSincronizacaoConcluidaNaoMarcaModoDegradado(): void
+    {
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = true;
+
+        $this->assertSame(['entered' => true], $this->callJson(fn() => $this->controller()->callEnterDegraded()));
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
     }
 }

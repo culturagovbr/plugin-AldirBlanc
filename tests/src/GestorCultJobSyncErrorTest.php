@@ -13,18 +13,18 @@ use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 class GestorCultJobSyncErrorTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
 
     private const SYNC_KEYS = [
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
     ];
 
     private static int $proximoDocumento = 91000000001;
@@ -138,7 +138,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
     }
 
-    function testEnteMalformadoEntreValidosNaoDerrubaOSync()
+    public function testEnteComArvoreForaDoFormatoEntreValidosEhAssociadoSemArvore(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -152,10 +152,9 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse($resposta)->sync();
         $this->app->em->clear();
 
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '81111111111111']));
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '83333333333333']));
-        $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222']));
+        $this->assertSame([], $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222'])->exercices);
     }
 
     function testEnteSemNomeEhDescartadoSemDerrubarOSync()
@@ -171,7 +170,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse($resposta)->sync();
         $this->app->em->clear();
 
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '85555555555555']));
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '84444444444444']));
     }
@@ -186,24 +184,25 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->persistRelation($user->profile, $entity);
 
         $resposta = $this->respostaComEntes([
-            ['document' => '87777777777777', 'name' => 'Ente Ruim', 'exercicios' => [['ano' => 2025]]],
+            ['document' => '87777777777777', 'name' => '', 'exercicios' => []],
+            ['name' => 'Sem Documento', 'exercicios' => []],
         ]);
 
         try {
             $this->jobWithResponse($resposta)->sync();
             $this->fail('Esperava erro de contrato quando nenhum ente sobrevive');
-        } catch (\UnexpectedValueException $e) {
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
             $this->assertStringContainsString('Resposta da API CultBr fora do contrato esperado', $e->getMessage());
         }
 
         $this->app->em->clear();
 
         $this->assertTrue(UserAccessService::isGestorCultBr());
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
-    function testRespostaSemEntesRevogaRoleERemoveRelations()
+    public function testRespostaSemEntesMantemORoleEMarcaOVinculo(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -216,10 +215,11 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse([])->sync();
         $this->app->em->clear();
 
-        $this->assertFalse(UserAccessService::isGestorCultBr());
+        $this->assertTrue(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
-        $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(1, $relations);
+        $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata);
     }
 
     function testRespostaSemEntesSemRoleEhIdempotente()
@@ -232,7 +232,6 @@ class GestorCultJobSyncErrorTest extends TestCase
 
         $this->assertFalse(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
@@ -252,7 +251,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     function testLockEhRemovidoAposSyncComSucesso()
@@ -297,7 +295,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     function testErroAoAssociarDadosDestravaATelaEDevolveAFalha()
@@ -390,7 +387,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         ])->sync();
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77333333333333']));
     }
 
@@ -419,5 +415,38 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77444444444444']));
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77555555555555']));
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
+    }
+
+    public function testDocumentoDesconhecidoPelaOrigemSaiEmWarning(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse(null, Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasWarningThatContains('Documento desconhecido pela origem'));
+        $this->assertFalse($capturado->hasInfoThatContains('Documento desconhecido pela origem'));
+    }
+
+    public function testRespostaComEntesSegueEmInfo(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse($this->respostaComEntes([$this->enteValido('84444444444444', 'Ente Info')]), Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasInfoThatContains('Resposta da API recebida'));
+        $this->assertFalse($capturado->hasWarningThatContains('Documento desconhecido pela origem'));
+        $this->assertFalse($capturado->hasWarningThatContains('Origem não retornou entes federados'));
+        $this->assertTrue($capturado->hasInfoThatContains('Associações com Entes Federados atualizadas'));
+        $this->assertFalse($capturado->hasWarningThatContains('Associações com Entes Federados atualizadas'));
+    }
+
+    public function testRespostaSemEntesSaiEmWarning(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse($this->respostaComEntes([]), Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasWarningThatContains('Origem não retornou entes federados'));
+        $this->assertFalse($capturado->hasInfoThatContains('Resposta da API recebida'));
     }
 }

@@ -461,4 +461,18 @@ class BeneficiariosServiceTest extends TestCase
 
         $this->assertSame([], $this->service()->linhasDe($raiz, []));
     }
+
+    public function testCnpjAlfanumericoNaFichaEhReconhecidoComoPessoaJuridica(): void
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $campo = $this->campoDeDocumento($raiz, $raiz, ['Coletivo']);
+        $contemplada = $this->contemplada($raiz, $fase, [], 'Coletivo');
+        $this->respondeFicha($raiz, (string) $contemplada->number, $campo, '12.abc.345/01de-35');
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertSame('12ABC34501DE35', $this->celula($linha, 'cnpj_responsavel_execucao'));
+        $this->assertNull($this->celula($linha, 'cpf_responsavel_execucao'));
+        $this->assertSame('Pessoa jurídica', $this->celula($linha, 'tipo_agente'));
+    }
 }

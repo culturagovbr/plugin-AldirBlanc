@@ -5,27 +5,36 @@ namespace AldirBlanc\Jobs;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\AgentRelation;
+use MapasCulturais\Entities\OpportunityMeta;
 use MapasCulturais\Entities\Role as MapasRole;
 use AldirBlanc\Enum\Role;
-use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Dtos\FederativeEntitySnapshot;
 use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\FederativeEntityDocument;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
 
 class GestorCultJob
 {
-    public const API_UNAVAILABLE_MESSAGE = SyncFailure::MENSAGEM_API_INDISPONIVEL;
     private const CONTRACT_ERROR_MESSAGE = 'Resposta da API CultBr fora do contrato esperado';
 
     private GestorDocument $gestorDocument;
 
     /** TTL de segurança do lock de concorrência: cobre o tempo de uma sincronização real (chamada à API), liberado no finally ao terminar. */
     private const SYNC_LOCK_TTL = 300;
+
+    private const MISSING_ENTITY_GRACE_DAYS = 7;
+    private const MISSING_SINCE_KEY = 'missingSince';
+    private const MISSING_SINCE_FORMAT = 'Y-m-d H:i:s';
+
+    /** Chave dos filhos em cada nível da árvore do PAR: exercício, meta, ação. */
+    private const PAR_TREE_CHILDREN = ['metas', 'acoes', 'atividades'];
+
+    private const PAR_DISCARD_LOG_SAMPLE = 5;
 
     public function __construct(GestorDocument $gestorDocument)
     {
@@ -40,10 +49,6 @@ class GestorCultJob
         $agent = $app->user->profile;
 
         $app->log->info("[Gestores CultBR] Sync iniciado | Usuário ID: {$userId} | Documento: {$document}");
-
-        // Limpa flags de erro no início do sync (caso tenha sobrado de tentativa anterior)
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
 
         if (!$agent) {
             $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
@@ -76,11 +81,15 @@ class GestorCultJob
 
         try {
             $snapshot = $this->fetchGestorData();
-            $federativeEntities = $snapshot === null ? [] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
+            [$federativeEntities, $untouchableDocuments] = $snapshot === null ? [[], []] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
 
-            $app->log->info($snapshot === null
-                ? "[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}"
-                : "[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+            if ($snapshot === null) {
+                $app->log->warning("[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}");
+            } elseif ($federativeEntities === []) {
+                $app->log->warning("[Gestores CultBR] Origem não retornou entes federados | Usuário ID: {$userId} | Documento: {$document}");
+            } else {
+                $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+            }
         } catch (\Throwable $e) {
             $app->log->error("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
 
@@ -91,35 +100,15 @@ class GestorCultJob
             throw $e;
         }
 
-        // Só revoga o que a origem respondeu sobre o documento — nenhum ente, ou não o conhece.
-        // Falha de rede e corpo ilegível saem pelo catch acima, sem chegar aqui.
-        if ($federativeEntities === []) {
-            $app->log->info("[Gestores CultBR] API não retornou entes federados, revogando GestorCultBr | Usuário ID: {$userId} | Documento: {$document} | Agente ID: {$agent->id}");
-
-            if (UserAccessService::isGestorCultBr()) {
-                $app->disableAccessControl();
-                $app->user->removeRole(Role::GESTOR_CULT_BR);
-                $app->enableAccessControl();
-                $app->log->info("[Gestores CultBR] Role GestorCultBr removida | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-            }
-
-            $this->removeFederativeEntityAgentRelations($agent);
-
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
-            $app->log->info("[Gestores CultBR] Sync concluído (revogação) | Usuário ID: {$userId} | Agente ID: {$agent->id}");
-            return;
-        }
-
-        $shouldGrantGestorRole = !UserAccessService::isGestorCultBr();
+        $hasFederativeEntities = $federativeEntities !== [];
+        $shouldGrantGestorRole = $hasFederativeEntities && !UserAccessService::isGestorCultBr();
 
         try {
-            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $shouldGrantGestorRole, $userId) {
+            $this->associateFederativeEntities($agent, $federativeEntities, untouchableDocuments: $untouchableDocuments, beforeFlush: function () use ($app, $agent, $snapshot, $hasFederativeEntities, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
 
                 try {
-                    if ($snapshot !== null) {
+                    if ($snapshot !== null && $hasFederativeEntities) {
                         $this->updateAgentFromGestorResponse($agent, $snapshot);
                         $agent->setMetadata('gestorCultBrLastSyncedAt', (new \DateTime())->format('Y-m-d H:i:s'));
                         $agent->save(false);
@@ -132,10 +121,6 @@ class GestorCultJob
                     $app->enableAccessControl();
                 }
             });
-            
-            // Limpa flags de erro se o sync foi bem-sucedido
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
 
             // Marca como concluído sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
@@ -165,21 +150,21 @@ class GestorCultJob
 
         if (array_key_exists('entes_federados', $response)) {
             if (!is_array($response['entes_federados'])) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
+                throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
             }
 
             return $response['entes_federados'];
         }
 
         if (!$this->isListArray($response)) {
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
         }
 
         // Formato antigo: o próprio retorno é a lista de entes
         return $response;
     }
 
-    /** @return list<array> os entes do snapshot que atendem ao contrato, já sem duplicados */
+    /** @return array{0: list<array>, 1: array<string, true>} os entes que atendem ao contrato e os documentos dos descartados */
     private function federativeEntitiesFrom(ManagerSnapshot $snapshot, $userId, string $document): array
     {
         $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
@@ -332,28 +317,74 @@ class GestorCultJob
         return array_keys($data) === range(0, count($data) - 1);
     }
 
-    private function normalizeEntityExercises(array $data): array
+    /** Devolve a árvore do PAR só com os nós válidos e registra os descartes no log, numa linha por ente. */
+    private function sanitizeEntityExercises(array $data): array
     {
-        if (!array_key_exists('exercicios', $data)) {
-            if (array_key_exists('exercices', $data)) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave exercices não é suportada');
-            }
+        $discards = [];
+        $exercises = $this->sanitizeParNodes($data['exercicios'] ?? null, 0, 'exercicios', $discards);
+
+        if ($discards !== []) {
+            $sample = implode(', ', array_map(
+                fn(array $discard) => "{$discard[0]} ({$discard[1]})",
+                array_slice($discards, 0, self::PAR_DISCARD_LOG_SAMPLE),
+            ));
+            App::i()->log->warning("[Gestores CultBR] Nós da árvore do PAR descartados | Ente: {$data['document']} | Quantidade: " . count($discards) . " | Primeiros: {$sample}");
+        }
+
+        return $exercises;
+    }
+
+    /** Mantém os nós com id, descendo pelos filhos; cada descarte entra em $discards com o caminho e o motivo. */
+    private function sanitizeParNodes(mixed $nodes, int $level, string $path, array &$discards): array
+    {
+        if ($nodes === null) {
+            return [];
+        }
+
+        if (!is_array($nodes) || !$this->isListArray($nodes)) {
+            $discards[] = [$path, 'não é lista'];
 
             return [];
         }
 
-        return is_array($data['exercicios']) ? $data['exercicios'] : [];
+        $childKey = self::PAR_TREE_CHILDREN[$level] ?? null;
+        $kept = [];
+        foreach ($nodes as $index => $node) {
+            $nodePath = "{$path}[{$index}]";
+            if (!is_array($node) || !$this->hasParNodeId($node)) {
+                $discards[] = [$nodePath, is_array($node) ? 'sem id' : 'não é objeto'];
+                continue;
+            }
+
+            if ($childKey !== null && array_key_exists($childKey, $node)) {
+                $node[$childKey] = $this->sanitizeParNodes($node[$childKey], $level + 1, "{$nodePath}.{$childKey}", $discards);
+            }
+
+            $kept[] = $node;
+        }
+
+        return $kept;
     }
 
-    /** Resposta sem exercicios não apaga a árvore gravada: sem ela o gestor não cria oportunidade. */
-    private function applyEntityExercises(FederativeEntity $entity, array $exercicios): bool
+    private function hasParNodeId(array $node): bool
+    {
+        return isset($node['id']) && is_scalar($node['id']) && trim((string) $node['id']) !== '';
+    }
+
+    /** Resposta sem árvore válida não apaga a gravada: sem ela o gestor não cria oportunidade. */
+    private function applyEntityExercises(FederativeEntity $entity, array $exercicios, bool $isMalformed): bool
     {
         $gravada = $entity->exercices;
 
         if ($exercicios === [] && $gravada !== null && $gravada !== []) {
-            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: resposta sem exercicios");
+            $motivo = $isMalformed ? 'árvore fora do formato' : 'resposta sem exercicios';
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: {$motivo}");
 
             return false;
+        }
+
+        if ($isMalformed) {
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR fora do formato ignorada | Ente: {$entity->document}");
         }
 
         if (($gravada === null ? null : json_encode($gravada)) === json_encode($exercicios)) {
@@ -371,19 +402,21 @@ class GestorCultJob
 
         if ($discarded !== []) {
             $index = array_key_first($discarded);
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
         }
     }
 
     /**
      * Descarta os entes fora do contrato e mantém os demais, para um item ruim não derrubar o sync inteiro.
+     *
+     * @return array{0: list<array>, 1: array<string, true>} válidos e documentos dos descartados, cujo vínculo não é tocado
      */
     private function discardEntitiesOutOfContract(array $federativeEntities, $userId, string $document): array
     {
-        [$valid, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
+        [$valid, $discarded, $untouchable] = $this->partitionFederativeEntitiesByContract($federativeEntities);
 
         if ($discarded === []) {
-            return $valid;
+            return [$valid, []];
         }
 
         $app = App::i();
@@ -393,21 +426,22 @@ class GestorCultJob
 
         // Seguir com a lista vazia revogaria a role e apagaria todas as relações do agente.
         if ($valid === []) {
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
         }
 
-        return $valid;
+        return [$valid, $untouchable];
     }
 
     /**
      * Separa os entes que atendem ao contrato dos que precisam ser descartados.
      *
-     * @return array{0: list<array>, 1: array<int|string, string>} válidos, e o motivo de descarte por índice
+     * @return array{0: list<array>, 1: array<int|string, string>, 2: array<string, true>} válidos, motivo de descarte por índice e documentos dos descartados
      */
     private function partitionFederativeEntitiesByContract(array $federativeEntities): array
     {
         $valid = [];
         $discarded = [];
+        $untouchable = [];
         $documents = [];
 
         foreach ($federativeEntities as $index => $data) {
@@ -415,6 +449,10 @@ class GestorCultJob
 
             if ($violation !== null) {
                 $discarded[$index] = $violation;
+                $document = is_array($data) ? trim((string) ($data['document'] ?? '')) : '';
+                if ($document !== '') {
+                    $untouchable[$document] = true;
+                }
                 continue;
             }
 
@@ -422,7 +460,7 @@ class GestorCultJob
             $valid[] = $data;
         }
 
-        return [$valid, $discarded];
+        return [$valid, $discarded, $untouchable];
     }
 
     private function federativeEntityContractViolation($data, array $knownDocuments): ?string
@@ -444,82 +482,77 @@ class GestorCultJob
             return "com document duplicado {$document}";
         }
 
-        if (!array_key_exists('exercicios', $data) && array_key_exists('exercices', $data)) {
-            return 'com a chave exercices, que não é suportada';
-        }
-
-        $exercises = $this->normalizeEntityExercises($data);
-        if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
-            return 'com exercicios inválidos';
-        }
-
         return null;
     }
 
-    private function isValidExercisesList($exercises): bool
+    /** Grava a data em que o ente deixou de vir da origem; devolve se a marca é nova. */
+    private function markMissing(FederativeEntityAgentRelation $relation): bool
     {
-        if (!is_array($exercises) || $exercises === [] || !$this->isListArray($exercises)) {
+        $metadata = (array) ($relation->metadata ?? []);
+        if (isset($metadata[self::MISSING_SINCE_KEY])) {
             return false;
         }
 
-        foreach ($exercises as $exercise) {
-            if (!is_array($exercise)) {
-                return false;
-            }
-
-            if (!array_key_exists('id', $exercise) || !array_key_exists('ano', $exercise) || !array_key_exists('metas', $exercise)) {
-                return false;
-            }
-
-            if (!is_array($exercise['metas'])) {
-                return false;
-            }
-        }
+        $metadata[self::MISSING_SINCE_KEY] = (new \DateTime())->format(self::MISSING_SINCE_FORMAT);
+        $relation->metadata = $metadata;
+        App::i()->em->persist($relation);
 
         return true;
     }
 
-    /**
-     * Remove somente as associações entre o agente e Entes Federados.
-     *
-     * @param \MapasCulturais\Entities\Agent $agent
-     * @return void
-     */
-    private function removeFederativeEntityAgentRelations(Agent $agent): void
+    private function clearMissingMark(FederativeEntityAgentRelation $relation): void
     {
-        $app = App::i();
-        $em = $app->em;
-
-        $relations = $app->repo(FederativeEntityAgentRelation::class)->findBy([
-            'agent' => $agent
-        ]);
-
-        if (empty($relations)) {
-            $app->log->info("[Gestores CultBR] Nenhuma associação de Ente Federado para remover | Agente ID: {$agent->id}");
+        $metadata = (array) ($relation->metadata ?? []);
+        if (!isset($metadata[self::MISSING_SINCE_KEY])) {
             return;
         }
 
-        $em->beginTransaction();
+        unset($metadata[self::MISSING_SINCE_KEY]);
+        $relation->metadata = $metadata === [] ? null : $metadata;
+        App::i()->em->persist($relation);
+        App::i()->log->info("[Gestores CultBR] Ente federado voltou a ser informado pela origem, marca removida | Ente ID: {$relation->owner->id}");
+    }
 
-        try {
-            $removedCount = 0;
-            foreach ($relations as $relation) {
-                if (!$relation->owner instanceof FederativeEntity) {
-                    continue;
-                }
+    private function isMissingMarkExpired(FederativeEntityAgentRelation $relation): bool
+    {
+        $missingSince = ((array) ($relation->metadata ?? []))[self::MISSING_SINCE_KEY] ?? null;
+        $markedAt = is_string($missingSince) ? \DateTime::createFromFormat(self::MISSING_SINCE_FORMAT, $missingSince) : false;
 
-                $em->remove($relation);
-                $removedCount++;
+        return $markedAt !== false && $markedAt <= new \DateTime('-' . self::MISSING_ENTITY_GRACE_DAYS . ' days');
+    }
+
+    private function agentOwnsOpportunityInEntity(Agent $agent, FederativeEntity $entity): bool
+    {
+        $metas = App::i()->repo(OpportunityMeta::class)->findBy([
+            'key' => 'federativeEntityId',
+            'value' => (string) $entity->id,
+        ]);
+
+        foreach ($metas as $meta) {
+            if ($meta->owner?->owner?->id === $agent->id) {
+                return true;
             }
-
-            $em->flush();
-            $em->commit();
-            $app->log->info("[Gestores CultBR] Associações com Entes Federados removidas | Agente ID: {$agent->id} | Removidas: {$removedCount}");
-        } catch (\Throwable $e) {
-            $em->rollback();
-            $app->log->error("[Gestores CultBR] Erro ao remover associações com Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());
-            throw $e;
         }
+
+        return false;
+    }
+
+    private function revokeGestorRoleOf(Agent $agent): void
+    {
+        $app = App::i();
+        $user = $agent->user;
+        if (!$user || !$user->is(Role::GESTOR_CULT_BR)) {
+            return;
+        }
+
+        $app->disableAccessControl();
+        try {
+            $user->removeRole(Role::GESTOR_CULT_BR);
+        } finally {
+            $app->enableAccessControl();
+        }
+
+        $app->log->warning("[Gestores CultBR] Nenhum vínculo com ente restante, papel GestorCultBr removido | Usuário ID: {$user->id} | Agente ID: {$agent->id}");
     }
 
     /**
@@ -527,9 +560,10 @@ class GestorCultJob
      * 
      * @param \MapasCulturais\Entities\Agent $agent
      * @param array $federativeEntities
+     * @param array<string, true> $untouchableDocuments entes descartados da resposta, cujo vínculo fica como está
      * @return void
      */
-    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null, array $untouchableDocuments = []): void
     {
         $app = App::i();
         $em  = $app->em;
@@ -564,12 +598,28 @@ class GestorCultJob
         $em->beginTransaction();
 
         try {
-            // Remove os Entes Federados Associados ao Agente que não estão na API
             $removedCount = 0;
+            $markedCount = 0;
             foreach ($currentByDoc as $doc => $relation) {
-                if (!isset($apiLookup[$doc])) {
+                if (isset($apiLookup[$doc])) {
+                    $this->clearMissingMark($relation);
+                    continue;
+                }
+
+                if (isset($untouchableDocuments[$doc])) {
+                    continue;
+                }
+
+                if ($this->isMissingMarkExpired($relation) && !$this->agentOwnsOpportunityInEntity($agent, $relation->owner)) {
                     $em->remove($relation);
                     $removedCount++;
+                    $app->log->warning("[Gestores CultBR] Vínculo com ente não informado pela origem há mais de " . self::MISSING_ENTITY_GRACE_DAYS . " dias removido | Agente ID: {$agent->id} | Ente ID: {$relation->owner->id}");
+                    continue;
+                }
+
+                if ($this->markMissing($relation)) {
+                    $markedCount++;
+                    $app->log->warning("[Gestores CultBR] Ente federado não informado pela origem, vínculo mantido e marcado | Agente ID: {$agent->id} | Ente ID: {$relation->owner->id}");
                 }
             }
 
@@ -578,7 +628,8 @@ class GestorCultJob
             foreach ($federativeEntities as $data) {
                 $doc = trim((string) $data['document']);
                 $name = trim((string) $data['name']);
-                $exercicios = $this->normalizeEntityExercises($data);
+                $exercicios = $this->sanitizeEntityExercises($data);
+                $isMalformedTree = !empty($data['exercicios']) && $exercicios === [];
 
                 $entity = $entitiesByDoc[$doc] ?? null;
 
@@ -589,7 +640,7 @@ class GestorCultJob
                         $changed = true;
                     }
 
-                    if ($this->applyEntityExercises($entity, $exercicios)) {
+                    if ($this->applyEntityExercises($entity, $exercicios, $isMalformedTree)) {
                         $changed = true;
                     }
                     if ($changed) {
@@ -599,7 +650,7 @@ class GestorCultJob
                     $entity = new FederativeEntity();
                     $entity->name = $name;
                     $entity->document = $doc;
-                    $entity->exercices = $exercicios;
+                    $this->applyEntityExercises($entity, $exercicios, $isMalformedTree);
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);
@@ -616,6 +667,10 @@ class GestorCultJob
                 }
             }
 
+            if (count($currentByDoc) - $removedCount + $newAssociationsCount === 0) {
+                $this->revokeGestorRoleOf($agent);
+            }
+
             // Salva as alterações no banco de dados
             $this->beforeFlushFederativeEntityAssociations();
             if ($beforeFlush) {
@@ -624,7 +679,12 @@ class GestorCultJob
 
             $em->flush();
             $em->commit();
-            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Removidas: {$removedCount}");
+            $summary = "[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Marcadas: {$markedCount} | Removidas: {$removedCount}";
+            if ($markedCount > 0 || $removedCount > 0) {
+                $app->log->warning($summary);
+            } else {
+                $app->log->info($summary);
+            }
         } catch (\Throwable $e) {
             $em->rollback();
             $app->log->error("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());

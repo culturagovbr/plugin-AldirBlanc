@@ -7,19 +7,25 @@ final class FederativeEntityDocument
 {
     private const LENGTH = 14;
 
-    /** Completa com zeros à esquerda; o que passa de 14 dígitos fica como veio, para não truncar. */
+    private const ALPHANUMERIC_CNPJ = '/^[A-Z0-9]{12}[0-9]{2}$/';
+
+    /** Sem pontuação e em maiúsculas; o numérico ganha zeros à esquerda até 14 dígitos, sem truncar o maior. */
     public static function normalize(?string $document): string
     {
-        $digitos = preg_replace('/\D/', '', (string) $document);
+        $caracteres = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $document));
 
         // Ausência continua ausência: virar quatorze zeros passaria por documento válido.
-        if ($digitos === '') {
+        if ($caracteres === '') {
             return '';
         }
 
-        return strlen($digitos) < self::LENGTH
-            ? str_pad($digitos, self::LENGTH, '0', STR_PAD_LEFT)
-            : $digitos;
+        if (!ctype_digit($caracteres)) {
+            return preg_match(self::ALPHANUMERIC_CNPJ, $caracteres) ? $caracteres : '';
+        }
+
+        return strlen($caracteres) < self::LENGTH
+            ? str_pad($caracteres, self::LENGTH, '0', STR_PAD_LEFT)
+            : $caracteres;
     }
 
     /**

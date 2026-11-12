@@ -6,6 +6,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use Tests\Abstract\TestCase;
@@ -22,8 +23,6 @@ class GestorCultJobAssociationTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
     ];
 
     protected function setUp(): void
@@ -115,7 +114,8 @@ class GestorCultJobAssociationTest extends TestCase
         try {
             $this->job()->callAssociateFederativeEntities($user->profile, $payload);
             $this->fail('Esperava erro de contrato');
-        } catch (\UnexpectedValueException $e) {
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
             $this->assertStringContainsString('Resposta da API CultBr fora do contrato esperado', $e->getMessage());
         }
 
@@ -272,7 +272,7 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertSame($novaArvore, $updated->exercices);
     }
 
-    function testEnteQueSaiuDaRespostaTemRelationRemovida()
+    public function testEnteQueSaiuDaRespostaTemOVinculoMantidoEMarcado(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -281,17 +281,42 @@ class GestorCultJobAssociationTest extends TestCase
         $entityQueSai = $this->persistFederativeEntity('44444444444444', 'Vai Sair');
         $this->persistRelation($agent, $entityQueSai);
 
-        // API só retorna um ente diferente: o anterior deve ter a relation removida (diff)
-        $this->job()->callAssociateFederativeEntities($agent, [
+        $capturado = $this->capturandoLog(fn() => $this->job()->callAssociateFederativeEntities($agent, [
             ['document' => '55555555555555', 'name' => 'Ente Atual', 'exercicios' => $this->parMinimo()],
-        ]);
+        ]));
         $this->app->em->clear();
 
+        $this->assertTrue($capturado->hasWarningThatContains('Ente federado não informado pela origem, vínculo mantido e marcado'));
+        $this->assertTrue($capturado->hasWarningThatContains('Associações com Entes Federados atualizadas | Agente ID: ' . $agent->id . ' | Novas: 1 | Marcadas: 1 | Removidas: 0'));
+
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entityQueSai]);
-        $this->assertCount(0, $relations, 'A relation do ente que saiu da resposta deve ser removida');
+        $this->assertCount(1, $relations, 'O vínculo do ente que saiu da resposta continua');
+        $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata);
 
         $novaEntidade = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '55555555555555']);
         $this->assertNotNull($novaEntidade);
+    }
+
+    public function testEnteQueVoltaARespostaPerdeAMarca(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $agent = $user->profile;
+
+        $entity = $this->persistFederativeEntity('44444444444445', 'Volta');
+        $relation = $this->persistRelation($agent, $entity);
+        $relation->metadata = ['missingSince' => (new \DateTime('-3 days'))->format('Y-m-d H:i:s')];
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+
+        $this->job()->callAssociateFederativeEntities($agent, [
+            ['document' => '44444444444445', 'name' => 'Volta', 'exercicios' => $this->parMinimo()],
+        ]);
+        $this->app->em->clear();
+
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entity]);
+        $this->assertCount(1, $relations);
+        $this->assertArrayNotHasKey('missingSince', (array) $relations[0]->metadata);
     }
 
     // ===== Contrato, PAR vazio e volume =====
@@ -378,7 +403,7 @@ class GestorCultJobAssociationTest extends TestCase
         }
     }
 
-    function testMudancaDeQuinzeParaDezEntesRemoveSomenteRelationsDoAgenteAtual()
+    public function testMudancaDeQuinzeParaDezEntesMarcaSomenteVinculosDoAgenteAtual(): void
     {
         $userA = $this->userDirector->createUser();
         $userB = $this->userDirector->createUser();
@@ -397,11 +422,12 @@ class GestorCultJobAssociationTest extends TestCase
 
         $relationsA = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $userA->profile]);
         $relationsB = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $userB->profile]);
-        $entityStillExists = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $removedDocument]);
+        $marcadasA = array_filter($relationsA, fn($relation) => isset(((array) $relation->metadata)['missingSince']));
 
-        $this->assertCount(10, $relationsA);
+        $this->assertCount(15, $relationsA);
+        $this->assertCount(5, $marcadasA);
         $this->assertCount(1, $relationsB);
-        $this->assertNotNull($entityStillExists);
+        $this->assertArrayNotHasKey('missingSince', (array) $relationsB[0]->metadata);
     }
 
     function testPayloadMistoPersisteTodosEntesMesmoSemPar()
@@ -511,16 +537,26 @@ class GestorCultJobAssociationTest extends TestCase
         ], '66444444444445');
     }
 
-    function testChavesRenomeadasLancaErroDeContratoSemPersistenciaParcial()
+    public function testChavesRenomeadasLancaErroDeContratoSemPersistenciaParcial(): void
     {
         $this->assertContractViolationDoesNotPersist([
             ['document' => '66555555555555', 'name' => 'Valido Antes', 'exercicios' => $this->parMinimo()],
             ['cnpj' => '66555555555556', 'nome' => 'Chaves Renomeadas', 'exercices' => []],
         ], '66555555555555');
+    }
 
-        $this->assertContractViolationDoesNotPersist([
-            ['document' => '66555555555557', 'name' => 'Chave Exercices', 'exercices' => []],
-        ], '66555555555557');
+    public function testChaveExercicesNaoDescartaOEnteComNomeEDocumento(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '66555555555557', 'name' => 'Chave Exercices', 'exercices' => $this->parMinimo()],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '66555555555557'));
+        $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66555555555557']);
+        $this->assertSame([], $entity->exercices);
     }
 
     function testItemNaoArrayEmEntesFederadosLancaErroDeContratoSemPersistenciaParcial()
@@ -562,15 +598,21 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertSame('66000000000002', $entity->document);
     }
 
-    function testExerciciosAssociativoEstranhoLancaErroDeContratoSemPersistenciaParcial()
+    public function testExerciciosEmFormatoDeObjetoAssociaOEnteSemArvore(): void
     {
-        $this->assertContractViolationDoesNotPersist([
-            [
-                'document' => '66000000000003',
-                'name' => 'Exercicios Associativo',
-                'exercicios' => ['id' => 1, 'ano' => 2025, 'metas' => []],
-            ],
-        ], '66000000000003');
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
+            ['document' => '66000000000003', 'name' => 'Exercicios Associativo', 'exercicios' => ['id' => 1, 'ano' => 2025, 'metas' => []]],
+        ]));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Árvore do PAR fora do formato ignorada | Ente: 66000000000003'));
+        $this->assertFalse($capturado->hasWarningThatContains('Árvore do PAR preservada'));
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '66000000000003'));
+        $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66000000000003']);
+        $this->assertSame([], $entity->exercices);
     }
 
     // ===== updateAgentFromGestorResponse =====
@@ -782,5 +824,282 @@ class GestorCultJobAssociationTest extends TestCase
 
         $this->assertCount(1, $relacoes);
         $this->assertSame('01612689000178', $relacoes[0]->owner->document);
+    }
+
+    private static int $proximoDocumento = 92000000001;
+
+    private function sincronizarComEntes(array $entes): void
+    {
+        $job = new TestableGestorCultJob(new GestorDocument((string) self::$proximoDocumento++));
+        $job->setGestorResponse(['entes_federados' => $entes]);
+        $job->sync();
+        $this->app->em->clear();
+    }
+
+    private function vinculoDoAgente($agent, string $document): ?FederativeEntityAgentRelation
+    {
+        foreach ($this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $agent]) as $relation) {
+            if ($relation->owner->document === $document) {
+                return $relation;
+            }
+        }
+
+        return null;
+    }
+
+    public function testExerciciosNuloOuAusenteAssociaOEnteSemArvore(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000001', 'name' => 'Exercicios Nulo', 'exercicios' => null],
+            ['document' => '67000000000002', 'name' => 'Sem Exercicios'],
+        ]);
+
+        foreach (['67000000000001', '67000000000002'] as $document) {
+            $this->assertNotNull($this->vinculoDoAgente($user->profile, $document), $document);
+            $this->assertSame([], $this->app->repo(FederativeEntity::class)->findOneBy(['document' => $document])->exercices);
+        }
+    }
+
+    public function testCampoExtraNoEnteEhIgnorado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000003', 'name' => 'Com Campo Novo', 'uf' => 'DF', 'situacao_par' => 'em_analise', 'exercicios' => $this->parMinimo()],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '67000000000003'));
+    }
+
+    public function testDocumentoComPontuacaoCasaComOVinculoExistente(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('00394601000126', 'Distrito Federal'));
+
+        $this->sincronizarComEntes([
+            ['document' => '00.394.601/0001-26', 'name' => 'Distrito Federal', 'exercicios' => []],
+        ]);
+
+        $this->assertCount(1, $this->app->repo(FederativeEntity::class)->findBy(['document' => '00394601000126']));
+        $relation = $this->vinculoDoAgente($user->profile, '00394601000126');
+        $this->assertNotNull($relation);
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
+    public function testEnteSemNomeComDocumentoConhecidoNaoTemOVinculoTocado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000004', 'Já Vinculado'));
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000004', 'name' => ''],
+            ['document' => '67000000000005', 'name' => 'Outro Ente', 'exercicios' => []],
+        ]);
+
+        $relation = $this->vinculoDoAgente($user->profile, '67000000000004');
+        $this->assertNotNull($relation);
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
+    public function testEnteSemDocumentoEhSoDescartado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['name' => 'Sem Documento', 'exercicios' => []],
+            ['document' => '67000000000006', 'name' => 'Ente Valido', 'exercicios' => []],
+        ]);
+
+        $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
+        $this->assertCount(1, $relations);
+        $this->assertSame('67000000000006', $relations[0]->owner->document);
+    }
+
+    public function testArvoreForaDoFormatoMantemAArvoreGravada(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $gravada = $this->parMinimo();
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000007', 'Com Árvore', $gravada));
+
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
+            ['document' => '67000000000007', 'name' => 'Com Árvore', 'exercicios' => [['ano' => 2025]]],
+        ]));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Árvore do PAR preservada | Ente: 67000000000007 | Motivo: árvore fora do formato'));
+        $this->assertFalse($capturado->hasWarningThatContains('resposta sem exercicios'));
+        $this->assertFalse($capturado->hasWarningThatContains('fora do formato ignorada'));
+
+        $this->assertSame($gravada, $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '67000000000007'])->exercices);
+        $relation = $this->vinculoDoAgente($user->profile, '67000000000007');
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
+    public function testEnteValidoNaRespostaLimpaAMarcaMesmoNaListaNaoTocar(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $relation = $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000008', 'Voltou'));
+        $relation->metadata = ['missingSince' => (new \DateTime('-3 days'))->format('Y-m-d H:i:s')];
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+
+        $this->job()->callAssociateFederativeEntities(
+            $user->profile,
+            [['document' => '67000000000008', 'name' => 'Voltou', 'exercicios' => []]],
+            ['67000000000008' => true],
+        );
+        $this->app->em->clear();
+
+        $this->assertArrayNotHasKey('missingSince', (array) $this->vinculoDoAgente($user->profile, '67000000000008')->metadata);
+    }
+
+    /** @return array{0: ?array, 1: \Monolog\Handler\TestHandler} a árvore gravada do ente e o log da sincronização */
+    private function arvoreGravadaApos(string $document, array $exercicios): array
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
+            ['document' => $document, 'name' => 'Ente da Árvore', 'exercicios' => $exercicios],
+        ]));
+
+        return [$this->app->repo(FederativeEntity::class)->findOneBy(['document' => $document])->exercices, $capturado];
+    }
+
+    public function testMetaComAcoesNulaGravaListaVazia(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000001', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => null]]],
+        ]);
+
+        $this->assertSame([['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => []]]]], $arvore);
+        $this->assertFalse($log->hasWarningThatContains('Nós da árvore do PAR descartados'));
+    }
+
+    public function testAcaoSemIdEntreValidasEhDescartadaComAvisoEORestoEhGravado(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000002', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [
+                ['id' => 100, 'nome' => 'Primeira'],
+                ['nome' => 'Sem id'],
+                ['id' => 102, 'nome' => 'Terceira'],
+            ]]]],
+        ]);
+
+        $this->assertSame([['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [
+            ['id' => 100, 'nome' => 'Primeira'],
+            ['id' => 102, 'nome' => 'Terceira'],
+        ]]]]], $arvore);
+        $this->assertTrue($log->hasWarningThatContains('Nós da árvore do PAR descartados | Ente: 68000000000002 | Quantidade: 1 | Primeiros: exercicios[0].metas[0].acoes[1] (sem id)'));
+        $this->assertFalse($log->hasWarningThatContains('Árvore do PAR preservada'));
+    }
+
+    public function testExercicioSemAnoEhMantido(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000003', [['id' => 1, 'metas' => []]]);
+
+        $this->assertSame([['id' => 1, 'metas' => []]], $arvore);
+        $this->assertFalse($log->hasWarningThatContains('Nós da árvore do PAR descartados'));
+    }
+
+    public function testExercicioSemIdEhDescartadoEOsDemaisGravados(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000004', [
+            ['ano' => 2025, 'metas' => []],
+            ['id' => 2, 'ano' => 2026],
+        ]);
+
+        $this->assertSame([['id' => 2, 'ano' => 2026]], $arvore, 'nó sem a lista de filhos fica sem a chave');
+        $this->assertTrue($log->hasWarningThatContains('Primeiros: exercicios[0] (sem id)'));
+    }
+
+    public function testAtividadeComIdAusenteVazioOuInvalidoEhDescartada(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000005', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => [
+                ['id' => 1000],
+                ['id' => ' '],
+                ['id' => null],
+                ['id' => ['1001']],
+            ]]]]]],
+        ]);
+
+        $this->assertSame([['id' => 1000]], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[3] (sem id)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[1] (sem id)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes[0].atividades[2] (sem id)'));
+    }
+
+    public function testNoQueNaoEhObjetoEhDescartado(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000006', [
+            ['id' => 1, 'ano' => 2025, 'metas' => ['meta solta', ['id' => 11]]],
+        ]);
+
+        $this->assertSame([['id' => 11]], $arvore[0]['metas']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0] (não é objeto)'));
+    }
+
+    public function testListaDeFilhosForaDoFormatoViraVaziaComAviso(): void
+    {
+        [$arvore, $log] = $this->arvoreGravadaApos('68000000000007', [
+            ['id' => 1, 'ano' => 2025, 'metas' => [
+                ['id' => 10, 'acoes' => ['id' => 100]],
+                ['id' => 11, 'acoes' => 'nenhuma'],
+            ]],
+        ]);
+
+        $this->assertSame([['id' => 10, 'acoes' => []], ['id' => 11, 'acoes' => []]], $arvore[0]['metas']);
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[0].acoes (não é lista)'));
+        $this->assertTrue($log->hasWarningThatContains('exercicios[0].metas[1].acoes (não é lista)'));
+    }
+
+    public function testAtividadeNaoTemFilhosSaneados(): void
+    {
+        $atividade = ['id' => 1000, 'itens' => [['sem' => 'id']]];
+        [$arvore] = $this->arvoreGravadaApos('68000000000008', [
+            ['id' => 1, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => [$atividade]]]]]],
+        ]);
+
+        $this->assertSame([$atividade], $arvore[0]['metas'][0]['acoes'][0]['atividades']);
+    }
+
+    public function testDescartesDoEnteSaemNumaLinhaSoComOsPrimeirosCaminhos(): void
+    {
+        $atividadesSemId = array_fill(0, 7, ['nome' => 'Sem id']);
+        [, $log] = $this->arvoreGravadaApos('68000000000009', [
+            ['id' => 1, 'metas' => [['id' => 10, 'acoes' => [['id' => 100, 'atividades' => $atividadesSemId]]]]],
+        ]);
+
+        $linhas = array_values(array_filter(
+            $log->getRecords(),
+            fn($registro) => str_contains($registro['message'], 'Nós da árvore do PAR descartados'),
+        ));
+        $this->assertCount(1, $linhas);
+        $this->assertStringContainsString('Quantidade: 7', $linhas[0]['message']);
+        $this->assertStringContainsString('atividades[4] (sem id)', $linhas[0]['message']);
+        $this->assertStringNotContainsString('atividades[5]', $linhas[0]['message']);
+    }
+
+    public function testEnteComCnpjAlfanumericoEhGravadoEVinculadoComODocumentoCorreto(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '12.abc.345/01de-35', 'name' => 'Ente Alfanumérico', 'exercicios' => []],
+            ['document' => '12XYZ34501DE35', 'name' => 'Outro Alfanumérico', 'exercicios' => []],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '12ABC34501DE35'));
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '12XYZ34501DE35'));
+        $this->assertCount(1, $this->app->repo(FederativeEntity::class)->findBy(['document' => '12ABC34501DE35']));
     }
 }
