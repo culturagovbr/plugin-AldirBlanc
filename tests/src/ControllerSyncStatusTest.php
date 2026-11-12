@@ -226,6 +226,23 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertStringContainsString('credential_refused', reset($criticos)['message']);
     }
 
+    public function testCpfNuloNoPerfilEhErroInterno(): void
+    {
+        $controller = $this->controller();
+        $controller->setCpfException(new \TypeError('documentOnlyNumbers(): Argument #1 must be of type string, null given'));
+
+        $capturado = $this->capturandoLog(fn() => $this->callJson(fn() => $controller->callStartSync()));
+
+        $this->assertTrue($capturado->hasCriticalThatContains('Sincronização falhou (internal_error)'));
+    }
+
+    public function testFalhaDeBancoEhErroInterno(): void
+    {
+        $alerta = $this->alertaDaFalha(fn() => throw new \PDOException('SQLSTATE[08006] could not connect to server'));
+
+        $this->assertStringContainsString('(internal_error)', $alerta);
+    }
+
     /** 404 não é credencial: continua no ramo genérico. */
     public function testOutroErroHttpNaoViraCredencialRecusada(): void
     {
@@ -241,11 +258,11 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertStringContainsString('(configuration_error)', $alerta);
     }
 
-    public function testRespostaForaDoContratoEhClassificadaComoTal(): void
+    public function testExcecaoDeValorInesperadoDeForaDaIntegracaoEhErroInterno(): void
     {
-        $alerta = $this->alertaDaFalha(fn() => throw new \UnexpectedValueException('Resposta da API CultBr fora do contrato esperado'));
+        $alerta = $this->alertaDaFalha(fn() => throw new \UnexpectedValueException('The stream or file "/var/log/app.log" could not be opened'));
 
-        $this->assertStringContainsString('(unexpected_response)', $alerta);
+        $this->assertStringContainsString('(internal_error)', $alerta);
     }
 
     public function testContratoOuCorpoIlegivelDaIntegracaoEhRespostaInesperada(): void

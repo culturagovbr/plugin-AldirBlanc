@@ -789,23 +789,23 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json(['started' => true]);
     }
 
-    /**
-     * Classifica a falha para a sessão, para o log e para o texto da tela. O gestor não pode agir
-     * sobre nenhuma dessas causas, mas só espera e tenta de novo quando faz sentido.
-     */
+    /** Classifica a causa da falha para o alerta no log; a entrada segue em modo degradado. */
     protected function syncFailureFor(\Throwable $e): SyncFailure
     {
-        if ($e instanceof IntegrationError && $e->kind() === IntegrationError::KIND_CONFIGURATION) {
+        if (!$e instanceof IntegrationError) {
+            return SyncFailure::InternalError;
+        }
+
+        if ($e->kind() === IntegrationError::KIND_CONFIGURATION) {
             return SyncFailure::ConfigurationError;
         }
 
         // As duas APIs divergem aqui: credencial recusada é 403 na Gestão e 401 na Conecta.
-        if ($e instanceof IntegrationError && in_array($e->httpStatus(), [401, 403], true)) {
+        if (in_array($e->httpStatus(), [401, 403], true)) {
             return SyncFailure::CredentialRefused;
         }
 
-        $foraDoContrato = $e instanceof \UnexpectedValueException
-            || ($e instanceof IntegrationError && in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true));
+        $foraDoContrato = in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true);
 
         return $foraDoContrato ? SyncFailure::UnexpectedResponse : SyncFailure::ApiUnavailable;
     }

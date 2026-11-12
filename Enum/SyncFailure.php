@@ -11,4 +11,5 @@ enum SyncFailure: string
     case ConfigurationError = 'configuration_error';
     case CredentialRefused = 'credential_refused';
     case UnexpectedResponse = 'unexpected_response';
+    case InternalError = 'internal_error';
 }
