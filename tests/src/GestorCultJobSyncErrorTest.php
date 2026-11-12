@@ -13,10 +13,12 @@ use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Entities\User;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\Traits\UserDirector;
 
 class GestorCultJobSyncErrorTest extends TestCase
 {
+    use CapturesLog;
     use UserDirector;
 
     private const SYNC_KEYS = [
@@ -424,4 +426,25 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77555555555555']));
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
+
+    public function testDocumentoDesconhecidoPelaOrigemSaiEmWarning(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse(null, Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasWarningThatContains('Documento desconhecido pela origem'));
+        $this->assertFalse($capturado->hasInfoThatContains('Documento desconhecido pela origem'));
+    }
+
+    public function testRespostaComEntesSegueEmInfo(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse($this->respostaComEntes([$this->enteValido('84444444444444', 'Ente Info')]), Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasInfoThatContains('Resposta da API recebida'));
+        $this->assertFalse($capturado->hasWarningThatContains('Documento desconhecido pela origem'));
+    }
+
 }

@@ -89,9 +89,11 @@ class GestorCultJob
             $snapshot = $this->fetchGestorData();
             [$federativeEntities, $untouchableDocuments] = $snapshot === null ? [[], []] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
 
-            $app->log->info($snapshot === null
-                ? "[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}"
-                : "[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+            if ($snapshot === null) {
+                $app->log->warning("[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}");
+            } else {
+                $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
+            }
         } catch (\Throwable $e) {
             $app->log->error("[Gestores CultBR] Erro ao buscar dados da API durante sincronização | Usuário ID: {$userId} | Documento: {$document} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
 
