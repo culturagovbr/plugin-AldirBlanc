@@ -23,9 +23,12 @@ use AldirBlanc\Integration\Conecta\Http\FormularioEstruturaClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeConsultaClient;
 use AldirBlanc\Integration\Conecta\Http\ParAcoesClient;
+use AldirBlanc\Integration\Conecta\Http\ParCadastroAnalisesClient;
+use AldirBlanc\Integration\Conecta\Http\ParCadastroClient;
 use AldirBlanc\Integration\Conecta\Http\ResultadoClient;
 use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesParSituation;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
@@ -36,7 +39,7 @@ use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 
 /** A API Conecta MinC por trás do contrato. */
-final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado
+final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado, FetchesParSituation
 {
     /** A Gestão usa 403 para credencial; a Conecta usa 401. Os dois significam recusa. */
     private const REFUSED_STATUSES = [401, 403];
@@ -111,6 +114,30 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
     public function fetchFormularioResultado(int $idTipoAcao): ?array
     {
         return (new FormularioEstruturaClient($idTipoAcao, $this->transport))->fetch();
+    }
+
+    public function fetchParSituation(string $cnpj): array
+    {
+        $transport = $this->transport ?? CurlTransport::forLoginSync();
+        $analises = (array) (new ParCadastroAnalisesClient($cnpj, $transport))->get();
+
+        $situacoes = [];
+        foreach ((array) ($analises['cadastros'] ?? []) as $cadastro) {
+            $id = filter_var($cadastro['id_par_cadastro'] ?? null, FILTER_VALIDATE_INT);
+            if ($id === false) {
+                continue;
+            }
+
+            $dados = (array) (new ParCadastroClient($id, $transport))->get();
+            $ano = filter_var($dados['ano_par'] ?? null, FILTER_VALIDATE_INT);
+            $situacoes[] = [
+                'ano' => $ano === false ? null : $ano,
+                'situacao' => isset($dados['nome_status_par']) ? (string) $dados['nome_status_par'] : null,
+                'excluido' => (bool) ($dados['excluido'] ?? false),
+            ];
+        }
+
+        return $situacoes;
     }
 
     public function fetchParTipoAcao(OpportunityId $opportunity): ?int

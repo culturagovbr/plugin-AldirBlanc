@@ -16,6 +16,7 @@ use AldirBlanc\Integration\ValidatesCredential;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
+use Tests\AldirBlanc\Doubles\SequencedTransport;
 
 /** A API Conecta satisfazendo o contrato, com as diferenças que ela tem em relação à Gestão. */
 class ConectaProviderTest extends TestCase
@@ -33,6 +34,8 @@ class ConectaProviderTest extends TestCase
         'parAcoesEndpoint' => 'par/acoes',
         'oportunidadeEndpoint' => 'oportunidades/{id}',
         'validarTokenEndpoint' => 'validar-token',
+        'parCadastroAnalisesEndpoint' => 'par/cadastro/{document}/analises',
+        'parCadastroEndpoint' => 'par/cadastro/{id}',
     ];
 
     private function comConfig(array $trocas, callable $exercicio): void
@@ -376,5 +379,47 @@ class ConectaProviderTest extends TestCase
         $injetado = new FakeTransport();
 
         $this->assertSame($injetado, $this->managerTransportOf(new ConectaProvider($injetado)));
+    }
+
+    public function testSituacaoDoParConsultaAsAnalisesEDepoisCadaCadastro(): void
+    {
+        $transporte = new SequencedTransport([
+            [200, json_encode(['cnpj_ente' => '00394601000126', 'cadastros' => [['id_par_cadastro' => 17832], ['id_par_cadastro' => 33355]]])],
+            [200, json_encode(['id_par_cadastro' => 17832, 'ano_par' => 2025, 'nome_status_par' => 'Habilitado', 'excluido' => false])],
+            [200, json_encode(['id_par_cadastro' => 33355, 'ano_par' => 2026, 'nome_status_par' => null, 'excluido' => true])],
+        ]);
+
+        $this->comConfig([], function () use ($transporte) {
+            $situacao = (new ConectaProvider($transporte))->fetchParSituation('00394601000126');
+
+            $this->assertSame([
+                ['ano' => 2025, 'situacao' => 'Habilitado', 'excluido' => false],
+                ['ano' => 2026, 'situacao' => null, 'excluido' => true],
+            ], $situacao);
+            $this->assertSame([
+                self::HOST . '/par/cadastro/00394601000126/analises',
+                self::HOST . '/par/cadastro/17832',
+                self::HOST . '/par/cadastro/33355',
+            ], array_column($transporte->requisicoes, 'url'));
+        });
+    }
+
+    public function testEnteSemCadastroNoParDevolveListaVaziaComUmaChamadaSo(): void
+    {
+        $transporte = new SequencedTransport([[200, json_encode(['cnpj_ente' => '18174562000460', 'cadastros' => []])]]);
+
+        $this->comConfig([], function () use ($transporte) {
+            $this->assertSame([], (new ConectaProvider($transporte))->fetchParSituation('18174562000460'));
+            $this->assertCount(1, $transporte->requisicoes);
+        });
+    }
+
+    public function testErroHttpNaSituacaoDoParViraErroDaIntegracao(): void
+    {
+        $this->comResposta(json_encode(['detail' => 'Erro interno']), function (FakeTransport $transporte) {
+            $this->expectException(IntegrationError::class);
+
+            (new ConectaProvider($transporte))->fetchParSituation('00394601000126');
+        }, 500);
     }
 }
