@@ -28,6 +28,7 @@ use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\LinhasBeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\ParSituationService;
 use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
@@ -123,6 +124,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'status' => AgentRelation::STATUS_ENABLED,
         ]);
 
+        $parSituation = new ParSituationService();
         $federativeEntities = [];
         foreach ($relations as $relation) {
             $federativeEntity = $relation->owner;
@@ -138,6 +140,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'document' => $federativeEntity->document,
                 'exercices' => $exercices,
                 'hasParData' => !empty($exercices),
+                'parReason' => $parSituation->reasonFor($federativeEntity),
             ];
         }
 
