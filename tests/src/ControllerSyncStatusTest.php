@@ -439,4 +439,37 @@ class ControllerSyncStatusTest extends TestCase
 
         $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
     }
+
+    public function testEntradaDegradadaDepoisDeTentativaSemRespostaMarcaASessao(): void
+    {
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = false;
+        $_SESSION['gestor_cult_sync_started_at'] = time();
+
+        $capturado = $this->capturandoLog(fn() => $this->assertSame(
+            ['entered' => true, 'degraded' => true],
+            $this->callJson(fn() => $this->controller()->callEnterDegraded()),
+        ));
+
+        $this->assertSessaoDegradada();
+        $this->assertTrue($capturado->hasWarningThatContains('Causa: requisição de sincronização sem resposta'));
+    }
+
+    public function testEntradaDegradadaSemTentativaNaSessaoEhRecusada(): void
+    {
+        $this->callJson(fn() => $this->controller()->callEnterDegraded());
+
+        $this->assertSame(409, $this->app->response->getStatusCode());
+        $this->assertArrayNotHasKey('gestor_cult_sync_completed', $_SESSION);
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
+    }
+
+    public function testEntradaDepoisDeSincronizacaoConcluidaNaoMarcaModoDegradado(): void
+    {
+        $_SESSION['gestor_cult_sync_started'] = true;
+        $_SESSION['gestor_cult_sync_completed'] = true;
+
+        $this->assertSame(['entered' => true], $this->callJson(fn() => $this->controller()->callEnterDegraded()));
+        $this->assertArrayNotHasKey('gestor_cult_sync_degraded', $_SESSION);
+    }
 }

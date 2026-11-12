@@ -100,6 +100,11 @@ class TestableController extends Controller
         $this->GET_consolidatingData();
     }
 
+    public function callEnterDegraded(): void
+    {
+        $this->POST_enterDegraded();
+    }
+
     public function callLogoutOnError(): void
     {
         $this->POST_logoutOnError();

@@ -863,6 +863,31 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
+     * Entrada em modo degradado quando a própria requisição de sincronização falhou sem responder.
+     * Só vale depois de uma tentativa real nesta sessão, para não servir de atalho que pula a sincronização.
+     *
+     * POST /aldirblanc/enter-degraded
+     */
+    public function POST_enterDegraded(): void
+    {
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+
+        if ($syncCompleted) {
+            $this->json(['entered' => true]);
+            return;
+        }
+
+        if (!$syncStarted) {
+            $this->errorJson(i::__('Nenhuma sincronização foi iniciada nesta sessão.'), 409);
+            return;
+        }
+
+        $this->enterDespiteSyncFailure('requisição de sincronização sem resposta');
+        $this->json(['entered' => true, 'degraded' => true]);
+    }
+
+    /**
      * Faz logout quando há erro de consolidação
      * 
      * POST /aldirblanc/logout-on-error
