@@ -600,9 +600,12 @@ class GestorCultJobAssociationTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
 
-        $this->sincronizarComEntes([
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
             ['document' => '66000000000003', 'name' => 'Exercicios Associativo', 'exercicios' => ['id' => 1, 'ano' => 2025, 'metas' => []]],
-        ]);
+        ]));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Árvore do PAR fora do formato ignorada | Ente: 66000000000003'));
+        $this->assertFalse($capturado->hasWarningThatContains('Árvore do PAR preservada'));
 
         $this->assertNotNull($this->vinculoDoAgente($user->profile, '66000000000003'));
         $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66000000000003']);
@@ -907,9 +910,13 @@ class GestorCultJobAssociationTest extends TestCase
         $gravada = $this->parMinimo();
         $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000007', 'Com Árvore', $gravada));
 
-        $this->sincronizarComEntes([
+        $capturado = $this->capturandoLog(fn () => $this->sincronizarComEntes([
             ['document' => '67000000000007', 'name' => 'Com Árvore', 'exercicios' => [['ano' => 2025]]],
-        ]);
+        ]));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Árvore do PAR preservada | Ente: 67000000000007 | Motivo: árvore fora do formato'));
+        $this->assertFalse($capturado->hasWarningThatContains('resposta sem exercicios'));
+        $this->assertFalse($capturado->hasWarningThatContains('fora do formato ignorada'));
 
         $this->assertSame($gravada, $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '67000000000007'])->exercices);
         $relation = $this->vinculoDoAgente($user->profile, '67000000000007');

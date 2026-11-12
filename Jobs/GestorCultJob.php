@@ -324,15 +324,20 @@ class GestorCultJob
         return is_array($exercises) && ($exercises === [] || $this->isValidExercisesList($exercises)) ? $exercises : [];
     }
 
-    /** Resposta sem exercicios não apaga a árvore gravada: sem ela o gestor não cria oportunidade. */
-    private function applyEntityExercises(FederativeEntity $entity, array $exercicios): bool
+    /** Resposta sem árvore válida não apaga a gravada: sem ela o gestor não cria oportunidade. */
+    private function applyEntityExercises(FederativeEntity $entity, array $exercicios, bool $isMalformed): bool
     {
         $gravada = $entity->exercices;
 
         if ($exercicios === [] && $gravada !== null && $gravada !== []) {
-            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: resposta sem exercicios");
+            $motivo = $isMalformed ? 'árvore fora do formato' : 'resposta sem exercicios';
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR preservada | Ente: {$entity->document} | Motivo: {$motivo}");
 
             return false;
+        }
+
+        if ($isMalformed) {
+            App::i()->log->warning("[Gestores CultBR] Árvore do PAR fora do formato ignorada | Ente: {$entity->document}");
         }
 
         if (($gravada === null ? null : json_encode($gravada)) === json_encode($exercicios)) {
@@ -588,6 +593,7 @@ class GestorCultJob
                 $doc = trim((string) $data['document']);
                 $name = trim((string) $data['name']);
                 $exercicios = $this->normalizeEntityExercises($data);
+                $isMalformedTree = !empty($data['exercicios']) && $exercicios === [];
 
                 $entity = $entitiesByDoc[$doc] ?? null;
 
@@ -598,7 +604,7 @@ class GestorCultJob
                         $changed = true;
                     }
 
-                    if ($this->applyEntityExercises($entity, $exercicios)) {
+                    if ($this->applyEntityExercises($entity, $exercicios, $isMalformedTree)) {
                         $changed = true;
                     }
                     if ($changed) {
@@ -608,7 +614,7 @@ class GestorCultJob
                     $entity = new FederativeEntity();
                     $entity->name = $name;
                     $entity->document = $doc;
-                    $entity->exercices = $exercicios;
+                    $this->applyEntityExercises($entity, $exercicios, $isMalformedTree);
                     $entity->createTimestamp = new \DateTime();
                     $entity->subsite = $app->getCurrentSubsite();
                     $em->persist($entity);
