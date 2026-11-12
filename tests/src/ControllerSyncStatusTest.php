@@ -440,7 +440,9 @@ class ControllerSyncStatusTest extends TestCase
     {
         $this->loginGestorComVinculo();
 
-        $this->assertEntrouDegradado($this->callJson(fn() => $this->falhaDeTransporte()->callStartSync()));
+        $capturado = $this->capturandoLog(fn() => $this->assertEntrouDegradado($this->callJson(fn() => $this->falhaDeTransporte()->callStartSync())));
+
+        $this->assertTrue($capturado->hasWarningThatContains('Entrando apesar da falha da sincronização (modo degradado)'));
     }
 
     public function testFalhaDaSyncDeUsuarioSemPapelEntraComoUsuarioComum(): void

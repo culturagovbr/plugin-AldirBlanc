@@ -283,10 +283,12 @@ class GestorCultJobAssociationTest extends TestCase
         $entityQueSai = $this->persistFederativeEntity('44444444444444', 'Vai Sair');
         $this->persistRelation($agent, $entityQueSai);
 
-        $this->job()->callAssociateFederativeEntities($agent, [
+        $capturado = $this->capturandoLog(fn() => $this->job()->callAssociateFederativeEntities($agent, [
             ['document' => '55555555555555', 'name' => 'Ente Atual', 'exercicios' => $this->parMinimo()],
-        ]);
+        ]));
         $this->app->em->clear();
+
+        $this->assertTrue($capturado->hasWarningThatContains('Ente federado não informado pela origem, vínculo mantido e marcado'));
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entityQueSai]);
         $this->assertCount(1, $relations, 'O vínculo do ente que saiu da resposta continua');

@@ -11,6 +11,7 @@ use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Role as MapasRole;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
@@ -21,6 +22,7 @@ use Tests\Traits\UserDirector;
  */
 class GestorCultJobRevogacaoTest extends TestCase
 {
+    use CapturesLog;
     use ConfiguresPlugin;
 
     use UserDirector;
@@ -369,10 +371,12 @@ class GestorCultJobRevogacaoTest extends TestCase
         $user = $this->gestorLogadoComUmEnte();
         $this->marcarVinculoComoSumidoHa($user, 8);
 
-        $this->sincronizarComListaVazia();
+        $capturado = $this->capturandoLog(fn() => $this->sincronizarComListaVazia());
 
         $this->assertPapelERelacoesRevogados($user);
         $this->assertSame(0, $this->papelGravado($user));
+        $this->assertTrue($capturado->hasWarningThatContains('dias removido'));
+        $this->assertTrue($capturado->hasWarningThatContains('Nenhum vínculo com ente restante, papel GestorCultBr removido'));
     }
 
     public function testVinculoSumidoHaOitoDiasComOportunidadeDoGestorEhMantido(): void
