@@ -6,6 +6,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Role;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\UserAccessService;
 use MapasCulturais\Entities\AgentRelation;
 use Tests\Abstract\TestCase;
@@ -115,7 +116,8 @@ class GestorCultJobAssociationTest extends TestCase
         try {
             $this->job()->callAssociateFederativeEntities($user->profile, $payload);
             $this->fail('Esperava erro de contrato');
-        } catch (\UnexpectedValueException $e) {
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
             $this->assertStringContainsString('Resposta da API CultBr fora do contrato esperado', $e->getMessage());
         }
 

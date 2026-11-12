@@ -14,6 +14,7 @@ use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Dtos\FederativeEntitySnapshot;
 use AldirBlanc\Dtos\ManagerSnapshot;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\FederativeEntityDocument;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\UserAccessService;
@@ -155,14 +156,14 @@ class GestorCultJob
 
         if (array_key_exists('entes_federados', $response)) {
             if (!is_array($response['entes_federados'])) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
+                throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': entes_federados deve ser array');
             }
 
             return $response['entes_federados'];
         }
 
         if (!$this->isListArray($response)) {
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': chave entes_federados ausente');
         }
 
         // Formato antigo: o próprio retorno é a lista de entes
@@ -407,7 +408,7 @@ class GestorCultJob
 
         if ($discarded !== []) {
             $index = array_key_first($discarded);
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ": item {$index} {$discarded[$index]}");
         }
     }
 
@@ -431,7 +432,7 @@ class GestorCultJob
 
         // Seguir com a lista vazia revogaria a role e apagaria todas as relações do agente.
         if ($valid === []) {
-            throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
+            throw IntegrationError::contract(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
         }
 
         return [$valid, $untouchable];

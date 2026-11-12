@@ -193,7 +193,8 @@ class GestorCultJobSyncErrorTest extends TestCase
         try {
             $this->jobWithResponse($resposta)->sync();
             $this->fail('Esperava erro de contrato quando nenhum ente sobrevive');
-        } catch (\UnexpectedValueException $e) {
+        } catch (IntegrationError $e) {
+            $this->assertSame(IntegrationError::KIND_CONTRACT, $e->kind());
             $this->assertStringContainsString('Resposta da API CultBr fora do contrato esperado', $e->getMessage());
         }
 
