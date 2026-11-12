@@ -13,6 +13,7 @@ use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\MissingGestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Integration\FederativeEntityDocument;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Enum\Role;
@@ -1385,10 +1386,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $pathParts = array_values(array_filter(explode('/', $app->request->getPathInfo())));
         $feIdx = array_search('federative-entity', $pathParts);
         $document = ($feIdx !== false && ($pathParts[$feIdx + 2] ?? null) === 'opportunities')
-            ? ($pathParts[$feIdx + 1] ?? null)
-            : null;
+            ? FederativeEntityDocument::normalize($pathParts[$feIdx + 1] ?? null)
+            : '';
 
-        if (!$document) {
+        if ($document === '') {
             $this->json(['error' => true, 'message' => 'document (CNPJ) não informado'], 400);
             return;
         }
