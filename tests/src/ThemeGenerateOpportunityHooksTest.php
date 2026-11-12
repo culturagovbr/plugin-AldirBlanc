@@ -445,9 +445,9 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
     }
 
     /** Edital já gravado com a ação informada, recarregado do banco como numa requisição nova. */
-    private function editalComParGravado(string $acaoGravada): Opportunity
+    private function editalComParGravado(string $acaoGravada, array $papeis = [Role::GESTOR_CULT_BR]): Opportunity
     {
-        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $gestor = $this->userDirector->createUser($papeis);
         $this->fillRequiredProfileFields($gestor->profile);
         $opportunity = $this->opportunity($gestor, 'Edital com PAR gravado');
         $this->app->disableAccessControl();
@@ -503,6 +503,15 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $opportunity = $this->editalComParGravado('99');
 
         $opportunity->setMetadata('parAcaoId', '42');
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    public function testAdminQueTambemEhGestorTrocaAAcaoSemSerRecusado(): void
+    {
+        $opportunity = $this->editalComParGravado('42', [Role::ADMIN, Role::GESTOR_CULT_BR]);
+
+        $opportunity->setMetadata('parAcaoId', '77');
 
         $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
     }
