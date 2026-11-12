@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Dtos\GestorDocument;
+use AldirBlanc\Exceptions\IntegrationError;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\TestableGestorCultJob;
 
@@ -47,7 +48,7 @@ class GestorCultJobParsingTest extends TestCase
     {
         $response = ['entes_federados' => 'não é um array', 'rg' => '123'];
 
-        $this->expectException(\UnexpectedValueException::class);
+        $this->expectException(IntegrationError::class);
         $this->expectExceptionMessage('entes_federados deve ser array');
 
         $this->job()->callExtractFederativeEntitiesFromResponse($response);
@@ -57,7 +58,7 @@ class GestorCultJobParsingTest extends TestCase
     {
         $response = ['rg' => '123', 'nome' => 'Gestor Sem Chave De Entes'];
 
-        $this->expectException(\UnexpectedValueException::class);
+        $this->expectException(IntegrationError::class);
         $this->expectExceptionMessage('chave entes_federados ausente');
 
         $this->job()->callExtractFederativeEntitiesFromResponse($response);

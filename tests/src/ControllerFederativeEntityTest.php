@@ -113,6 +113,7 @@ class ControllerFederativeEntityTest extends TestCase
             'document' => '11111111111111',
             'exercices' => $exercices,
             'hasParData' => true,
+            'parReason' => null,
         ]], $payload);
     }
 
@@ -131,7 +132,22 @@ class ControllerFederativeEntityTest extends TestCase
             'document' => '22222222222222',
             'exercices' => [],
             'hasParData' => false,
+            'parReason' => null,
         ]], $payload);
+    }
+
+    public function testFederativeEntitiesEnteSemParTrazOMotivoGravado(): void
+    {
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->login($user);
+        $entity = $this->persistFederativeEntity('22222222222223', 'Ente Com Motivo');
+        $entity->parSituation = ['checkedAt' => (new \DateTime())->format('Y-m-d H:i:s'), 'cadastros' => []];
+        $this->app->em->flush();
+        $this->persistRelation($user->profile, $entity);
+
+        $payload = $this->callJson(fn() => $this->controller()->GET_federativeEntities());
+
+        $this->assertSame('Sem PAR cadastrado', $payload[0]['parReason']);
     }
 
     function testFederativeEntitiesListaEntesComESemPar()

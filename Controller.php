@@ -11,7 +11,9 @@ use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Exceptions\MissingGestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
+use AldirBlanc\Integration\FederativeEntityDocument;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
 use AldirBlanc\Enum\Role;
@@ -26,6 +28,7 @@ use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\LinhasBeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
+use AldirBlanc\Services\ParSituationService;
 use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
@@ -121,6 +124,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'status' => AgentRelation::STATUS_ENABLED,
         ]);
 
+        $parSituation = new ParSituationService();
         $federativeEntities = [];
         foreach ($relations as $relation) {
             $federativeEntity = $relation->owner;
@@ -136,6 +140,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 'document' => $federativeEntity->document,
                 'exercices' => $exercices,
                 'hasParData' => !empty($exercices),
+                'parReason' => $parSituation->reasonFor($federativeEntity),
             ];
         }
 
@@ -740,17 +745,15 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $app->log->info("[Gestores CultBR] startSync disparado | Usuário ID: {$userId}");
 
-        // Marca que o sync começou e limpa flags de erro anteriores
+        // Marca que o sync começou e limpa a marca de modo degradado anterior
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
         $_SESSION['gestor_cult_sync_started_at'] = time();
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['gestor_cult_sync_degraded']);
 
         // Dispara a sincronização em background
         try {
-            $gestorDocument = new GestorDocument($this->getGestorCpf());
-            $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
+            $syncExecuted = $this->createGestorCultJob($this->gestorDocument())->sync();
 
             // Só o lock devolve false, e lock ativo é concorrência local: o sync está em curso
             // em outra requisição, ou acabou de terminar. Dizer "sem conexão" com a API no ar
@@ -762,42 +765,19 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 return;
             }
 
-            if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
-                $_SESSION['gestor_cult_sync_completed'] = true;
-
-                $this->json([
-                    'started' => false,
-                    'error' => true,
-                    'retryable' => true,
-                    'errorMessage' => $_SESSION['gestor_cult_sync_error_message'] ?? GestorCultJob::API_UNAVAILABLE_MESSAGE,
-                ]);
-                return;
-            }
-
             $_SESSION['gestor_cult_sync_completed'] = true;
             $this->enqueueBatchSyncJobs($app->user->profile);
         } catch (Halt $e) {
             throw $e;
         } catch (\Throwable $e) {
             $falha = $this->syncFailureFor($e);
-
-            $mensagem = $falha->message();
             $userId = $app->user->id ?? 'N/A';
 
             // Único alerta da falha: o job registra o contexto, mas não sabe classificar a causa.
             $app->log->critical("[Gestores CultBR] Sincronização falhou ({$falha->value}) | Usuário ID: {$userId} | Erro: " . $e->getMessage() . " | Código: " . $e->getCode());
 
-            // Em caso de erro, marca como concluído para não travar
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            $_SESSION['gestor_cult_sync_error'] = $falha->value;
-            $_SESSION['gestor_cult_sync_error_message'] = $mensagem;
-
-            $this->json([
-                'started' => false,
-                'error' => true,
-                'retryable' => $falha->isRetryable(),
-                'errorMessage' => $mensagem,
-            ]);
+            $this->enterDespiteSyncFailure($falha->value);
+            $this->json(['started' => true, 'degraded' => true]);
             return;
         }
 
@@ -805,25 +785,36 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json(['started' => true]);
     }
 
-    /**
-     * Classifica a falha para a sessão, para o log e para o texto da tela. O gestor não pode agir
-     * sobre nenhuma dessas causas, mas só espera e tenta de novo quando faz sentido.
-     */
+    /** Classifica a causa da falha para o alerta no log; a entrada segue em modo degradado. */
     protected function syncFailureFor(\Throwable $e): SyncFailure
     {
-        if ($e instanceof IntegrationError && $e->kind() === IntegrationError::KIND_CONFIGURATION) {
+        if (!$e instanceof IntegrationError) {
+            return SyncFailure::InternalError;
+        }
+
+        if ($e->kind() === IntegrationError::KIND_CONFIGURATION) {
             return SyncFailure::ConfigurationError;
         }
 
         // As duas APIs divergem aqui: credencial recusada é 403 na Gestão e 401 na Conecta.
-        if ($e instanceof IntegrationError && in_array($e->httpStatus(), [401, 403], true)) {
+        if (in_array($e->httpStatus(), [401, 403], true)) {
             return SyncFailure::CredentialRefused;
         }
 
-        $foraDoContrato = $e instanceof \UnexpectedValueException
-            || ($e instanceof IntegrationError && in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true));
+        $foraDoContrato = in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true);
 
         return $foraDoContrato ? SyncFailure::UnexpectedResponse : SyncFailure::ApiUnavailable;
+    }
+
+    /** Sem CPF no perfil não há o que consultar: a chamada iria para a API com o documento vazio. */
+    private function gestorDocument(): GestorDocument
+    {
+        $cpf = $this->getGestorCpf();
+        if ($cpf === '') {
+            throw new MissingGestorDocument();
+        }
+
+        return new GestorDocument($cpf);
     }
 
     protected function getGestorCpf(): string
@@ -858,11 +849,46 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         ]);
     }
 
+    /** Falha da sincronização nunca barra a entrada: papel e vínculos gravados ficam como estão. */
+    private function enterDespiteSyncFailure(string $causa): void
+    {
+        $_SESSION['gestor_cult_sync_completed'] = true;
+        $_SESSION['gestor_cult_sync_degraded'] = true;
+
+        $userId = App::i()->user->id ?? 'N/A';
+        App::i()->log->warning("[Gestores CultBR] Entrando apesar da falha da sincronização (modo degradado) | Usuário ID: {$userId} | Causa: {$causa}");
+    }
+
     protected function isSyncSessionStale(): bool
     {
         $startedAt = $_SESSION['gestor_cult_sync_started_at'] ?? null;
 
         return is_numeric($startedAt) && ((time() - (int) $startedAt) > self::SYNC_SESSION_TTL);
+    }
+
+    /**
+     * Entrada em modo degradado quando a própria requisição de sincronização falhou sem responder.
+     * Só vale depois de uma tentativa real nesta sessão, para não servir de atalho que pula a sincronização.
+     *
+     * POST /aldirblanc/enter-degraded
+     */
+    public function POST_enterDegraded(): void
+    {
+        $syncStarted = isset($_SESSION['gestor_cult_sync_started']) && $_SESSION['gestor_cult_sync_started'] === true;
+        $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
+
+        if ($syncCompleted) {
+            $this->json(['entered' => true]);
+            return;
+        }
+
+        if (!$syncStarted) {
+            $this->errorJson(i::__('Nenhuma sincronização foi iniciada nesta sessão.'), 409);
+            return;
+        }
+
+        $this->enterDespiteSyncFailure('requisição de sincronização sem resposta');
+        $this->json(['entered' => true, 'degraded' => true]);
     }
 
     /**
@@ -880,8 +906,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         unset($_SESSION['gestor_cult_sync_started']);
         unset($_SESSION['gestor_cult_sync_completed']);
         unset($_SESSION['gestor_cult_sync_started_at']);
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
+        unset($_SESSION['gestor_cult_sync_degraded']);
         unset($_SESSION['selectedFederativeEntity']);
         unset($_SESSION['federative_entity_redirect_uri']);
         
@@ -913,13 +938,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Verifica se o sync foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
 
-        // Verifica se houve erro (verifica se a flag existe e não está vazia)
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
-                   $_SESSION['gestor_cult_sync_error'] !== null &&
-                   $_SESSION['gestor_cult_sync_error'] !== '';
-        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
-
-        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0') . " | hasError: " . ($hasError ? '1' : '0'));
+        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0'));
 
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted && !$syncCompleted) {
@@ -929,28 +948,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         if ($syncStarted && !$syncCompleted && $this->isSyncSessionStale()) {
-            $_SESSION['gestor_cult_sync_completed'] = true;
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = GestorCultJob::API_UNAVAILABLE_MESSAGE;
+            $this->enterDespiteSyncFailure('sessão de sincronização vencida');
             $syncCompleted = true;
-            $hasError = true;
-            $errorMessage = GestorCultJob::API_UNAVAILABLE_MESSAGE;
         }
 
-        // Se o sync foi concluído, retorna pronto (com ou sem erro)
         if ($syncCompleted) {
-            // Se não há erro real, garante que as flags estão limpas
-            if (!$hasError) {
-                unset($_SESSION['gestor_cult_sync_error']);
-                unset($_SESSION['gestor_cult_sync_error_message']);
-            }
-
-            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId} | error: " . ($hasError ? '1' : '0'));
-            $this->json([
-                'ready' => true,
-                'error' => $hasError,
-                'errorMessage' => $hasError ? $errorMessage : null
-            ]);
+            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId}");
+            $this->json(['ready' => true]);
             return;
         }
 
@@ -969,21 +973,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
         $userId = $app->user->id ?? 'N/A';
 
-        // Verifica se o sync já foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
-                   $_SESSION['gestor_cult_sync_error'] !== null &&
-                   $_SESSION['gestor_cult_sync_error'] !== '';
 
-        // Se há erro, mostra a tela de erro (usuário não pode avançar)
-        if ($syncCompleted && $hasError) {
-            $app->log->info("[Gestores CultBR] consolidatingData: exibindo tela de erro | Usuário ID: {$userId}");
-            $this->render('consolidating-data');
-            return;
-        }
-
-        // Se concluído sem erro, redireciona para o painel
-        if ($syncCompleted && !$hasError) {
+        if ($syncCompleted) {
             $app->log->info("[Gestores CultBR] consolidatingData: sync já concluído, redirecionando ao painel | Usuário ID: {$userId}");
             $app->redirect($app->createUrl('panel', 'index'));
             return;
@@ -1397,10 +1389,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $pathParts = array_values(array_filter(explode('/', $app->request->getPathInfo())));
         $feIdx = array_search('federative-entity', $pathParts);
         $document = ($feIdx !== false && ($pathParts[$feIdx + 2] ?? null) === 'opportunities')
-            ? ($pathParts[$feIdx + 1] ?? null)
-            : null;
+            ? FederativeEntityDocument::normalize($pathParts[$feIdx + 1] ?? null)
+            : '';
 
-        if (!$document) {
+        if ($document === '') {
             $this->json(['error' => true, 'message' => 'document (CNPJ) não informado'], 400);
             return;
         }

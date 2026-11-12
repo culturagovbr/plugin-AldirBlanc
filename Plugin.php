@@ -52,6 +52,8 @@ class Plugin extends \MapasCulturais\Plugin
                         'criarResultadoEndpoint' => 'editais/{id_edital}/resultado',
                         'formularioEstruturaEndpoint' => 'par/formularios/estrutura',
                         'validarTokenEndpoint' => 'validar-token',
+                        'parCadastroAnalisesEndpoint' => 'par/cadastro/{document}/analises',
+                        'parCadastroEndpoint' => 'par/cadastro/{id}',
                     ],
                 ],
             ], 

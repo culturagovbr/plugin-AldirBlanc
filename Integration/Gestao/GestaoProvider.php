@@ -14,6 +14,7 @@ use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Http\Clients\GestorClient;
 use AldirBlanc\Http\Clients\OportunidadeCultClient;
 use AldirBlanc\Http\Clients\ParAcaoClient;
+use AldirBlanc\Http\Transport\CurlTransport;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
@@ -38,10 +39,15 @@ final class GestaoProvider implements IntegrationProvider
      */
     public function fetchManager(GestorDocument $document): ?ManagerSnapshot
     {
-        $resposta = (new GestorClient($document, $this->transport))->get();
+        $resposta = (new GestorClient($document, $this->managerTransport()))->get();
 
         // A lista nua é forma antiga e legítima da Gestão.
         return ManagerSnapshotMapper::fromResponse($resposta, acceptFlatList: true, documento: $document->document);
+    }
+
+    private function managerTransport(): Transport
+    {
+        return $this->transport ?? CurlTransport::forLoginSync();
     }
 
     public function listParActions(int $skip, int $limit): ParActionPage

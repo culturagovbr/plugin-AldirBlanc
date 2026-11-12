@@ -16,6 +16,7 @@ class BeneficiariosService
 {
     private const CPF_DIGITOS = 11;
     private const CNPJ_DIGITOS = 14;
+    private const CNPJ_ALFANUMERICO = '/^[A-Z0-9]{12}[0-9]{2}$/';
 
     private LinhasBeneficiariosService $linhas;
     private ResultadoDeParaService $dePara;
@@ -310,12 +311,21 @@ class BeneficiariosService
         return $cpf !== null ? 'Pessoa física' : '';
     }
 
-    /** O documento vem mascarado na ficha; a quantidade de dígitos diz se é CPF ou CNPJ. */
+    /** O documento vem mascarado na ficha; a quantidade de dígitos diz se é CPF ou CNPJ, que também pode ter letras. */
     private function documentoCom(?string $respondido, int $digitos): ?string
     {
         $limpo = preg_replace('/\D/', '', (string) $respondido);
+        if (strlen($limpo) === $digitos) {
+            return $limpo;
+        }
 
-        return strlen($limpo) === $digitos ? $limpo : null;
+        if ($digitos !== self::CNPJ_DIGITOS) {
+            return null;
+        }
+
+        $alfanumerico = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $respondido));
+
+        return preg_match(self::CNPJ_ALFANUMERICO, $alfanumerico) ? $alfanumerico : null;
     }
 
     private function valorDaCategoria(Opportunity $raiz, Registration $contemplada): ?string
