@@ -6,7 +6,6 @@ use AldirBlanc\Entities\FederativeEntity;
 use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Enum\Role;
 use AldirBlanc\Exceptions\IntegrationError;
-use AldirBlanc\Jobs\GestorCultJob;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\AgentRelation;
 use MapasCulturais\Exceptions\Halt;
@@ -34,6 +33,17 @@ class ControllerSyncStatusTest extends TestCase
         parent::setUp();
         $this->login($this->userDirector->createUser());
         $this->clearSyncSession();
+    }
+
+    private function comMarcaDeErroAntiga(callable $exercicio): mixed
+    {
+        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+
+        try {
+            return $exercicio();
+        } finally {
+            unset($_SESSION['gestor_cult_sync_error']);
+        }
     }
 
     private function clearSyncSession(): void
@@ -347,38 +357,39 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(['ready' => false], $payload);
     }
 
-    function testCheckSyncStatusConcluidoSemErroRetornaProntoELimpaMensagemAntiga()
+    public function testCheckSyncStatusConcluidoRetornaPronto(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = '';
-        $_SESSION['gestor_cult_sync_error_message'] = 'Mensagem velha';
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => false,
-            'errorMessage' => null,
-        ], $payload);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error_message', $_SESSION);
+        $this->assertSame(['ready' => true], $payload);
     }
 
-    function testCheckSyncStatusConcluidoComErroRetornaMensagem()
+    public function testMarcaDeErroAntigaNaSessaoNaoMudaOStatus(): void
     {
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-        $_SESSION['gestor_cult_sync_error_message'] = 'Falha esperada';
 
-        $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
+        $payload = $this->comMarcaDeErroAntiga(fn() => $this->callJson(fn() => $this->controller()->callCheckSyncStatus()));
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => true,
-            'errorMessage' => 'Falha esperada',
-        ], $payload);
+        $this->assertSame(['ready' => true], $payload);
+    }
+
+    public function testConsolidacaoConcluidaComMarcaDeErroAntigaVaiParaOPainel(): void
+    {
+        $_SESSION['gestor_cult_sync_completed'] = true;
+
+        $this->comMarcaDeErroAntiga(function () {
+            try {
+                $this->controller()->callConsolidatingData();
+                $this->fail('Esperava o redirecionamento para o painel');
+            } catch (Halt) {
+            }
+        });
+
+        $this->assertStringContainsString('painel', $this->app->response->getHeaderLine('Location'));
     }
 
     function testCheckSyncStatusConcluidoSemStartedNaoFicaEmPolling()
@@ -387,22 +398,7 @@ class ControllerSyncStatusTest extends TestCase
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame([
-            'ready' => true,
-            'error' => false,
-            'errorMessage' => null,
-        ], $payload);
-    }
-
-    function testCheckSyncStatusErroSemMensagemUsaPadraoSeguro()
-    {
-        $_SESSION['gestor_cult_sync_started'] = true;
-        $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-
-        $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
-
-        $this->assertSame(GestorCultJob::API_UNAVAILABLE_MESSAGE, $payload['errorMessage']);
+        $this->assertSame(['ready' => true], $payload);
     }
 
     public function testCheckSyncStatusSessaoVencidaEntraMesmoAssim(): void
@@ -413,7 +409,7 @@ class ControllerSyncStatusTest extends TestCase
 
         $payload = $this->callJson(fn() => $this->controller()->callCheckSyncStatus());
 
-        $this->assertSame(['ready' => true, 'error' => false, 'errorMessage' => null], $payload);
+        $this->assertSame(['ready' => true], $payload);
         $this->assertSessaoDegradada();
     }
 

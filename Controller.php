@@ -921,13 +921,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         // Verifica se o sync foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
 
-        // Verifica se houve erro (verifica se a flag existe e não está vazia)
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
-                   $_SESSION['gestor_cult_sync_error'] !== null &&
-                   $_SESSION['gestor_cult_sync_error'] !== '';
-        $errorMessage = $_SESSION['gestor_cult_sync_error_message'] ?? \AldirBlanc\Jobs\GestorCultJob::API_UNAVAILABLE_MESSAGE;
-
-        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0') . " | hasError: " . ($hasError ? '1' : '0'));
+        $app->log->info("[Gestores CultBR] checkSyncStatus chamado | Usuário ID: {$userId} | Sessão: {$sessionId} | started: " . ($syncStarted ? '1' : '0') . " | completed: " . ($syncCompleted ? '1' : '0'));
 
         // Se o sync não foi iniciado, ainda não está pronto
         if (!$syncStarted && !$syncCompleted) {
@@ -939,23 +933,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         if ($syncStarted && !$syncCompleted && $this->isSyncSessionStale()) {
             $this->enterDespiteSyncFailure('sessão de sincronização vencida');
             $syncCompleted = true;
-            $hasError = false;
         }
 
-        // Se o sync foi concluído, retorna pronto (com ou sem erro)
         if ($syncCompleted) {
-            // Se não há erro real, garante que as flags estão limpas
-            if (!$hasError) {
-                unset($_SESSION['gestor_cult_sync_error']);
-                unset($_SESSION['gestor_cult_sync_error_message']);
-            }
-
-            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId} | error: " . ($hasError ? '1' : '0'));
-            $this->json([
-                'ready' => true,
-                'error' => $hasError,
-                'errorMessage' => $hasError ? $errorMessage : null
-            ]);
+            $app->log->info("[Gestores CultBR] checkSyncStatus: concluído, retornando ready=true | Usuário ID: {$userId} | Sessão: {$sessionId}");
+            $this->json(['ready' => true]);
             return;
         }
 
@@ -974,21 +956,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $app = App::i();
         $userId = $app->user->id ?? 'N/A';
 
-        // Verifica se o sync já foi concluído
         $syncCompleted = isset($_SESSION['gestor_cult_sync_completed']) && $_SESSION['gestor_cult_sync_completed'] === true;
-        $hasError = isset($_SESSION['gestor_cult_sync_error']) &&
-                   $_SESSION['gestor_cult_sync_error'] !== null &&
-                   $_SESSION['gestor_cult_sync_error'] !== '';
 
-        // Se há erro, mostra a tela de erro (usuário não pode avançar)
-        if ($syncCompleted && $hasError) {
-            $app->log->info("[Gestores CultBR] consolidatingData: exibindo tela de erro | Usuário ID: {$userId}");
-            $this->render('consolidating-data');
-            return;
-        }
-
-        // Se concluído sem erro, redireciona para o painel
-        if ($syncCompleted && !$hasError) {
+        if ($syncCompleted) {
             $app->log->info("[Gestores CultBR] consolidatingData: sync já concluído, redirecionando ao painel | Usuário ID: {$userId}");
             $app->redirect($app->createUrl('panel', 'index'));
             return;

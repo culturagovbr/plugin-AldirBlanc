@@ -95,6 +95,11 @@ class TestableController extends Controller
         $this->GET_checkSyncStatus();
     }
 
+    public function callConsolidatingData(): void
+    {
+        $this->GET_consolidatingData();
+    }
+
     public function callLogoutOnError(): void
     {
         $this->POST_logoutOnError();
