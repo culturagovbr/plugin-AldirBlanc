@@ -92,6 +92,27 @@ class ParSituationServiceTest extends TestCase
         $this->assertSame('PAR 2026 sem situação informada', (new ParSituationService($provedor))->reasonFor($this->ente()));
     }
 
+    public function testCadastroMaisRecenteSemSituacaoCedeLugarAoAnteriorComSituacao(): void
+    {
+        $provedor = $this->provedor([
+            ['ano' => 2025, 'situacao' => 'Alteração solicitada pelo MinC', 'excluido' => false],
+            ['ano' => 2026, 'situacao' => null, 'excluido' => false],
+            ['ano' => 2027, 'situacao' => '', 'excluido' => false],
+        ]);
+
+        $this->assertSame('PAR 2025: Alteração solicitada pelo MinC', (new ParSituationService($provedor))->reasonFor($this->ente()));
+    }
+
+    public function testNenhumCadastroComSituacaoUsaOAnoMaisRecente(): void
+    {
+        $provedor = $this->provedor([
+            ['ano' => 2025, 'situacao' => null, 'excluido' => false],
+            ['ano' => 2026, 'situacao' => null, 'excluido' => false],
+        ]);
+
+        $this->assertSame('PAR 2026 sem situação informada', (new ParSituationService($provedor))->reasonFor($this->ente()));
+    }
+
     public function testSoCadastrosExcluidosContamComoSemPar(): void
     {
         $provedor = $this->provedor([['ano' => 2025, 'situacao' => 'Habilitado', 'excluido' => true]]);

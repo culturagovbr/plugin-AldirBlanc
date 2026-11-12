@@ -110,11 +110,12 @@ class ParSituationService
         }
 
         usort($vigentes, fn(array $a, array $b) => ($b['ano'] ?? 0) <=> ($a['ano'] ?? 0));
-        $maisRecente = $vigentes[0];
-        $ano = $maisRecente['ano'] ?? '';
+        foreach ($vigentes as $cadastro) {
+            if (trim((string) ($cadastro['situacao'] ?? '')) !== '') {
+                return sprintf(i::__('PAR %s: %s'), $cadastro['ano'] ?? '', $cadastro['situacao']);
+            }
+        }
 
-        return $maisRecente['situacao'] ?? null
-            ? sprintf(i::__('PAR %s: %s'), $ano, $maisRecente['situacao'])
-            : sprintf(i::__('PAR %s sem situação informada'), $ano);
+        return sprintf(i::__('PAR %s sem situação informada'), $vigentes[0]['ano'] ?? '');
     }
 }
