@@ -248,6 +248,15 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertStringContainsString('(unexpected_response)', $alerta);
     }
 
+    public function testContratoOuCorpoIlegivelDaIntegracaoEhRespostaInesperada(): void
+    {
+        foreach ([IntegrationError::contract('entes_federados deve ser array'), IntegrationError::parse('JSON inválido', 200)] as $erro) {
+            $alerta = $this->alertaDaFalha(fn() => throw $erro);
+
+            $this->assertStringContainsString('(unexpected_response)', $alerta, $erro->kind());
+        }
+    }
+
     public function testFalhaDeTransporteEhClassificadaComoApiIndisponivel(): void
     {
         $alerta = $this->alertaDaFalha(fn() => throw IntegrationError::transport('Connection timed out', 28));
