@@ -244,6 +244,7 @@ class ThemeAuthHooksTest extends TestCase
         $user = $this->userDirector->createUser();
         $this->login($user);
         $this->assertLibera('POST', 'aldirblanc', 'startSync');
+        $this->assertLibera('POST', 'aldirblanc', 'enterDegraded');
     }
 
     function testBlockAccessSyncNaoIniciadoRedirecionaParaConsolidatingDataESalvaUri()
