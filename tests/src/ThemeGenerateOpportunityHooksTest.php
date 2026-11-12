@@ -444,6 +444,78 @@ class ThemeGenerateOpportunityHooksTest extends TestCase
         $this->assertArrayNotHasKey('parAcaoId', $errors);
     }
 
+    /** Edital já gravado com a ação informada, recarregado do banco como numa requisição nova. */
+    private function editalComParGravado(string $acaoGravada): Opportunity
+    {
+        $gestor = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
+        $this->fillRequiredProfileFields($gestor->profile);
+        $opportunity = $this->opportunity($gestor, 'Edital com PAR gravado');
+        $this->app->disableAccessControl();
+        $opportunity->setMetadata('parActions', json_encode(['Ação Compatível']));
+        $opportunity->setMetadata('parExercicioId', '1');
+        $opportunity->setMetadata('parMetaId', '2');
+        $opportunity->setMetadata('parAcaoId', $acaoGravada);
+        $opportunity->setMetadata('parAtividadeId', '4');
+        $opportunity->save(true);
+        $this->app->enableAccessControl();
+
+        $federativeEntity = $this->persistFederativeEntity('12121212121212', 'Ente Com Árvore Atual', [
+            ['metas' => [['acoes' => [['id' => '42', 'nome' => 'Ação Compatível'], ['id' => '43', 'nome' => 'Ação De Outro Modelo']]]]],
+        ]);
+        $this->login($gestor);
+        $this->selectEntityInSession($federativeEntity);
+
+        $id = $opportunity->id;
+        $this->app->em->detach($opportunity);
+
+        return $this->app->repo(Opportunity::class)->find($id);
+    }
+
+    public function testSaveNaoRevalidaAcaoGravadaQueSaiuDaArvoreDoPar(): void
+    {
+        $opportunity = $this->editalComParGravado('99');
+
+        $opportunity->name = 'Nome editado';
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    public function testTrocarParaAcaoForaDaArvoreEhRecusado(): void
+    {
+        $opportunity = $this->editalComParGravado('42');
+
+        $opportunity->setMetadata('parAcaoId', '77');
+
+        $this->assertArrayHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    public function testTrocarParaAcaoDeOutroModeloEhRecusado(): void
+    {
+        $opportunity = $this->editalComParGravado('42');
+
+        $opportunity->setMetadata('parAcaoId', '43');
+
+        $this->assertArrayHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    public function testTrocarParaAcaoCompativelPassa(): void
+    {
+        $opportunity = $this->editalComParGravado('99');
+
+        $opportunity->setMetadata('parAcaoId', '42');
+
+        $this->assertArrayNotHasKey('parAcaoId', $opportunity->validationErrors);
+    }
+
+    public function testTirarUmDosCamposDoParContinuaRecusado(): void
+    {
+        $opportunity = $this->editalComParGravado('99');
+
+        $opportunity->setMetadata('parMetaId', '');
+
+        $this->assertArrayHasKey('parMetaId', $opportunity->validationErrors);
+    }
+
     // ===== isEligibleForSync (gate de integração CultBr), via update:finish =====
 
     function testDisparaUpdateQuandoTudoCorretoESubsiteCoincide()
