@@ -226,6 +226,18 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertStringContainsString('credential_refused', reset($criticos)['message']);
     }
 
+    public function testCpfAusenteEhErroInternoSemChamarAApi(): void
+    {
+        $controller = $this->controller();
+        $controller->setGestorCpf('');
+
+        $capturado = $this->capturandoLog(fn() => $this->assertEntrouDegradado($this->callJson(fn() => $controller->callStartSync())));
+
+        $this->assertTrue($capturado->hasCriticalThatContains('Sincronização falhou (internal_error) | Usuário ID: '));
+        $this->assertTrue($capturado->hasCriticalThatContains('Erro: CPF do gestor ausente no perfil'));
+        $this->assertSame(0, $controller->getSyncCalls());
+    }
+
     public function testCpfNuloNoPerfilEhErroInterno(): void
     {
         $controller = $this->controller();

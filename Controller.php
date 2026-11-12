@@ -11,6 +11,7 @@ use AldirBlanc\Entities\FederativeEntityAgentRelation;
 use AldirBlanc\Dtos\ParAction;
 use AldirBlanc\Dtos\GestorDocument;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Exceptions\MissingGestorDocument;
 use AldirBlanc\Helpers\IntegrationTokenHelper;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ParActionPageLimits;
@@ -750,8 +751,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         // Dispara a sincronização em background
         try {
-            $gestorDocument = new GestorDocument($this->getGestorCpf());
-            $syncExecuted = $this->createGestorCultJob($gestorDocument)->sync();
+            $syncExecuted = $this->createGestorCultJob($this->gestorDocument())->sync();
 
             // Só o lock devolve false, e lock ativo é concorrência local: o sync está em curso
             // em outra requisição, ou acabou de terminar. Dizer "sem conexão" com a API no ar
@@ -808,6 +808,17 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $foraDoContrato = in_array($e->kind(), [IntegrationError::KIND_CONTRACT, IntegrationError::KIND_PARSE], true);
 
         return $foraDoContrato ? SyncFailure::UnexpectedResponse : SyncFailure::ApiUnavailable;
+    }
+
+    /** Sem CPF no perfil não há o que consultar: a chamada iria para a API com o documento vazio. */
+    private function gestorDocument(): GestorDocument
+    {
+        $cpf = $this->getGestorCpf();
+        if ($cpf === '') {
+            throw new MissingGestorDocument();
+        }
+
+        return new GestorDocument($cpf);
     }
 
     protected function getGestorCpf(): string
