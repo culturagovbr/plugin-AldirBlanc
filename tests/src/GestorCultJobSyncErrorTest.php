@@ -138,7 +138,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
     }
 
-    function testEnteMalformadoEntreValidosNaoDerrubaOSync()
+    public function testEnteComArvoreForaDoFormatoEntreValidosEhAssociadoSemArvore(): void
     {
         $user = $this->userDirector->createUser();
         $this->login($user);
@@ -155,7 +155,7 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '81111111111111']));
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '83333333333333']));
-        $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222']));
+        $this->assertSame([], $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222'])->exercices);
     }
 
     function testEnteSemNomeEhDescartadoSemDerrubarOSync()
@@ -186,7 +186,8 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->persistRelation($user->profile, $entity);
 
         $resposta = $this->respostaComEntes([
-            ['document' => '87777777777777', 'name' => 'Ente Ruim', 'exercicios' => [['ano' => 2025]]],
+            ['document' => '87777777777777', 'name' => '', 'exercicios' => []],
+            ['name' => 'Sem Documento', 'exercicios' => []],
         ]);
 
         try {

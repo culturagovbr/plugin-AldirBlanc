@@ -534,16 +534,26 @@ class GestorCultJobAssociationTest extends TestCase
         ], '66444444444445');
     }
 
-    function testChavesRenomeadasLancaErroDeContratoSemPersistenciaParcial()
+    public function testChavesRenomeadasLancaErroDeContratoSemPersistenciaParcial(): void
     {
         $this->assertContractViolationDoesNotPersist([
             ['document' => '66555555555555', 'name' => 'Valido Antes', 'exercicios' => $this->parMinimo()],
             ['cnpj' => '66555555555556', 'nome' => 'Chaves Renomeadas', 'exercices' => []],
         ], '66555555555555');
+    }
 
-        $this->assertContractViolationDoesNotPersist([
-            ['document' => '66555555555557', 'name' => 'Chave Exercices', 'exercices' => []],
-        ], '66555555555557');
+    public function testChaveExercicesNaoDescartaOEnteComNomeEDocumento(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '66555555555557', 'name' => 'Chave Exercices', 'exercices' => $this->parMinimo()],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '66555555555557'));
+        $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66555555555557']);
+        $this->assertSame([], $entity->exercices);
     }
 
     function testItemNaoArrayEmEntesFederadosLancaErroDeContratoSemPersistenciaParcial()
@@ -585,15 +595,18 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertSame('66000000000002', $entity->document);
     }
 
-    function testExerciciosAssociativoEstranhoLancaErroDeContratoSemPersistenciaParcial()
+    public function testExerciciosEmFormatoDeObjetoAssociaOEnteSemArvore(): void
     {
-        $this->assertContractViolationDoesNotPersist([
-            [
-                'document' => '66000000000003',
-                'name' => 'Exercicios Associativo',
-                'exercicios' => ['id' => 1, 'ano' => 2025, 'metas' => []],
-            ],
-        ], '66000000000003');
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '66000000000003', 'name' => 'Exercicios Associativo', 'exercicios' => ['id' => 1, 'ano' => 2025, 'metas' => []]],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '66000000000003'));
+        $entity = $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '66000000000003']);
+        $this->assertSame([], $entity->exercices);
     }
 
     // ===== updateAgentFromGestorResponse =====
@@ -885,5 +898,21 @@ class GestorCultJobAssociationTest extends TestCase
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
         $this->assertCount(1, $relations);
         $this->assertSame('67000000000006', $relations[0]->owner->document);
+    }
+
+    public function testArvoreForaDoFormatoMantemAArvoreGravada(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $gravada = $this->parMinimo();
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000007', 'Com Árvore', $gravada));
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000007', 'name' => 'Com Árvore', 'exercicios' => [['ano' => 2025]]],
+        ]);
+
+        $this->assertSame($gravada, $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '67000000000007'])->exercices);
+        $relation = $this->vinculoDoAgente($user->profile, '67000000000007');
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
     }
 }

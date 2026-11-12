@@ -319,15 +319,9 @@ class GestorCultJob
 
     private function normalizeEntityExercises(array $data): array
     {
-        if (!array_key_exists('exercicios', $data)) {
-            if (array_key_exists('exercices', $data)) {
-                throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': chave exercices não é suportada');
-            }
+        $exercises = $data['exercicios'] ?? [];
 
-            return [];
-        }
-
-        return is_array($data['exercicios']) ? $data['exercicios'] : [];
+        return is_array($exercises) && ($exercises === [] || $this->isValidExercisesList($exercises)) ? $exercises : [];
     }
 
     /** Resposta sem exercicios não apaga a árvore gravada: sem ela o gestor não cria oportunidade. */
@@ -427,15 +421,6 @@ class GestorCultJob
         $document = trim((string) $data['document']);
         if (isset($knownDocuments[$document])) {
             return "com document duplicado {$document}";
-        }
-
-        if (!array_key_exists('exercicios', $data) && array_key_exists('exercices', $data)) {
-            return 'com a chave exercices, que não é suportada';
-        }
-
-        $exercises = $this->normalizeEntityExercises($data);
-        if ($exercises !== [] && !$this->isValidExercisesList($exercises)) {
-            return 'com exercicios inválidos';
         }
 
         return null;
