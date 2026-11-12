@@ -91,6 +91,8 @@ class GestorCultJob
 
             if ($snapshot === null) {
                 $app->log->warning("[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}");
+            } elseif ($federativeEntities === []) {
+                $app->log->warning("[Gestores CultBR] Origem não retornou entes federados | Usuário ID: {$userId} | Documento: {$document}");
             } else {
                 $app->log->info("[Gestores CultBR] Resposta da API recebida | Usuário ID: {$userId} | Documento: {$document} | Entes federados retornados: " . count($federativeEntities));
             }

@@ -445,6 +445,16 @@ class GestorCultJobSyncErrorTest extends TestCase
 
         $this->assertTrue($capturado->hasInfoThatContains('Resposta da API recebida'));
         $this->assertFalse($capturado->hasWarningThatContains('Documento desconhecido pela origem'));
+        $this->assertFalse($capturado->hasWarningThatContains('Origem não retornou entes federados'));
     }
 
+    public function testRespostaSemEntesSaiEmWarning(): void
+    {
+        $this->login($this->userDirector->createUser());
+
+        $capturado = $this->capturandoLog(fn() => $this->jobWithResponse($this->respostaComEntes([]), Provider::Gestao, $this->documentoNovo())->sync());
+
+        $this->assertTrue($capturado->hasWarningThatContains('Origem não retornou entes federados'));
+        $this->assertFalse($capturado->hasInfoThatContains('Resposta da API recebida'));
+    }
 }
