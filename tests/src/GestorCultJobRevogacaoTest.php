@@ -31,8 +31,6 @@ class GestorCultJobRevogacaoTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
     ];
 
     private const HOST = 'http://cultbr.invalid';
@@ -134,7 +132,6 @@ class GestorCultJobRevogacaoTest extends TestCase
             "as relações não podiam ter sido apagadas{$onde}",
         );
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, "a tela precisa destravar{$onde}");
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "classificar a causa é do controller{$onde}");
     }
 
     private function assertPapelMantidoEVinculoMarcado(object $user, ?Provider $provedor = null): void
@@ -227,7 +224,6 @@ class GestorCultJobRevogacaoTest extends TestCase
             $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]),
             "as relações precisavam ter sido apagadas{$onde}",
         );
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, "revogar não é falha{$onde}");
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, "a tela precisa destravar{$onde}");
     }
 

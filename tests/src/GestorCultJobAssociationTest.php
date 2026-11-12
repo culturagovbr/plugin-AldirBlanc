@@ -23,8 +23,6 @@ class GestorCultJobAssociationTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
     ];
 
     protected function setUp(): void

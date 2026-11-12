@@ -23,8 +23,6 @@ class ControllerSyncStatusTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
         'gestor_cult_sync_degraded',
     ];
 
@@ -116,8 +114,6 @@ class ControllerSyncStatusTest extends TestCase
     {
         $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
         $this->assertTrue($_SESSION['gestor_cult_sync_degraded']);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error_message', $_SESSION);
     }
 
     private function callJson(callable $callback): array
@@ -144,7 +140,6 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertTrue($_SESSION['gestor_cult_sync_started']);
         $this->assertTrue($_SESSION['gestor_cult_sync_completed']);
         $this->assertArrayHasKey('gestor_cult_sync_started_at', $_SESSION);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
     }
 
     function testStartSyncEmAndamentoNaoRechamaJob()
@@ -173,18 +168,6 @@ class ControllerSyncStatusTest extends TestCase
         $this->assertSame(1, $controller->getSyncCalls());
     }
 
-    public function testErroMarcadoPeloJobSemExcecaoEntraMesmoAssim(): void
-    {
-        $controller = $this->controller();
-        $controller->setSyncCallback(function () {
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            $_SESSION['gestor_cult_sync_error_message'] = 'Falha antiga';
-            return true;
-        });
-
-        $this->assertEntrouDegradado($this->callJson(fn() => $controller->callStartSync()));
-    }
-
     public function testFalhaAoObterCpfEntraMesmoAssimSemChamarAApi(): void
     {
         $controller = $this->controller();
@@ -192,17 +175,6 @@ class ControllerSyncStatusTest extends TestCase
 
         $this->assertEntrouDegradado($this->callJson(fn() => $controller->callStartSync()));
         $this->assertSame(0, $controller->getSyncCalls());
-    }
-
-    /** Classificação parcial deixada na sessão não pode vencer a do controller, que vê a exceção. */
-    public function testErroRelancadoEhClassificadoPelaExcecaoENaoPelaSessao(): void
-    {
-        $alerta = $this->alertaDaFalha(function () {
-            $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
-            throw IntegrationError::http('Credencial recusada', 401);
-        });
-
-        $this->assertStringContainsString('(credential_refused)', $alerta);
     }
 
     /** 401 na Conecta e 403 na Gestão são a mesma causa. */
@@ -322,7 +294,6 @@ class ControllerSyncStatusTest extends TestCase
         $payload = $this->callJson(fn() => $controller->callStartSync());
 
         $this->assertSame(['started' => true], $payload);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
     }
 
     function testStartSyncComSessaoStalePermiteReexecutar()

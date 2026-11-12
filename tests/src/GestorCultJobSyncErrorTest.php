@@ -25,8 +25,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
     ];
 
     private static int $proximoDocumento = 91000000001;
@@ -154,7 +152,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse($resposta)->sync();
         $this->app->em->clear();
 
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '81111111111111']));
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '83333333333333']));
         $this->assertSame([], $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '82222222222222'])->exercices);
@@ -173,7 +170,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->jobWithResponse($resposta)->sync();
         $this->app->em->clear();
 
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNotNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '85555555555555']));
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '84444444444444']));
     }
@@ -203,7 +199,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         $this->app->em->clear();
 
         $this->assertTrue(UserAccessService::isGestorCultBr());
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
         $this->assertCount(1, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
@@ -222,7 +217,6 @@ class GestorCultJobSyncErrorTest extends TestCase
 
         $this->assertTrue(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]);
         $this->assertCount(1, $relations);
         $this->assertArrayHasKey('missingSince', (array) $relations[0]->metadata);
@@ -238,7 +232,6 @@ class GestorCultJobSyncErrorTest extends TestCase
 
         $this->assertFalse(UserAccessService::isGestorCultBr());
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertCount(0, $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['agent' => $user->profile]));
     }
 
@@ -258,7 +251,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     function testLockEhRemovidoAposSyncComSucesso()
@@ -303,7 +295,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         }
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false, 'a tela precisa destravar');
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION, 'classificar a causa é do controller');
     }
 
     function testErroAoAssociarDadosDestravaATelaEDevolveAFalha()
@@ -396,7 +387,6 @@ class GestorCultJobSyncErrorTest extends TestCase
         ])->sync();
 
         $this->assertTrue($_SESSION['gestor_cult_sync_completed'] ?? false);
-        $this->assertArrayNotHasKey('gestor_cult_sync_error', $_SESSION);
         $this->assertNull($this->app->repo(FederativeEntity::class)->findOneBy(['document' => '77333333333333']));
     }
 

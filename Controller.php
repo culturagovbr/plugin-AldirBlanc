@@ -741,12 +741,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $app->log->info("[Gestores CultBR] startSync disparado | Usuário ID: {$userId}");
 
-        // Marca que o sync começou e limpa flags de erro anteriores
+        // Marca que o sync começou e limpa a marca de modo degradado anterior
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = false;
         $_SESSION['gestor_cult_sync_started_at'] = time();
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
         unset($_SESSION['gestor_cult_sync_degraded']);
 
         // Dispara a sincronização em background
@@ -760,12 +758,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
                 $app->log->info("[Gestores CultBR] startSync concorrente, delegando ao status | Usuário ID: {$userId}");
 
                 $this->json(['started' => true]);
-                return;
-            }
-
-            if (isset($_SESSION['gestor_cult_sync_error']) && $_SESSION['gestor_cult_sync_error'] !== null && $_SESSION['gestor_cult_sync_error'] !== '') {
-                $this->enterDespiteSyncFailure((string) $_SESSION['gestor_cult_sync_error']);
-                $this->json(['started' => true, 'degraded' => true]);
                 return;
             }
 
@@ -858,8 +850,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     {
         $_SESSION['gestor_cult_sync_completed'] = true;
         $_SESSION['gestor_cult_sync_degraded'] = true;
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
 
         $userId = App::i()->user->id ?? 'N/A';
         App::i()->log->warning("[Gestores CultBR] Entrando apesar da falha da sincronização (modo degradado) | Usuário ID: {$userId} | Causa: {$causa}");
@@ -887,8 +877,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         unset($_SESSION['gestor_cult_sync_started']);
         unset($_SESSION['gestor_cult_sync_completed']);
         unset($_SESSION['gestor_cult_sync_started_at']);
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
         unset($_SESSION['gestor_cult_sync_degraded']);
         unset($_SESSION['selectedFederativeEntity']);
         unset($_SESSION['federative_entity_redirect_uri']);

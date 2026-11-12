@@ -52,10 +52,6 @@ class GestorCultJob
 
         $app->log->info("[Gestores CultBR] Sync iniciado | Usuário ID: {$userId} | Documento: {$document}");
 
-        // Limpa flags de erro no início do sync (caso tenha sobrado de tentativa anterior)
-        unset($_SESSION['gestor_cult_sync_error']);
-        unset($_SESSION['gestor_cult_sync_error_message']);
-
         if (!$agent) {
             $app->log->info("[Gestores CultBR] Sync abortado: usuário sem agente (profile) | Usuário ID: {$userId}");
             // Marca que o sync terminou mesmo sem agente (sem erro)
@@ -127,10 +123,6 @@ class GestorCultJob
                     $app->enableAccessControl();
                 }
             });
-            
-            // Limpa flags de erro se o sync foi bem-sucedido
-            unset($_SESSION['gestor_cult_sync_error']);
-            unset($_SESSION['gestor_cult_sync_error_message']);
 
             // Marca como concluído sem erro
             $_SESSION['gestor_cult_sync_completed'] = true;
