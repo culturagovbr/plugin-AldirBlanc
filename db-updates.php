@@ -130,5 +130,11 @@ return [
             // Na tentativa, não no cabeçalho: o envio é retomado pelo uuid e pode trocar de provedor.
             __try("ALTER TABLE cultbr_request_log_attempt ADD COLUMN provider VARCHAR(20) NULL");
         }
+    },
+
+    'add par_situation column to federative_entity' => function () {
+        if (__table_exists('federative_entity')) {
+            __try("ALTER TABLE federative_entity ADD COLUMN par_situation JSONB NULL");
+        }
     }
 ];

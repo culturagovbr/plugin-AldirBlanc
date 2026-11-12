@@ -10,6 +10,7 @@ use MapasCulturais\Traits;
  * @property string $name
  * @property string $document
  * @property array|null $exercices Dados de exercícios (payload da API: exercicios por ente)
+ * @property array|null $parSituation Situação dos cadastros do PAR e a data da consulta
  * @property \DateTime $createTimestamp
  * @property \DateTime $updateTimestamp
  * @property-read int $subsiteId
@@ -55,6 +56,13 @@ class FederativeEntity extends \MapasCulturais\Entity
      * @ORM\Column(name="exercices", type="json", nullable=true)
      */
     protected $exercices;
+
+    /**
+     * @var array|null
+     *
+     * @ORM\Column(name="par_situation", type="json", nullable=true)
+     */
+    protected $parSituation;
 
     /**
      * @var \DateTime
