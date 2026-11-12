@@ -1087,4 +1087,19 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertStringContainsString('atividades[4] (sem id)', $linhas[0]['message']);
         $this->assertStringNotContainsString('atividades[5]', $linhas[0]['message']);
     }
+
+    public function testEnteComCnpjAlfanumericoEhGravadoEVinculadoComODocumentoCorreto(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+
+        $this->sincronizarComEntes([
+            ['document' => '12.abc.345/01de-35', 'name' => 'Ente Alfanumérico', 'exercicios' => []],
+            ['document' => '12XYZ34501DE35', 'name' => 'Outro Alfanumérico', 'exercicios' => []],
+        ]);
+
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '12ABC34501DE35'));
+        $this->assertNotNull($this->vinculoDoAgente($user->profile, '12XYZ34501DE35'));
+        $this->assertCount(1, $this->app->repo(FederativeEntity::class)->findBy(['document' => '12ABC34501DE35']));
+    }
 }
