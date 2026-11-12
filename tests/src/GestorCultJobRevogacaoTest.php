@@ -376,6 +376,7 @@ class GestorCultJobRevogacaoTest extends TestCase
         $this->assertPapelERelacoesRevogados($user);
         $this->assertSame(0, $this->papelGravado($user));
         $this->assertTrue($capturado->hasWarningThatContains('dias removido'));
+        $this->assertTrue($capturado->hasWarningThatContains('Marcadas: 0 | Removidas: 1'));
         $this->assertTrue($capturado->hasWarningThatContains('Nenhum vínculo com ente restante, papel GestorCultBr removido'));
     }
 

@@ -689,7 +689,12 @@ class GestorCultJob
 
             $em->flush();
             $em->commit();
-            $app->log->info("[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Marcadas: {$markedCount} | Removidas: {$removedCount}");
+            $summary = "[Gestores CultBR] Associações com Entes Federados atualizadas | Agente ID: {$agent->id} | Novas: {$newAssociationsCount} | Marcadas: {$markedCount} | Removidas: {$removedCount}";
+            if ($markedCount > 0 || $removedCount > 0) {
+                $app->log->warning($summary);
+            } else {
+                $app->log->info($summary);
+            }
         } catch (\Throwable $e) {
             $em->rollback();
             $app->log->error("[Gestores CultBR] Erro ao associar Entes Federados | Agente ID: {$agent->id} | Erro: " . $e->getMessage());

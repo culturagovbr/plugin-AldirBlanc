@@ -289,6 +289,7 @@ class GestorCultJobAssociationTest extends TestCase
         $this->app->em->clear();
 
         $this->assertTrue($capturado->hasWarningThatContains('Ente federado não informado pela origem, vínculo mantido e marcado'));
+        $this->assertTrue($capturado->hasWarningThatContains('Associações com Entes Federados atualizadas | Agente ID: ' . $agent->id . ' | Novas: 1 | Marcadas: 1 | Removidas: 0'));
 
         $relations = $this->app->repo(FederativeEntityAgentRelation::class)->findBy(['owner' => $entityQueSai]);
         $this->assertCount(1, $relations, 'O vínculo do ente que saiu da resposta continua');
