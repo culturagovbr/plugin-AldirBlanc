@@ -20,10 +20,9 @@ use Tests\Traits\UserDirector;
  * é totalmente testável via applyHookBoundTo(), desde que $app->request/controller estejam
  * montados (ver dispatchBefore()).
  *
- * Lacuna de testabilidade conhecida, NÃO testada: os branches AJAX de "sync concluído com
- * erro" e "perfil incompleto" chamam `exit;` literal (Theme.php) — invocá-los aqui mataria o
- * processo do PHPUnit inteiro, não só o teste. Só os branches não-AJAX desses dois gates são
- * exercitados (ambos usam Halt via $app->redirect(), seguro de capturar).
+ * Lacuna de testabilidade conhecida, NÃO testada: o branch AJAX de "perfil incompleto" chama
+ * `exit;` literal (Theme.php) — invocá-lo aqui mataria o processo do PHPUnit inteiro, não só o
+ * teste. Só o branch não-AJAX desse gate é exercitado (usa Halt via $app->redirect()).
  */
 class ThemeAuthHooksTest extends TestCase
 {
@@ -33,8 +32,6 @@ class ThemeAuthHooksTest extends TestCase
         'gestor_cult_sync_started',
         'gestor_cult_sync_completed',
         'gestor_cult_sync_started_at',
-        'gestor_cult_sync_error',
-        'gestor_cult_sync_error_message',
         'gestor_cult_sync_degraded',
     ];
 
@@ -48,6 +45,17 @@ class ThemeAuthHooksTest extends TestCase
         unset($_SESSION['federative_entity_redirect_uri']);
         unset($_SESSION['auth.asUserId']);
         unset($_SESSION['mapasculturais.auth.redirect_path']);
+    }
+
+    private function comMarcaDeErroAntiga(callable $exercicio): mixed
+    {
+        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
+
+        try {
+            return $exercicio();
+        } finally {
+            unset($_SESSION['gestor_cult_sync_error']);
+        }
     }
 
     private function persistFederativeEntity(string $document, string $name): FederativeEntity
@@ -256,15 +264,18 @@ class ThemeAuthHooksTest extends TestCase
         $this->assertArrayNotHasKey('federative_entity_redirect_uri', $_SESSION);
     }
 
-    function testBlockAccessSyncComErroNaoAjaxRedirecionaParaConsolidatingData()
+    public function testBlockAccessMarcaDeErroAntigaNaSessaoNaoBloqueia(): void
     {
-        $user = $this->userDirector->createUser();
+        $user = $this->userDirector->createUser([Role::GESTOR_CULT_BR]);
         $this->login($user);
+        $this->fillAllRequiredFields($user->profile);
+        $entity = $this->persistFederativeEntity('11111111111112', 'Ente Antigo');
+        $this->persistRelation($user->profile, $entity);
+        $this->selectEntityInSession($entity);
         $_SESSION['gestor_cult_sync_started'] = true;
         $_SESSION['gestor_cult_sync_completed'] = true;
-        $_SESSION['gestor_cult_sync_error'] = 'api_unavailable';
 
-        $this->assertRedirectPara('consolidatingData', 'GET', 'panel', 'index');
+        $this->comMarcaDeErroAntiga(fn() => $this->assertLibera('GET', 'panel', 'index'));
     }
 
     function testBlockAccessSyncEmAndamentoRedirecionaParaConsolidatingData()
