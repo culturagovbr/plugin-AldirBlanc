@@ -888,6 +888,22 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
     }
 
+    public function testEnteSemNomeComDocumentoConhecidoNaoTemOVinculoTocado(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000004', 'Já Vinculado'));
+
+        $this->sincronizarComEntes([
+            ['document' => '67000000000004', 'name' => ''],
+            ['document' => '67000000000005', 'name' => 'Outro Ente', 'exercicios' => []],
+        ]);
+
+        $relation = $this->vinculoDoAgente($user->profile, '67000000000004');
+        $this->assertNotNull($relation);
+        $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
     public function testEnteSemDocumentoEhSoDescartado(): void
     {
         $user = $this->userDirector->createUser();
@@ -921,5 +937,24 @@ class GestorCultJobAssociationTest extends TestCase
         $this->assertSame($gravada, $this->app->repo(FederativeEntity::class)->findOneBy(['document' => '67000000000007'])->exercices);
         $relation = $this->vinculoDoAgente($user->profile, '67000000000007');
         $this->assertArrayNotHasKey('missingSince', (array) $relation->metadata);
+    }
+
+    public function testEnteValidoNaRespostaLimpaAMarcaMesmoNaListaNaoTocar(): void
+    {
+        $user = $this->userDirector->createUser();
+        $this->login($user);
+        $relation = $this->persistRelation($user->profile, $this->persistFederativeEntity('67000000000008', 'Voltou'));
+        $relation->metadata = ['missingSince' => (new \DateTime('-3 days'))->format('Y-m-d H:i:s')];
+        $this->app->em->persist($relation);
+        $this->app->em->flush();
+
+        $this->job()->callAssociateFederativeEntities(
+            $user->profile,
+            [['document' => '67000000000008', 'name' => 'Voltou', 'exercicios' => []]],
+            ['67000000000008' => true],
+        );
+        $this->app->em->clear();
+
+        $this->assertArrayNotHasKey('missingSince', (array) $this->vinculoDoAgente($user->profile, '67000000000008')->metadata);
     }
 }

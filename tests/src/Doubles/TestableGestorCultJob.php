@@ -101,13 +101,13 @@ class TestableGestorCultJob extends GestorCultJob
         return parent::fetchGestorData();
     }
 
-    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null, array $untouchableDocuments = []): void
     {
         if ($this->associateException) {
             throw $this->associateException;
         }
 
-        parent::associateFederativeEntities($agent, $federativeEntities, $beforeFlush);
+        parent::associateFederativeEntities($agent, $federativeEntities, $beforeFlush, $untouchableDocuments);
     }
 
     protected function updateAgentFromGestorResponse(Agent $agent, ManagerSnapshot $snapshot): void
@@ -150,9 +150,9 @@ class TestableGestorCultJob extends GestorCultJob
         return $this->normalizeStringForComparison($value);
     }
 
-    public function callAssociateFederativeEntities(Agent $agent, array $federativeEntities): void
+    public function callAssociateFederativeEntities(Agent $agent, array $federativeEntities, array $untouchableDocuments = []): void
     {
-        $this->associateFederativeEntities($agent, $federativeEntities);
+        $this->associateFederativeEntities($agent, $federativeEntities, untouchableDocuments: $untouchableDocuments);
     }
 
     /** Recebe a resposta como a API a devolve e monta o snapshot, para o teste ler igual ao real. */

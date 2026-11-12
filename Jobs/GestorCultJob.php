@@ -81,7 +81,7 @@ class GestorCultJob
 
         try {
             $snapshot = $this->fetchGestorData();
-            $federativeEntities = $snapshot === null ? [] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
+            [$federativeEntities, $untouchableDocuments] = $snapshot === null ? [[], []] : $this->federativeEntitiesFrom($snapshot, $userId, $document);
 
             $app->log->info($snapshot === null
                 ? "[Gestores CultBR] Documento desconhecido pela origem | Usuário ID: {$userId} | Documento: {$document}"
@@ -100,7 +100,7 @@ class GestorCultJob
         $shouldGrantGestorRole = $hasFederativeEntities && !UserAccessService::isGestorCultBr();
 
         try {
-            $this->associateFederativeEntities($agent, $federativeEntities, function () use ($app, $agent, $snapshot, $hasFederativeEntities, $shouldGrantGestorRole, $userId) {
+            $this->associateFederativeEntities($agent, $federativeEntities, untouchableDocuments: $untouchableDocuments, beforeFlush: function () use ($app, $agent, $snapshot, $hasFederativeEntities, $shouldGrantGestorRole, $userId) {
                 $app->disableAccessControl();
 
                 try {
@@ -164,7 +164,7 @@ class GestorCultJob
         return $response;
     }
 
-    /** @return list<array> os entes do snapshot que atendem ao contrato, já sem duplicados */
+    /** @return array{0: list<array>, 1: array<string, true>} os entes que atendem ao contrato e os documentos dos descartados */
     private function federativeEntitiesFrom(ManagerSnapshot $snapshot, $userId, string $document): array
     {
         $federativeEntities = $this->extractFederativeEntitiesFromResponse($this->entitiesAsArray($snapshot));
@@ -361,13 +361,15 @@ class GestorCultJob
 
     /**
      * Descarta os entes fora do contrato e mantém os demais, para um item ruim não derrubar o sync inteiro.
+     *
+     * @return array{0: list<array>, 1: array<string, true>} válidos e documentos dos descartados, cujo vínculo não é tocado
      */
     private function discardEntitiesOutOfContract(array $federativeEntities, $userId, string $document): array
     {
-        [$valid, $discarded] = $this->partitionFederativeEntitiesByContract($federativeEntities);
+        [$valid, $discarded, $untouchable] = $this->partitionFederativeEntitiesByContract($federativeEntities);
 
         if ($discarded === []) {
-            return $valid;
+            return [$valid, []];
         }
 
         $app = App::i();
@@ -380,18 +382,19 @@ class GestorCultJob
             throw new \UnexpectedValueException(self::CONTRACT_ERROR_MESSAGE . ': nenhum ente federado válido na resposta');
         }
 
-        return $valid;
+        return [$valid, $untouchable];
     }
 
     /**
      * Separa os entes que atendem ao contrato dos que precisam ser descartados.
      *
-     * @return array{0: list<array>, 1: array<int|string, string>} válidos, e o motivo de descarte por índice
+     * @return array{0: list<array>, 1: array<int|string, string>, 2: array<string, true>} válidos, motivo de descarte por índice e documentos dos descartados
      */
     private function partitionFederativeEntitiesByContract(array $federativeEntities): array
     {
         $valid = [];
         $discarded = [];
+        $untouchable = [];
         $documents = [];
 
         foreach ($federativeEntities as $index => $data) {
@@ -399,6 +402,10 @@ class GestorCultJob
 
             if ($violation !== null) {
                 $discarded[$index] = $violation;
+                $document = is_array($data) ? trim((string) ($data['document'] ?? '')) : '';
+                if ($document !== '') {
+                    $untouchable[$document] = true;
+                }
                 continue;
             }
 
@@ -406,7 +413,7 @@ class GestorCultJob
             $valid[] = $data;
         }
 
-        return [$valid, $discarded];
+        return [$valid, $discarded, $untouchable];
     }
 
     private function federativeEntityContractViolation($data, array $knownDocuments): ?string
@@ -529,9 +536,10 @@ class GestorCultJob
      * 
      * @param \MapasCulturais\Entities\Agent $agent
      * @param array $federativeEntities
+     * @param array<string, true> $untouchableDocuments entes descartados da resposta, cujo vínculo fica como está
      * @return void
      */
-    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null): void
+    protected function associateFederativeEntities(Agent $agent, array $federativeEntities, ?callable $beforeFlush = null, array $untouchableDocuments = []): void
     {
         $app = App::i();
         $em  = $app->em;
@@ -571,6 +579,10 @@ class GestorCultJob
             foreach ($currentByDoc as $doc => $relation) {
                 if (isset($apiLookup[$doc])) {
                     $this->clearMissingMark($relation);
+                    continue;
+                }
+
+                if (isset($untouchableDocuments[$doc])) {
                     continue;
                 }
 
