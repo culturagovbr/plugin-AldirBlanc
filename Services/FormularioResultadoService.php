@@ -482,9 +482,7 @@ class FormularioResultadoService
         }
 
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $respostas = $automaticas
-            + $this->savedRespostas((int) $raiz->id, $estrutura)
-            + $this->respostasSugeridas($raiz, $estrutura);
+        $respostas = $this->respostasVigentes($raiz, $estrutura);
         $validator = new FormularioRespostasValidator($estrutura);
         $documentos = $validator->documentosRequeridos($respostas);
 
@@ -512,11 +510,22 @@ class FormularioResultadoService
         $motivo = match (true) {
             $planilha === null, $planilha['possui'] === false => null,
             $planilha['possui'] === null => $planilha['motivo'],
-            $documentosRequeridos !== [] => i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.'),
+            self::isDependenteDoCultBr($planilha, $documentosRequeridos) => self::motivoPlanilhaComDocumentos(),
             default => null,
         };
 
         return $motivo === null ? [] : [['id_questao' => null, 'nome' => '', 'motivo' => $motivo]];
+    }
+
+    /** O edital tem modelo de planilha e documento requerido, e o CultBR não recebe os dois no mesmo envio. */
+    public static function isDependenteDoCultBr(?array $planilha, array $documentosRequeridos): bool
+    {
+        return ($planilha['possui'] ?? null) === true && $documentosRequeridos !== [];
+    }
+
+    public static function motivoPlanilhaComDocumentos(): string
+    {
+        return i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.');
     }
 
     /** @return list<array{id_questao: int, nome: string, motivo: string}> */
@@ -567,9 +576,7 @@ class FormularioResultadoService
 
         $leitura = new FormularioEstrutura($estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $valores = $automaticas
-            + $this->savedRespostas((int) $raiz->id, $estrutura)
-            + $this->respostasSugeridas($raiz, $estrutura);
+        $valores = $this->respostasVigentes($raiz, $estrutura);
 
         $enviaveis = $automaticas + (new FormularioRespostasValidator($estrutura))->enviaveis($valores);
         $regras = new FormularioRegras($leitura);
@@ -641,6 +648,14 @@ class FormularioResultadoService
         $faseFinal = $raiz->lastPhase;
 
         return (bool) ($faseFinal && $faseFinal->isLastPhase && $faseFinal->publishedRegistrations);
+    }
+
+    /** @return array<int, mixed> automáticas, salvas e sugeridas, por id_questao */
+    public function respostasVigentes(Opportunity $raiz, array $estrutura): array
+    {
+        return $this->respostasAutomaticas($raiz, $estrutura)
+            + $this->savedRespostas((int) $raiz->id, $estrutura)
+            + $this->respostasSugeridas($raiz, $estrutura);
     }
 
     /**
