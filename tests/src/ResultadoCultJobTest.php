@@ -288,6 +288,7 @@ class ResultadoCultJobTest extends TestCase
 
         $this->assertSame('sem-confirmacao', $this->ultimoEnvio($raiz)['situacao']);
         $this->assertNotNull($this->ultimoEnvio($raiz)['novoPedidoEm'], 'o CultBR ainda pode estar processando');
+        $this->assertNull($this->ultimoEnvio($raiz)['mensagem'], 'a situação já diz tudo');
         $this->assertNotNull((new ResultadoService())->envioAConferir((int) $raiz->id));
         $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'o POST nunca se repete sozinho');
         $tentativa = $this->logs((int) $raiz->id)[0]['attempts'][0];

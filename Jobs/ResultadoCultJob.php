@@ -232,10 +232,7 @@ class ResultadoCultJob extends JobType
 				'aConferir' => null,
 				'mensagem' => $this->motivoSemPost($erro),
 			]),
-			default => $service->persistUltimoEnvio($raizId, EnvioSituacao::SemConfirmacao, [
-				'tipo' => $tipo,
-				'mensagem' => i::__('O CultBR não confirmou o envio.'),
-			]),
+			default => $service->persistUltimoEnvio($raizId, EnvioSituacao::SemConfirmacao, ['tipo' => $tipo]),
 		};
 	}
 
