@@ -22,8 +22,11 @@ final class ResultadoRecusas
     ) {
     }
 
-    /** Recusas da resposta de erro, com as questões nomeadas pela estrutura vigente. */
-    public static function daResposta(?int $status, ?string $corpo, ?array $estrutura): self
+    /**
+     * Recusas da resposta de erro, com as questões nomeadas pela estrutura vigente.
+     * @param array{inscricoes?: list<string>, colunas?: array<string, string>} $planilha a quem pertence cada linha enviada e o nome de cada coluna
+     */
+    public static function daResposta(?int $status, ?string $corpo, ?array $estrutura, array $planilha = []): self
     {
         $resposta = json_decode((string) $corpo, true);
         $resposta = is_array($resposta) ? $resposta : [];
@@ -32,7 +35,7 @@ final class ResultadoRecusas
 
         return match (true) {
             is_array($resposta['errors'] ?? null) => self::deQuestoes($resposta['errors'], $leitura),
-            is_array($resposta['inconsistencias'] ?? null) => self::deLinhas($resposta['inconsistencias']),
+            is_array($resposta['inconsistencias'] ?? null) => self::deLinhas($resposta['inconsistencias'], $planilha),
             is_string($detalhe) && trim($detalhe) !== '' => new self($detalhe),
             is_array($detalhe) && isset($detalhe['message']) => self::deDetalhe($detalhe, $leitura),
             is_array($detalhe) && $detalhe !== [] => self::deCampos($detalhe),
@@ -85,15 +88,18 @@ final class ResultadoRecusas
         ];
     }
 
-    private static function deLinhas(array $inconsistencias): self
+    private static function deLinhas(array $inconsistencias, array $planilha): self
     {
-        $itens = array_map(function (array $inconsistencia) {
+        $itens = array_map(function (array $inconsistencia) use ($planilha) {
             $limpa = self::semValorRecebido($inconsistencia);
+            $indice = $limpa['indice'] ?? null;
+            $coluna = $limpa['coluna'] ?? null;
 
             return [
                 'tipo' => 'linha',
-                'indice' => $limpa['indice'] ?? null,
-                'coluna' => $limpa['coluna'] ?? null,
+                'indice' => $indice,
+                'inscricao' => $planilha['inscricoes'][$indice] ?? null,
+                'coluna' => $planilha['colunas'][$coluna] ?? $coluna,
                 'regra' => $limpa['regra'] ?? null,
                 'descricao' => $limpa['descricao'],
             ];

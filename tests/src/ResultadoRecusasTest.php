@@ -97,7 +97,7 @@ class ResultadoRecusasTest extends TestCase
 
         foreach ($this->respostaDaConecta($resposta)['inconsistencias'] as $indice => $inconsistencia) {
             $this->assertSame(
-                ['tipo', 'indice', 'coluna', 'regra', 'descricao'],
+                ['tipo', 'indice', 'inscricao', 'coluna', 'regra', 'descricao'],
                 array_keys($recusas->itens[$indice]),
             );
             $this->assertSame($inconsistencia['coluna'], $recusas->itens[$indice]['coluna']);
@@ -118,6 +118,20 @@ class ResultadoRecusasTest extends TestCase
             'opções' => ['recusa-422-linha-opcoes', 2],
             'lista onde cabe um valor' => ['recusa-422-linha-lista', 1],
         ];
+    }
+
+    public function testLinhaRecusadaSaiComAInscricaoEONomeDaColuna(): void
+    {
+        $recusas = ResultadoRecusas::daResposta(422, $this->corpoDaConecta('recusa-422-linhas-invalidas'), null, [
+            'inscricoes' => ['on-1', 'on-2'],
+            'colunas' => ['cpf' => 'CPF', 'cota' => 'Ampla concorrência ou cota'],
+        ]);
+
+        $this->assertSame(
+            [['on-2', 'CPF'], ['on-2', 'Ampla concorrência ou cota'], ['on-2', 'valor_total_subsidio'], ['on-2', 'cep_espaco_cultural']],
+            array_map(fn(array $item) => [$item['inscricao'], $item['coluna']], $recusas->itens),
+        );
+        $this->assertNull($this->recusas(422, 'recusa-422-linhas-invalidas')->itens[0]['inscricao']);
     }
 
     public function testDescricaoContinuaLegivelSemOValor(): void
