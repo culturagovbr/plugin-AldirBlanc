@@ -13,6 +13,7 @@ use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesModeloPlanilha;
 use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\SendsResultado;
@@ -21,7 +22,7 @@ use AldirBlanc\Integration\SendsResultado;
  * Provedor resolvido por nome de classe em `provider`: o envio devolve (ou lança) o que o teste
  * mandar, sem client e sem recorder. O resolver instancia sem argumentos, daí o estado estático.
  */
-class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesFormularioResultado, FetchesResultadoPermitido
+class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesFormularioResultado, FetchesResultadoPermitido, FetchesModeloPlanilha
 {
     /** @var null|callable(int): ?array */
     public static $aoBuscarFormulario = null;
@@ -34,6 +35,12 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
 
     /** @var list<int> oportunidades cujo tipo de ação foi pedido, na ordem */
     public static array $tiposAcaoBuscados = [];
+
+    /** @var null|callable(int): array sem ele, o edital não tem modelo de planilha */
+    public static $aoBuscarModelo = null;
+
+    /** @var list<int> editais cujo modelo de planilha foi pedido, na ordem */
+    public static array $modelosBuscados = [];
 
     /** @var null|callable(int): ?bool sem ele, a origem não diz se a ação recebe resultado */
     public static $aoBuscarPermissao = null;
@@ -65,6 +72,8 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$tiposAcaoBuscados = [];
         self::$aoBuscarPermissao = null;
         self::$permissoesBuscadas = [];
+        self::$aoBuscarModelo = null;
+        self::$modelosBuscados = [];
     }
 
     public function provider(): Provider
@@ -111,6 +120,15 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$permissoesBuscadas[] = $edital->id;
 
         return self::$aoBuscarPermissao === null ? null : (self::$aoBuscarPermissao)($edital->id);
+    }
+
+    public function fetchModeloPlanilha(ParEditalId $edital): array
+    {
+        self::$modelosBuscados[] = $edital->id;
+
+        return self::$aoBuscarModelo === null
+            ? ['possui_planilha' => false, 'motivo' => 'A ação não possui modelo de planilha']
+            : (self::$aoBuscarModelo)($edital->id);
     }
 
     public function fetchParTipoAcao(OpportunityId $opportunity): ?int

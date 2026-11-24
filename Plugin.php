@@ -51,6 +51,7 @@ class Plugin extends \MapasCulturais\Plugin
                         'criarOportunidadeEndpoint' => 'oportunidades',
                         'listarOportunidadesEndpoint' => 'oportunidades',
                         'criarResultadoEndpoint' => 'editais/{id_edital}/resultado',
+                        'modeloPlanilhaEndpoint' => 'editais/{id_edital}/resultado/modelo-planilha',
                         'formularioEstruturaEndpoint' => 'par/formularios/estrutura',
                         'validarTokenEndpoint' => 'validar-token',
                         'parCadastroAnalisesEndpoint' => 'par/cadastro/{document}/analises',
