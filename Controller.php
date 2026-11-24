@@ -252,26 +252,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $service = new FormularioResultadoService();
-
-        try {
-            $estrutura = $service->formStructureForOpportunity((int) $opportunity->id);
-        } catch (IntegrationError $e) {
-            $this->failResultadoFormulario($e);
-            return;
-        }
-
+        $estrutura = $this->estruturaParaPreencher($opportunity);
         if ($estrutura === null) {
-            $this->errorJson(i::__('Este edital não tem formulário de resultado no CultBR.'), 400);
-            return;
-        }
-
-        if ($service->isAcaoSemResultado((int) $opportunity->id)) {
-            $this->errorJson(FormularioResultadoService::motivoAcaoSemResultado(), 400);
-            return;
-        }
-
-        if (!$service->isFaseFinalPublicada($opportunity)) {
-            $this->errorJson(i::__('Publique o resultado final do edital para preencher o formulário.'), 400);
             return;
         }
 
@@ -289,6 +271,33 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $erros = $service->saveRespostas($opportunity, $respostas, $estrutura);
 
         $this->json($service->formStateForOpportunity($opportunity) + ['erros' => (object) $erros]);
+    }
+
+    /** Estrutura do formulário do edital, quando o gestor já pode preenchê-lo; respondeu erro = null. */
+    private function estruturaParaPreencher(Opportunity $opportunity): ?array
+    {
+        $service = new FormularioResultadoService();
+
+        try {
+            $estrutura = $service->formStructureForOpportunity((int) $opportunity->id);
+        } catch (IntegrationError $e) {
+            $this->failResultadoFormulario($e);
+            return null;
+        }
+
+        $motivo = match (true) {
+            $estrutura === null => i::__('Este edital não tem formulário de resultado no CultBR.'),
+            $service->isAcaoSemResultado((int) $opportunity->id) => FormularioResultadoService::motivoAcaoSemResultado(),
+            !$service->isFaseFinalPublicada($opportunity) => i::__('Publique o resultado final do edital para preencher o formulário.'),
+            default => null,
+        };
+
+        if ($motivo !== null) {
+            $this->errorJson($motivo, 400);
+            return null;
+        }
+
+        return $estrutura;
     }
 
     /** A aba aberta antes da troca de versão responde a questões que podem ter mudado de sentido. */
