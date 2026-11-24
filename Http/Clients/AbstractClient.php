@@ -6,6 +6,7 @@ use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Mode;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Http\Transport\RequestBody;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Http\Transport\TransportResponse;
 use AldirBlanc\Plugin;
@@ -62,21 +63,21 @@ abstract class AbstractClient
         $this->transport = $transport ?? new CurlTransport();
     }
 
-    private function send(string $method, string $url, ?string $body = null): TransportResponse
+    private function send(string $method, string $url, ?RequestBody $body = null): TransportResponse
     {
         $this->lastResponse = null;
 
-        $resposta = $this->transport->send($method, $url, $this->headers(), $body);
+        $resposta = $this->transport->send($method, $url, $this->headers($body?->contentType ?? RequestBody::JSON), $body?->content);
         $this->lastResponse = $resposta;
 
         return $resposta;
     }
 
     /** @return array<string,string> */
-    private function headers(): array
+    private function headers(string $contentType): array
     {
         return [
-            'Content-Type' => 'application/json',
+            'Content-Type' => $contentType,
             'Authorization' => 'Bearer ' . $this->token,
         ];
     }
@@ -169,13 +170,13 @@ abstract class AbstractClient
         }
 
         $fullUrl = $this->prepareUrl();
-        $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
+        $body = $this->requestBody($data);
 
         $app = App::i();
-        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl}" . $this->bodyForLog($jsonPayload));
+        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl}" . $this->bodyForLog($body->content));
 
         try {
-            $resposta = $this->send($metodo, $fullUrl, $jsonPayload);
+            $resposta = $this->send($metodo, $fullUrl, $body);
             $rawResponse = $resposta->body;
             $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status}" . $this->bodyForLog(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)));
             $parsed = $this->parseResponse(
@@ -217,6 +218,12 @@ abstract class AbstractClient
 
             $this->handleError($mensagemErro, $e, true);
         }
+    }
+
+    /** O corpo que sai pela rede. */
+    protected function requestBody(array $data): RequestBody
+    {
+        return RequestBody::json($data);
     }
 
     /** O corpo enviado como o histórico o guarda; o que sai pela rede é sempre o original. */
