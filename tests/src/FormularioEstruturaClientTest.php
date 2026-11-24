@@ -124,6 +124,7 @@ class FormularioEstruturaClientTest extends TestCase
 
             $this->assertSame([], $transporte->metodos(), 'modo simulado não sai pela rede');
             $this->assertSame(109, $estrutura['id_formulario']);
+            $this->assertSame(541, $estrutura['id_formulario_versao'], 'o modo simulado mostra o formulário vigente');
             $this->assertSame(1, $idTipoAcao);
         }, ['mode' => 'development']);
     }

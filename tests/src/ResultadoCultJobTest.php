@@ -24,6 +24,17 @@ class ResultadoCultJobTest extends TestCase
     use SendsOpportunityThroughJob;
     use BuildsPublishedFinalPhase;
 
+    private const RESPOSTAS_DA_VERSAO_SIMULADA = [
+        2186 => 'fe_tec',
+        1840 => 15000,
+        1842 => ['nenhum'],
+        1843 => true,
+        2280 => '2026-12-15',
+        1845 => 'Cronograma cumprido.',
+        2654 => [['nome' => 'Integrante', 'cpf' => '000.000.000-00', 'vinculo' => 'voluntário', 'categoria_grupo' => 'Todas']],
+        2081 => ['declaracao_integral'],
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -37,7 +48,7 @@ class ResultadoCultJobTest extends TestCase
         $this->app->enqueueOrReplaceJob(ResultadoCultJob::SLUG, ['opportunity' => $raiz]);
     }
 
-    private function processaComResposta(Opportunity $raiz, ?string $response, ?array $estrutura = null): void
+    private function semCacheDoFormulario(callable $exercicio): void
     {
         $this->comConfigDoPlugin(
             function (array $config) {
@@ -45,6 +56,13 @@ class ResultadoCultJobTest extends TestCase
 
                 return $config;
             },
+            $exercicio,
+        );
+    }
+
+    private function processaComResposta(Opportunity $raiz, ?string $response, ?array $estrutura = null): void
+    {
+        $this->semCacheDoFormulario(
             fn() => $this->comProvedorDuble(
                 fn() => $this->desfecho(),
                 function () use ($raiz, $response, $estrutura) {
@@ -184,11 +202,14 @@ class ResultadoCultJobTest extends TestCase
     function testEnvioSimuladoFechaOLogComoSimuladoESemMetadado()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 109, 'id_formulario_versao' => 541, 'versao' => 12, 'respostas' => self::RESPOSTAS_DA_VERSAO_SIMULADA,
+        ]));
 
-        $this->comProviderConfigurado('conecta', function () use ($raiz) {
+        $this->semCacheDoFormulario(fn() => $this->comProviderConfigurado('conecta', function () use ($raiz) {
             $this->enfileira($raiz);
             $this->processJobs(number_of_jobs: 1);
-        });
+        }));
 
         $this->assertFalse($this->resultadoId((int) $raiz->id), 'a resposta simulada ecoa o payload, sem id a capturar');
         $status = $this->app->em->getConnection()->fetchFirstColumn(
