@@ -62,6 +62,7 @@ class ResultadoRecusasTest extends TestCase
             'questão repetida' => [400, 'recusa-400-questao-repetida', 'Uma questão-etapa não pode aparecer duas vezes'],
             'sem modelo' => [422, 'recusa-422-sem-modelo', 'Edital sem modelo de planilha de resultados: Forma de execução da ação 1.1 não respondida no edital'],
             'storage' => [400, 'recusa-400-storage', "Erro ao enviar anexo 'planilha-de-resultados.csv' para o storage"],
+            'storage com PDF' => [400, 'recusa-400-storage-pdf', "Erro ao enviar anexo 'publicacao-resultado.pdf' para o storage"],
             'edital inexistente' => [404, 'recusa-404-edital', 'Edital não encontrado'],
             'corpo incompleto' => [422, 'recusa-422-corpo-incompleto', 'id_tipo, id_status e respostas são obrigatórios (respostas_json no multipart)'],
             'questão da planilha' => [422, 'recusa-422-questao-da-planilha', 'O formulário de resultado deste edital não tem a questão da planilha de resultados (tag planilha_de_resultados_conforme_padrao_de_dados ou upload_planilha_csv_<ação>).'],
