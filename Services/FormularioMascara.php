@@ -19,6 +19,14 @@ final class FormularioMascara
 
     private const PESOS_CNPJ = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
+    private const CONHECIDAS = [self::NENHUMA, self::CEP, self::CPF, self::CNPJ, self::DOCUMENTO];
+
+    /** Há conferência para a máscara com este nome? */
+    public static function isConhecida(string $mascara): bool
+    {
+        return in_array($mascara, self::CONHECIDAS, true);
+    }
+
     /** Veredito do texto pela máscara; nome desconhecido é recusado. */
     public static function confere(string $mascara, string $texto): ?FormularioVeredito
     {

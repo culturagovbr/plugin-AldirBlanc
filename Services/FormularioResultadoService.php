@@ -24,6 +24,10 @@ class FormularioResultadoService
     public const ESTADO_COMPLETO = 'completo';
     public const ESTADO_ENVIADO = 'enviado';
 
+    private const ESTADOS_DE_ENVIO = [self::ESTADO_COMPLETO, self::ESTADO_ENVIADO];
+
+    private const SEM_IMPEDIMENTOS = ['pendencias' => [], 'bloqueios' => []];
+
     private const CACHE_ESTRUTURA = 'aldirblanc:cultbr:formulario_resultado:tipo_acao:';
     private const CACHE_TIPO_ACAO = 'aldirblanc:cultbr:par_tipo_acao:oportunidade:';
     private const CACHE_PERMITE_RESULTADO = 'aldirblanc:cultbr:permite_resultado:edital:';
@@ -145,7 +149,8 @@ class FormularioResultadoService
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
         $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $estado = $this->estado($raiz, $estrutura, $automaticas + $respostas);
+        $impedimentos = $this->impedimentos($raiz, $estrutura);
+        $estado = $this->estado($raiz, $estrutura, $impedimentos === self::SEM_IMPEDIMENTOS);
 
         return [
             'estado' => $estado,
@@ -155,7 +160,8 @@ class FormularioResultadoService
             'respostas' => (object) $respostas,
             'respostasAutomaticas' => (object) $automaticas,
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
-            'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
+            ...$impedimentos,
+            'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
             'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
         ];
@@ -417,7 +423,7 @@ class FormularioResultadoService
         return $faseFinal?->publishTimestamp?->format(\DateTime::ATOM);
     }
 
-    private function estado(Opportunity $raiz, ?array $estrutura, array $respostas): string
+    private function estado(Opportunity $raiz, ?array $estrutura, bool $isCompleto): string
     {
         if ($estrutura === null) {
             return self::ESTADO_SEM_FORMULARIO;
@@ -435,30 +441,57 @@ class FormularioResultadoService
             return self::ESTADO_ENVIADO;
         }
 
-        return $this->faltantes($raiz, $estrutura, $respostas) === [] ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
+        return $isCompleto ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
     }
 
-    /** @return list<int> obrigatórias sem resposta, já descontadas as questões sem fonte */
-    private function faltantes(Opportunity $raiz, array $estrutura, array $respostas): array
+    /**
+     * O que impede o envio do formulário: o que falta ao gestor e o que esta versão do sistema não sabe tratar.
+     * @return array{pendencias: list<array>, bloqueios: list<array>}
+     */
+    public function impedimentosDoEnvio(Opportunity $raiz): array
     {
-        $faltantes = (new FormularioRespostasValidator($estrutura))->missingRequired($respostas);
-
-        // Questão sem fonte nem aparece na tela — não pode travar a completude invisivelmente.
-        return array_values(array_diff($faltantes, $this->questoesSemFonte($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura))));
+        return $this->impedimentos($raiz, $this->formStructureForOpportunity((int) $raiz->id));
     }
 
-    /** O formulário tem todas as obrigatórias respondidas? Independe de já haver envio — vale para retificações. */
+    private function impedimentos(Opportunity $raiz, ?array $estrutura): array
+    {
+        if ($estrutura === null) {
+            return self::SEM_IMPEDIMENTOS;
+        }
+
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $respostas = $automaticas
+            + $this->savedRespostas((int) $raiz->id, $estrutura)
+            + $this->respostasSugeridas($raiz, $estrutura);
+        $validator = new FormularioRespostasValidator($estrutura);
+
+        // A sem fonte nem aparece na tela: não pode travar o envio invisivelmente.
+        $foraDoGestor = $automaticas + array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas));
+
+        return [
+            'pendencias' => $this->comNomes(array_diff_key($validator->pendencias($respostas), $foraDoGestor), $estrutura),
+            'bloqueios' => $this->comNomes(array_diff_key($validator->bloqueios($respostas), $foraDoGestor), $estrutura),
+        ];
+    }
+
+    /** @return list<array{id_questao: int, nome: string, motivo: string}> */
+    private function comNomes(array $motivos, array $estrutura): array
+    {
+        $questoes = (new FormularioEstrutura($estrutura))->questoes();
+
+        return array_map(
+            fn(int $id, string $motivo) => ['id_questao' => $id, 'nome' => $questoes[$id]['nome'] ?? '', 'motivo' => $motivo],
+            array_keys($motivos),
+            $motivos,
+        );
+    }
+
+    /** Nada impede o envio do formulário? Independe de já haver envio — vale para retificações. */
     public function isFormularioCompleto(Opportunity $raiz): bool
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
 
-        if ($estrutura === null) {
-            return false;
-        }
-
-        $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
-
-        return $this->faltantes($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura) + $respostas) === [];
+        return $estrutura !== null && $this->impedimentos($raiz, $estrutura) === self::SEM_IMPEDIMENTOS;
     }
 
     /**

@@ -11,15 +11,36 @@ final class FormularioRespostasValidator
     /** A data de publicação é calculada pelo sistema, nunca preenchida — a tag a identifica em todo formulário. */
     private const TAG_DATA_PUBLICACAO = 'data_publicacao';
 
+    private const TIPO_NAO_SUPORTADO = 'tipo de questão não suportado';
+
+    private const TIPOS_DE_TABELA = ['tabela', 'Tabela Dinâmica'];
+
+    private const TIPOS_COM_RESPOSTA = [
+        'número', 'moeda', 'data', 'texto', 'textarea', 'booleano', 'radio', 'checkbox', 'múltipla escolha', ...self::TIPOS_DE_TABELA,
+    ];
+
+    private const TIPOS_DE_COLUNA = ['text', 'number', 'currency', 'dropdown', 'escolha_unica'];
+
     private const FORMATOS_DE_DATA = ['Y-m-d'];
     private const FORMATOS_DE_DATA_COM_HORA = ['Y-m-d', 'Y-m-d\TH:i', 'Y-m-d\TH:i:s'];
+
+    private readonly FormularioRegras $regras;
 
     /** @var array<int, array> questões editáveis, por id_questao */
     private array $questoes = [];
 
+    /** @var array<int, array> documentos que o gestor anexa, por id_questao */
+    private array $documentos = [];
+
     public function __construct(array $estrutura)
     {
-        $this->questoes = array_filter((new FormularioEstrutura($estrutura))->questoes(), $this->isEditavel(...));
+        $leitura = new FormularioEstrutura($estrutura);
+        $this->regras = new FormularioRegras($leitura);
+        $this->questoes = array_filter($leitura->questoes(), $this->isEditavel(...));
+        $this->documentos = array_filter(
+            $leitura->questoes(),
+            fn(array $questao) => FormularioEstrutura::isDocumento($questao) && empty($questao['somente_leitura']),
+        );
     }
 
     private function isEditavel(array $questao): bool
@@ -64,39 +85,94 @@ final class FormularioRespostasValidator
         return $erros;
     }
 
-    /** @return array<int, string> o que falta em cada resposta começada, por id_questao */
-    public function incompletas(array $respostas): array
+    /** @return array<int, string> o que falta em cada questão visível para o envio, por id_questao */
+    public function pendencias(array $respostas): array
     {
         $motivos = [];
 
-        foreach ($this->editaveis($respostas) as $id => $valor) {
-            $veredito = $this->veredito($this->questoes[$id], $valor);
+        foreach ($this->visiveis($respostas) as $id => $questao) {
+            $motivo = $this->pendencia($questao, $respostas[$id] ?? null);
 
-            if ($veredito?->isInvalida === false) {
-                $motivos[$id] = $veredito->motivo;
+            if ($motivo !== null) {
+                $motivos[$id] = $motivo;
             }
         }
 
         return $motivos;
     }
 
-    /** @return list<int> ids das questões obrigatórias ainda sem resposta completa */
-    public function missingRequired(array $respostas): array
+    /** @return array<int, string> o que esta versão do sistema não sabe tratar, por id_questao */
+    public function bloqueios(array $respostas): array
     {
-        $incompletas = $this->incompletas($respostas);
-        $faltantes = [];
+        return array_filter(array_map($this->bloqueio(...), $this->visiveis($respostas)));
+    }
 
-        foreach ($this->questoes as $id => $questao) {
-            if (empty($questao['requerida'])) {
-                continue;
-            }
+    /** @return array<int, array> */
+    private function visiveis(array $respostas): array
+    {
+        return array_filter(
+            $this->questoes + $this->documentos,
+            fn(array $questao) => $this->regras->isVisivel($questao, $respostas),
+        );
+    }
 
-            if ($this->isVazio($respostas[$id] ?? null) || isset($incompletas[$id])) {
-                $faltantes[] = $id;
-            }
+    private function pendencia(array $questao, mixed $valor): ?string
+    {
+        $isRequerida = !empty($questao['requerida']);
+
+        if (FormularioEstrutura::isDocumento($questao)) {
+            return $isRequerida ? 'envio de documentos ainda não disponível' : null;
         }
 
-        return $faltantes;
+        return $this->veredito($questao, $valor)?->motivo
+            ?? ($isRequerida && !$this->isRespondida($questao, $valor) ? 'resposta obrigatória' : null);
+    }
+
+    /** Tabela sem linha é resposta: o mínimo de linhas, quando há, já foi conferido. */
+    private function isRespondida(array $questao, mixed $valor): bool
+    {
+        return in_array($questao['tipo_questao'], self::TIPOS_DE_TABELA, true) ? is_array($valor) : !$this->isVazio($valor);
+    }
+
+    private function bloqueio(array $questao): ?string
+    {
+        if (!$this->regras->isTodaSuportada($questao)) {
+            return 'regra de exibição não suportada';
+        }
+
+        if (FormularioEstrutura::isDocumento($questao)) {
+            return null;
+        }
+
+        if (!in_array($questao['tipo_questao'], self::TIPOS_COM_RESPOSTA, true)) {
+            return self::TIPO_NAO_SUPORTADO;
+        }
+
+        $colunas = FormularioTabela::daQuestao($questao)->colunas;
+        $tipos = array_diff(array_column($colunas, 'tipo'), self::TIPOS_DE_COLUNA);
+
+        if ($tipos !== []) {
+            return 'tipo de coluna não suportado: ' . implode(', ', $tipos);
+        }
+
+        $mascaras = array_filter(
+            [...$this->mascaras($questao), ...array_column($colunas, 'mascara')],
+            fn(?string $mascara) => $mascara !== null && !FormularioMascara::isConhecida($mascara),
+        );
+
+        return $mascaras === [] ? null : 'máscara não reconhecida: ' . implode(', ', $mascaras);
+    }
+
+    /** @return list<?string> */
+    private function mascaras(array $questao): array
+    {
+        $complementos = array_column(FormularioEstrutura::itens($questao), 'campoComplementar');
+
+        return [
+            $questao['mascara'] ?? null,
+            $questao['config']['padraoValidacao'] ?? null,
+            ...array_column($complementos, 'padraoValidacao'),
+        ];
     }
 
     private function veredito(array $questao, mixed $valor): ?FormularioVeredito
@@ -113,7 +189,7 @@ final class FormularioRespostasValidator
             'radio' => $this->confereItem($questao, $valor),
             'checkbox', 'múltipla escolha' => $this->confereEscolhas($questao, $valor),
             'tabela', 'Tabela Dinâmica' => $this->confereTabela($questao, $valor),
-            default => FormularioVeredito::invalida('tipo de questão não suportado'),
+            default => FormularioVeredito::invalida(self::TIPO_NAO_SUPORTADO),
         };
     }
 

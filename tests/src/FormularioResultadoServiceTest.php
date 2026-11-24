@@ -262,4 +262,16 @@ class FormularioResultadoServiceTest extends TestCase
             $this->assertFalse((new FormularioResultadoService())->isAcaoSemResultado($editalId));
         });
     }
+
+    public function testEditalSemFormularioNuncaEstaCompleto(): void
+    {
+        $owner = $this->userDirector->createUser();
+        $edital = $this->createOpportunity($owner);
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
+
+            $this->assertFalse($servico->isFormularioCompleto($edital));
+        });
+    }
 }

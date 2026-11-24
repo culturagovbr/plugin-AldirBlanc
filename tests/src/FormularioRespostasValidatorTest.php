@@ -113,7 +113,7 @@ class FormularioRespostasValidatorTest extends TestCase
     public function testRespostaCompletaDaEstruturaRealEAceita(int $tipoAcao, int $idQuestao, mixed $valor): void
     {
         $this->assertSame([], $this->real($tipoAcao)->validate([$idQuestao => $valor]));
-        $this->assertSame([], $this->real($tipoAcao)->incompletas([$idQuestao => $valor]));
+        $this->assertArrayNotHasKey($idQuestao, $this->real($tipoAcao)->pendencias([$idQuestao => $valor]));
     }
 
     public static function respostasCompletas(): array
@@ -138,8 +138,6 @@ class FormularioRespostasValidatorTest extends TestCase
             'CNPJ com dígito zero' => [20, 2765, '11222347000103'],
             'CNPJ alfanumérico em minúsculas' => [20, 2765, '12abc34501de35'],
             'moeda com centavos' => [1, 1840, 10.55],
-            'resposta limpa' => [1, 1838, null],
-            'resposta vazia' => [1, 2186, ''],
             'moeda no limite inferior' => [20, 2767, 600000],
             'moeda no limite superior' => [20, 2767, 2000000],
             'texto no limite de caracteres' => [1, 1845, str_repeat('ã', 700)],
@@ -148,13 +146,20 @@ class FormularioRespostasValidatorTest extends TestCase
         ];
     }
 
+    public function testRespostaLimpaOuVaziaValeComoNaoRespondida(): void
+    {
+        foreach ([null, ''] as $vazia) {
+            $this->assertSame([], $this->real(1)->validate([1838 => $vazia, 2186 => $vazia]));
+            $this->assertSame('resposta obrigatória', $this->real(1)->pendencias([2186 => $vazia])[2186]);
+        }
+    }
+
     #[DataProvider('respostasInvalidas')]
     public function testRespostaInvalidaDaEstruturaRealERecusada(int $tipoAcao, int $idQuestao, mixed $valor, string $motivo): void
     {
         $erros = $this->real($tipoAcao)->validate([$idQuestao => $valor]);
 
         $this->assertStringContainsString($motivo, $erros[$idQuestao] ?? 'aceita');
-        $this->assertSame([], $this->real($tipoAcao)->incompletas([$idQuestao => $valor]), 'a inválida não é pendência');
     }
 
     public static function respostasInvalidas(): array
@@ -199,7 +204,7 @@ class FormularioRespostasValidatorTest extends TestCase
     public function testRespostaComecadaGravaEViraPendencia(int $tipoAcao, int $idQuestao, mixed $valor, string $motivo): void
     {
         $this->assertSame([], $this->real($tipoAcao)->validate([$idQuestao => $valor]), 'a incompleta pode ser gravada');
-        $this->assertStringContainsString($motivo, $this->real($tipoAcao)->incompletas([$idQuestao => $valor])[$idQuestao] ?? 'completa');
+        $this->assertStringContainsString($motivo, $this->real($tipoAcao)->pendencias([$idQuestao => $valor])[$idQuestao] ?? 'completa');
     }
 
     public static function respostasIncompletas(): array
@@ -281,7 +286,7 @@ class FormularioRespostasValidatorTest extends TestCase
     {
         $validator = $this->validator([$this->questao(['tipo_questao' => 'texto', 'mascara' => 'cep'])]);
 
-        $this->assertSame([], $validator->incompletas([10 => '']));
+        $this->assertSame([10 => 'resposta obrigatória'], $validator->pendencias([10 => '']));
     }
 
     private function tabelaComColuna(array $coluna): FormularioRespostasValidator
@@ -298,7 +303,7 @@ class FormularioRespostasValidatorTest extends TestCase
         $validator = $this->tabelaComColuna(['mask' => $mascara]);
 
         $this->assertSame($erro, $validator->validate([10 => [['c' => $documento]]])[10] ?? '');
-        $this->assertSame($pendencia, $validator->incompletas([10 => [['c' => $documento]]])[10] ?? '');
+        $this->assertSame($erro ?: $pendencia, $validator->pendencias([10 => [['c' => $documento]]])[10] ?? '');
     }
 
     public static function documentosDeColuna(): array
@@ -339,7 +344,7 @@ class FormularioRespostasValidatorTest extends TestCase
         $validator = $this->tabelaComColuna(['type' => 'number', 'readOnly' => true, 'required' => true]);
 
         $this->assertSame([], $validator->validate([10 => [['c' => 'texto']]]));
-        $this->assertSame([], $validator->incompletas([10 => [[]]]));
+        $this->assertSame([], $validator->pendencias([10 => [[]]]));
     }
 
     public function testTabelaAcimaDoMaximoDeLinhasERecusada(): void
@@ -367,7 +372,7 @@ class FormularioRespostasValidatorTest extends TestCase
         $this->assertSame([10 => 'linha 1: Nome: o texto passa de 3 caracteres'], $validator->validate([10 => [['nome' => 'Anas']]]));
         $this->assertSame([10 => 'linha 1: Valor: o valor mínimo é 5'], $validator->validate([10 => [['valor' => 4]]]));
         $this->assertSame([10 => 'linha 1: Valor: o valor máximo é 9'], $validator->validate([10 => [['valor' => 10]]]));
-        $this->assertSame([], $validator->incompletas([10 => [['nome' => 'Ana']]]), 'a somente leitura não é cobrada');
+        $this->assertSame([], $validator->pendencias([10 => [['nome' => 'Ana']]]), 'a somente leitura não é cobrada');
     }
 
     public function testInvalidaPesaMaisQueIncompletaNaMesmaTabela(): void
@@ -384,13 +389,6 @@ class FormularioRespostasValidatorTest extends TestCase
 
         $this->assertSame([], $validator->validate([10 => ['a']]));
         $this->assertSame([10 => 'o limite é de 1 marcações'], $validator->validate([10 => ['a', 'b']]));
-    }
-
-    public function testListaVaziaDeOpcoesAindaNaoEPendenciaDeMarcacao(): void
-    {
-        $this->assertSame([], $this->real(12)->validate([2242 => []]));
-        $this->assertSame([], $this->real(12)->incompletas([2242 => []]));
-        $this->assertContains(2242, $this->real(12)->missingRequired([2242 => []]));
     }
 
     public function testComplementoComMascaraEConferido(): void
@@ -427,33 +425,126 @@ class FormularioRespostasValidatorTest extends TestCase
         $this->assertSame([10 => 'o valor mínimo é 3'], $validator->validate([10 => 2]));
     }
 
-    public function testMissingRequiredCobraARespostaIncompleta(): void
-    {
-        $this->assertContains(2242, $this->real(12)->missingRequired([2242 => ['declaracao_integral']]));
-        $this->assertNotContains(2242, $this->real(12)->missingRequired([2242 => ['declaracao_integral', 'declaracao_portaria_206']]));
-    }
-
-    function testMissingRequiredIgnoraAnexoEDataDePublicacao()
+    public function testPendenciasCobramDocumentoEIgnoramPlanilhaEDataDePublicacao(): void
     {
         $validator = $this->validator([
             $this->questao(),
-            $this->questao(['id_questao' => 20, 'tipo_questao' => 'anexo', 'tag' => 'planilha']),
+            $this->questao(['id_questao' => 20, 'tipo_questao' => 'anexo', 'tag' => 'planilha', 'nome' => 'Planilha de resultados']),
+            $this->questao(['id_questao' => 21, 'tipo_questao' => 'anexo', 'tag' => 'planilha', 'nome' => 'Planilha/PDF de comissão avaliadora']),
+            $this->questao(['id_questao' => 22, 'tipo_questao' => 'múltiplos anexos', 'tag' => 'documentos', 'nome' => 'Documentos', 'requerida' => false]),
+            $this->questao(['id_questao' => 23, 'tipo_questao' => 'anexo', 'tag' => 'documentos', 'nome' => 'Documentos', 'somente_leitura' => true]),
             $this->questao(['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1']),
             $this->questao(['id_questao' => 16, 'tipo_questao' => 'texto', 'tag' => 'opcional', 'requerida' => false]),
         ]);
 
-        $this->assertSame([10], $validator->missingRequired([]));
-        $this->assertSame([], $validator->missingRequired([10 => 5]));
+        $this->assertSame([10, 21], array_keys($validator->pendencias([])));
+        $this->assertSame([21 => 'envio de documentos ainda não disponível'], $validator->pendencias([10 => 5]));
     }
 
-    function testMissingRequiredCobraOMinimoDeLinhasDaTabela()
+    public function testPendenciasCobramOMinimoDeLinhasDaTabela(): void
     {
-        $config = ['minRows' => 2, 'columns' => []];
+        $config = ['minRows' => 2, 'columns' => [['key' => 'a', 'label' => 'A', 'type' => 'number']]];
         $validator = $this->validator([
             $this->questao(['id_questao' => 15, 'tipo_questao' => 'Tabela Dinâmica', 'tag' => 'categorias', 'config' => $config]),
         ]);
 
-        $this->assertSame([15], $validator->missingRequired([15 => [['a' => 1]]]));
-        $this->assertSame([], $validator->missingRequired([15 => [['a' => 1], ['a' => 2]]]));
+        $this->assertSame([15 => 'preencha pelo menos 2 linha(s)'], $validator->pendencias([15 => [['a' => 1]]]));
+        $this->assertSame([], $validator->pendencias([15 => [['a' => 1], ['a' => 2]]]));
+        $this->assertSame([15 => 'resposta obrigatória'], $validator->pendencias([]));
+    }
+
+    public function testTabelaComMinimoZeroESatisfeitaPelaListaVazia(): void
+    {
+        $this->assertArrayNotHasKey(2843, $this->real(9)->pendencias([2843 => []]));
+        $this->assertSame('resposta obrigatória', $this->real(9)->pendencias([])[2843]);
+    }
+
+    public function testDocumentosRequeridosDa23ContamEAPlanilhaNao(): void
+    {
+        $pendencias = $this->real(14)->pendencias([]);
+
+        $this->assertSame([2547, 2548], array_values(array_intersect([2546, 2547, 2548, 2549], array_keys($pendencias))));
+        $this->assertArrayNotHasKey(1979, $this->real(12)->pendencias([]));
+    }
+
+    public function testRequeridaInvisivelNaoConta(): void
+    {
+        $this->assertArrayNotHasKey(1845, $this->real(1)->pendencias([1843 => true]));
+        $this->assertSame('resposta obrigatória', $this->real(1)->pendencias([1843 => false])[1845]);
+        $this->assertArrayNotHasKey(1845, $this->real(1)->pendencias([1843 => true, 1845 => 12]), 'nem a resposta inválida da invisível conta');
+    }
+
+    #[DataProvider('respostasGravadasComoTexto')]
+    public function testTextoGravadoEmOutroTipoEPendencia(int $idQuestao, string $motivo): void
+    {
+        $this->assertStringContainsString($motivo, $this->real(1)->pendencias([$idQuestao => 'texto livre'])[$idQuestao]);
+    }
+
+    public static function respostasGravadasComoTexto(): array
+    {
+        return [
+            'radio' => [2186, 'opção fora da lista'],
+            'lista de opções' => [1842, 'lista de opções'],
+            'tabela' => [2654, 'lista de linhas'],
+        ];
+    }
+
+    public function testRespostaInvalidaDeQuestaoOpcionalEPendencia(): void
+    {
+        $validator = $this->validator([$this->questao(['requerida' => false])]);
+
+        $this->assertSame([], $validator->pendencias([]));
+        $this->assertSame([], $validator->pendencias([10 => '']), 'vazia é como não respondida');
+        $this->assertSame([10 => 'o valor deve ser numérico'], $validator->pendencias([10 => 'abc']));
+    }
+
+    public function testListaDeOpcoesVaziaERespostaObrigatoria(): void
+    {
+        $this->assertSame('resposta obrigatória', $this->real(12)->pendencias([2242 => []])[2242]);
+        $this->assertSame('marque pelo menos 2 opções', $this->real(12)->pendencias([2242 => ['declaracao_integral']])[2242]);
+    }
+
+    #[DataProvider('questoesQueBloqueiam')]
+    public function testOQueOSistemaNaoTrataBloqueia(array $trocas, string $motivo): void
+    {
+        $validator = $this->validator([$this->questao($trocas + ['requerida' => false])]);
+
+        $this->assertSame([10 => $motivo], $validator->bloqueios([]));
+    }
+
+    public static function questoesQueBloqueiam(): array
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'gt', 'valor' => 1, 'fonteIdQuestaoEtapa' => 1]];
+        $complemento = ['id' => 'a', 'label' => 'A', 'campoComplementar' => ['padraoValidacao' => 'telefone']];
+
+        return [
+            'tipo' => [['tipo_questao' => 'assinatura'], 'tipo de questão não suportado'],
+            'regra' => [['config' => ['regras' => ['itens' => [$regra]]]], 'regra de exibição não suportada'],
+            'regra em documento' => [['tipo_questao' => 'anexo', 'config' => ['regras' => ['itens' => [$regra]]]], 'regra de exibição não suportada'],
+            'máscara da questão' => [['tipo_questao' => 'texto', 'mascara' => 'telefone'], 'máscara não reconhecida: telefone'],
+            'máscara da configuração' => [['tipo_questao' => 'texto', 'config' => ['padraoValidacao' => 'telefone']], 'máscara não reconhecida: telefone'],
+            'máscara do complemento' => [['tipo_questao' => 'radio', 'opcao' => ['itens' => [$complemento]]], 'máscara não reconhecida: telefone'],
+            'máscara da coluna' => [['tipo_questao' => 'Tabela Dinâmica', 'config' => ['columns' => [['key' => 'a', 'type' => 'text', 'mask' => 'telefone']]]], 'máscara não reconhecida: telefone'],
+            'tipo da coluna' => [['tipo_questao' => 'tabela', 'config' => ['tabela' => ['colunas' => [['id' => 'a', 'tipo' => 'mapa']]]]], 'tipo de coluna não suportado: mapa'],
+        ];
+    }
+
+    public function testQuestaoInvisivelOuSomenteLeituraNaoBloqueia(): void
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 1]];
+        $validator = $this->validator([
+            $this->questao(['id_questao' => 1, 'id_questao_etapa' => 1, 'tipo_questao' => 'booleano']),
+            $this->questao(['id_questao' => 2, 'tipo_questao' => 'assinatura', 'config' => ['regras' => ['itens' => [$regra]]]]),
+            $this->questao(['id_questao' => 3, 'tipo_questao' => 'assinatura', 'somente_leitura' => true]),
+        ]);
+
+        $this->assertSame([], $validator->bloqueios([1 => false]));
+        $this->assertSame([2], array_keys($validator->bloqueios([1 => true])));
+    }
+
+    #[DataProvider('estruturasPublicadas')]
+    public function testNenhumaEstruturaPublicadaBloqueia(string $nome): void
+    {
+        $this->assertSame([], (new FormularioRespostasValidator($this->respostaDaConecta($nome)))->bloqueios([]));
     }
 }

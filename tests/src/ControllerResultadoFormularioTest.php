@@ -28,9 +28,9 @@ class ControllerResultadoFormularioTest extends TestCase
 
     /** Estrutura mínima: duas editáveis obrigatórias + anexo e data de publicação fora do gate. */
     private const ESTRUTURA = ['id_formulario' => 109, 'id_formulario_versao' => 296, 'versao' => 5, 'secoes' => [['etapas' => [['questoes' => [
-        ['id_questao' => 10, 'tipo_questao' => 'número', 'tag' => 'media_das_notas', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 11, 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 20, 'tipo_questao' => 'anexo', 'tag' => 'planilha_de_resultados', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 10, 'nome' => 'Média das notas', 'tipo_questao' => 'número', 'tag' => 'media_das_notas', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 11, 'nome' => 'Comentários', 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
+        ['id_questao' => 20, 'nome' => 'Planilha de resultados', 'tipo_questao' => 'anexo', 'tag' => 'planilha_de_resultados', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
     ]]]]]];
 
@@ -193,10 +193,10 @@ class ControllerResultadoFormularioTest extends TestCase
         ['id_questao' => 51, 'tipo_questao' => 'número', 'tag' => 'total_contemplados_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 52, 'tipo_questao' => 'moeda', 'tag' => 'valor_total_repassado_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 53, 'tipo_questao' => 'Tabela Dinâmica', 'tag' => 'dados_por_categoria_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => ['minRows' => 1, 'columns' => [
-            ['key' => 'categoria', 'label' => 'Categoria', 'readOnly' => true, 'required' => true],
-            ['key' => 'valor_individual', 'label' => 'Valor individual', 'required' => true],
-            ['key' => 'quantidade_contemplados', 'label' => 'Quantidade', 'required' => true],
-            ['key' => 'valor_total_categoria', 'label' => 'Total', 'readOnly' => true, 'required' => false],
+            ['key' => 'categoria', 'type' => 'text', 'label' => 'Categoria', 'readOnly' => true, 'required' => true],
+            ['key' => 'valor_individual', 'type' => 'currency', 'label' => 'Valor individual', 'required' => true],
+            ['key' => 'quantidade_contemplados', 'type' => 'number', 'label' => 'Quantidade', 'required' => true],
+            ['key' => 'valor_total_categoria', 'type' => 'currency', 'label' => 'Total', 'readOnly' => true, 'required' => false],
         ]], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
     ]]]]]];
 
@@ -253,6 +253,7 @@ class ControllerResultadoFormularioTest extends TestCase
                 $this->assertSame(2, $autos['51'] ?? $autos[51], 'contempladas reais da fase final');
                 $this->assertArrayNotHasKey('52', $autos, 'valor repassado não é travado');
                 $this->assertSame(2000, $payload['respostas']['52'] ?? $payload['respostas'][52], 'valor repassado vem pré-preenchido do cálculo');
+                $this->assertSame([], $payload['pendencias'], 'a sugestão conta como resposta');
                 $linhas = $autos['53'] ?? $autos[53];
                 $this->assertSame(['categoria' => 'Música', 'valor_individual' => 1000, 'quantidade_contemplados' => 2, 'valor_total_categoria' => 2000], $linhas[0]);
                 $this->assertSame(['categoria' => 'Teatro', 'valor_individual' => 500, 'quantidade_contemplados' => 0, 'valor_total_categoria' => 0], $linhas[1]);
@@ -339,6 +340,7 @@ class ControllerResultadoFormularioTest extends TestCase
                 $this->assertNull($linha['valor_individual'], 'categoria sem valor não inventa número');
                 $this->assertSame(1, $linha['quantidade_contemplados'], 'a contagem real segue valendo');
                 $this->assertNull($linha['valor_total_categoria']);
+                $this->assertNotContains(53, array_column($payload['pendencias'], 'id_questao'), 'o gestor não preenche a tabela calculada');
                 $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem valores não há sugestão de total');
             }),
         );
@@ -508,7 +510,9 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
 
-            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado'], 'anexo e data de publicação não entram no gate');
+            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado'], 'planilha e data de publicação não entram no gate');
+            $this->assertSame([], $payload['pendencias']);
+            $this->assertSame([], $payload['bloqueios']);
             $this->assertTrue($payload['envioHabilitado']);
         });
     }
@@ -698,7 +702,51 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
-    function testEditalComResultadoEnviadoFicaNoEstadoEnviado()
+    public function testRegraPodeDependerDeQuestaoCalculada(): void
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => 0, 'fonteIdQuestaoEtapa' => 950]];
+        $estrutura = self::ESTRUTURA;
+        $estrutura['secoes'][0]['etapas'][0]['questoes'] = [
+            ['id_questao' => 50, 'id_questao_etapa' => 950, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true],
+            ['id_questao' => 51, 'nome' => 'Por que não houve inscritos?', 'tipo_questao' => 'textarea', 'requerida' => true, 'config' => ['regras' => ['itens' => [$regra]]]],
+        ];
+
+        $this->comFormulario(function () use ($estrutura) {
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura;
+            [, $raiz] = $this->cenario();
+
+            $this->assertSame([51], array_column($this->getFormulario($raiz)['pendencias'], 'id_questao'));
+        });
+    }
+
+    public function testPendenteDizOQueFalta(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->postRespostas($raiz, [10 => 25]);
+
+            $this->assertSame(
+                [['id_questao' => 11, 'nome' => 'Comentários', 'motivo' => 'resposta obrigatória']],
+                $payload['pendencias'],
+            );
+        });
+    }
+
+    public function testEditalEnviadoComFormularioCompletoHabilitaARetificacao(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '20010');
+
+            $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_ENVIADO, $payload['estado']);
+            $this->assertTrue($payload['envioHabilitado']);
+        });
+    }
+
+    public function testEditalEnviadoComFormularioIncompletoNaoHabilitaARetificacao(): void
     {
         $this->comFormulario(function () {
             [, $raiz] = $this->cenario();
@@ -707,6 +755,28 @@ class ControllerResultadoFormularioTest extends TestCase
             $payload = $this->getFormulario($raiz);
 
             $this->assertSame(FormularioResultadoService::ESTADO_ENVIADO, $payload['estado']);
+            $this->assertFalse($payload['envioHabilitado']);
+            $this->assertSame([10, 11], array_column($payload['pendencias'], 'id_questao'));
+        });
+    }
+
+    public function testQuestaoQueOSistemaNaoTrataBloqueiaOEnvio(): void
+    {
+        $estrutura = self::ESTRUTURA;
+        $estrutura['secoes'][0]['etapas'][0]['questoes'][] = ['id_questao' => 12, 'nome' => 'Assinatura', 'tipo_questao' => 'assinatura', 'requerida' => false];
+
+        $this->comFormulario(function () use ($estrutura) {
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura;
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+
+            $this->assertSame([], $payload['pendencias']);
+            $this->assertSame(
+                [['id_questao' => 12, 'nome' => 'Assinatura', 'motivo' => 'tipo de questão não suportado']],
+                $payload['bloqueios'],
+            );
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado']);
             $this->assertFalse($payload['envioHabilitado']);
         });
     }
