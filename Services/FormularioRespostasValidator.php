@@ -8,9 +8,6 @@ final class FormularioRespostasValidator
     /** Anexo vai em arquivo próprio e a visualização do edital é informativa. */
     private const TIPOS_SEM_RESPOSTA = ['anexo', 'múltiplos anexos', 'visualização simplificada edital'];
 
-    /** A data de publicação é calculada pelo sistema, nunca preenchida — a tag a identifica em todo formulário. */
-    private const TAG_DATA_PUBLICACAO = 'data_publicacao';
-
     private const TIPO_NAO_SUPORTADO = 'tipo de questão não suportado';
 
     private const TIPOS_DE_TABELA = ['tabela', 'Tabela Dinâmica'];
@@ -49,11 +46,7 @@ final class FormularioRespostasValidator
             return false;
         }
 
-        if (!empty($questao['somente_leitura'])) {
-            return false;
-        }
-
-        return !str_starts_with((string) ($questao['tag'] ?? ''), self::TAG_DATA_PUBLICACAO);
+        return empty($questao['somente_leitura']);
     }
 
     /** @return array<int, mixed> só as respostas de questões que o gestor preenche */

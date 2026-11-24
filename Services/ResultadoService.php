@@ -74,7 +74,7 @@ class ResultadoService
             id_tipo: ($retificacao ? ResultadoTipo::FinalRetificado : ResultadoTipo::Final)->value,
             id_status: ResultadoStatus::Publicado->value,
             data_publicacao: $dataPublicacao,
-            respostas: (new FormularioResultadoService())->respostasParaEnvio($raiz, $dataPublicacao),
+            respostas: (new FormularioResultadoService())->respostasParaEnvio($raiz),
             tipo_planilha: $linhas === null ? null : LinhasDoResultadoService::TIPO_PLANILHA,
             linhas: $linhas,
         );

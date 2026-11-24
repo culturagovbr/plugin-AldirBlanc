@@ -492,7 +492,7 @@ class FormularioResultadoService
      * publicação informada — a mesma do campo próprio do POST, para nunca divergirem.
      * @return list<array{id_par_questao: int, resposta: array{resposta: mixed}}>|null null sem formulário
      */
-    public function respostasParaEnvio(Opportunity $raiz, string $dataPublicacao): ?array
+    public function respostasParaEnvio(Opportunity $raiz): ?array
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
 
@@ -507,9 +507,7 @@ class FormularioResultadoService
         $respostas = [];
 
         foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
-            $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
-                ? $dataPublicacao
-                : ($valores[$id] ?? null);
+            $valor = $valores[$id] ?? null;
 
             // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
             $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);

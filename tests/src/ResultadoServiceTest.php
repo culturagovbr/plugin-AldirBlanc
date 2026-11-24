@@ -168,7 +168,7 @@ class ResultadoServiceTest extends TestCase
         });
     }
 
-    function testPayloadLevaRespostasSalvasAutomaticasEDataDePublicacao()
+    function testPayloadLevaRespostasSalvasEAutomaticas()
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
@@ -179,7 +179,6 @@ class ResultadoServiceTest extends TestCase
         $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
             ['id_questao' => 50, 'id_questao_etapa' => 950, 'nome' => 'Total de inscritos', 'tipo_questao' => 'número', 'requerida' => true, 'tag' => 'total_inscritos_1_1'],
             ['id_questao' => 51, 'id_questao_etapa' => 951, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
-            ['id_questao' => 54, 'id_questao_etapa' => 954, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
             ['id_questao' => 55, 'id_questao_etapa' => 955, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
             ['id_questao' => 56, 'nome' => 'Questão sem id de etapa', 'tipo_questao' => 'textarea', 'requerida' => false],
             ['id_questao' => 59, 'id_questao_etapa' => 959, 'nome' => 'Procedimentos de cotas', 'tipo_questao' => 'múltipla escolha', 'requerida' => true, 'opcao' => ['itens' => [
@@ -195,7 +194,6 @@ class ResultadoServiceTest extends TestCase
             $porQuestao = array_column($respostas, 'resposta', 'id_par_questao');
             $this->assertSame(0, $porQuestao[950]['resposta'], 'a contagem automática do edital entra no envio');
             $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[951]['resposta']);
-            $this->assertSame('2026-10-10', $porQuestao[954]['resposta'], 'a data de publicação viaja só como Y-m-d, sem hora/fuso');
             $this->assertSame(['Heteroidentificação para pessoas negras'], $porQuestao[959]['resposta'], 'múltipla escolha viaja com o label, não o slug salvo');
             $this->assertArrayNotHasKey(955, $porQuestao, 'questão sem resposta não viaja');
             $this->assertArrayNotHasKey(0, $porQuestao, 'questão sem id_questao_etapa não viaja');

@@ -65,15 +65,6 @@ class FormularioRespostasValidatorTest extends TestCase
         $this->assertArrayHasKey(20, $validator->validate([20 => 'arquivo.pdf']));
     }
 
-    function testDataDePublicacaoNaoRecebeResposta()
-    {
-        $validator = $this->validator([
-            $this->questao(['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1']),
-        ]);
-
-        $this->assertArrayHasKey(30, $validator->validate([30 => '2026-10-19']));
-    }
-
     function testNumeroInvalidoEForaDoMinimoSaoRejeitados()
     {
         $validator = $this->validator([$this->questao(['valor_minimo' => 1.0])]);
@@ -425,7 +416,7 @@ class FormularioRespostasValidatorTest extends TestCase
         $this->assertSame([10 => 'o valor mínimo é 3'], $validator->validate([10 => 2]));
     }
 
-    public function testPendenciasCobramDocumentoEIgnoramPlanilhaEDataDePublicacao(): void
+    public function testPendenciasCobramDocumentoEIgnoramPlanilha(): void
     {
         $validator = $this->validator([
             $this->questao(),
@@ -433,7 +424,6 @@ class FormularioRespostasValidatorTest extends TestCase
             $this->questao(['id_questao' => 21, 'tipo_questao' => 'anexo', 'tag' => 'planilha', 'nome' => 'Planilha/PDF de comissão avaliadora']),
             $this->questao(['id_questao' => 22, 'tipo_questao' => 'múltiplos anexos', 'tag' => 'documentos', 'nome' => 'Documentos', 'requerida' => false]),
             $this->questao(['id_questao' => 23, 'tipo_questao' => 'anexo', 'tag' => 'documentos', 'nome' => 'Documentos', 'somente_leitura' => true]),
-            $this->questao(['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1']),
             $this->questao(['id_questao' => 16, 'tipo_questao' => 'texto', 'tag' => 'opcional', 'requerida' => false]),
         ]);
 
