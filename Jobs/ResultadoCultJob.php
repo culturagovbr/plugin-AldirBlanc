@@ -13,13 +13,11 @@ use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
-use AldirBlanc\Exceptions\PlanilhaIndisponivel;
 use AldirBlanc\Integration\FetchesResultadosDoEdital;
 use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FormularioResultadoService;
-use AldirBlanc\Services\ModeloPlanilhaService;
 use AldirBlanc\Services\ResultadoRecusas;
 use AldirBlanc\Services\ResultadoService;
 
@@ -64,13 +62,24 @@ class ResultadoCultJob extends JobType
 		}
 
 		$conteudo = $this->conteudo($service, $raiz);
-		$hash = $conteudo !== null ? $this->contentHash($conteudo) : null;
+		$hash = is_array($conteudo) ? $this->contentHash($conteudo) : null;
 		$falha = null;
 
 		try {
 			$isAdotado = $this->concilia($service, $raizId);
 		} catch (IntegrationError $falha) {
 			$isAdotado = false;
+		}
+
+		if ($falha === null && is_array($conteudo) && $conteudo['totalPendentes'] > 0) {
+			$app->log->info("ResultadoCultJob: edital {$raizId} - contemplados com pendência na planilha - nada enviado");
+			$service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, [
+				'mensagem' => i::__('Há contemplados com pendência na planilha. Resolva na lista de beneficiários e envie de novo.'),
+				'recusas' => $conteudo['pendentes'],
+				'totalPendentes' => $conteudo['totalPendentes'],
+			]);
+
+			return true;
 		}
 
 		// Alteração que não muda o conteúdo não vira retificado novo (eles coexistem publicados).
@@ -117,13 +126,13 @@ class ResultadoCultJob extends JobType
 		}
 	}
 
-	private function conteudo(ResultadoService $service, Opportunity $raiz): ?array
+	/** O conteúdo, ou a falha ao montá-lo: o envio é que a registra no histórico. */
+	private function conteudo(ResultadoService $service, Opportunity $raiz): array|\Throwable
 	{
 		try {
 			return $service->conteudo($raiz);
-		} catch (\Throwable) {
-			// O envio remonta e registra a falha no histórico.
-			return null;
+		} catch (\Throwable $erro) {
+			return $erro;
 		}
 	}
 
@@ -160,15 +169,18 @@ class ResultadoCultJob extends JobType
 		return true;
 	}
 
-	private function sendToCult(ResultadoService $service, Opportunity $raiz, Opportunity $faseFinal, ?array $conteudo): SendOutcome
+	private function sendToCult(ResultadoService $service, Opportunity $raiz, Opportunity $faseFinal, array|\Throwable $conteudo): SendOutcome
 	{
 		$raizId = (int) $raiz->id;
 
 		try {
 			$provider = $this->provider();
 			$edital = $this->edital($service, $raizId);
-			$conteudo ??= $service->conteudo($raiz);
-			$this->exigeEditalSemPlanilha($edital);
+
+			if ($conteudo instanceof \Throwable) {
+				throw $conteudo;
+			}
+
 			$payload = $service->buildResultado($faseFinal, $conteudo, $provider->fetchIdPublicado($edital));
 			$idsAntes = $provider->fetchIdsPublicados($edital);
 		} catch (\Throwable $e) {
@@ -187,7 +199,7 @@ class ResultadoCultJob extends JobType
 		try {
 			$outcome = $provider->sendResultado($edital, $payload);
 		} catch (\Throwable $e) {
-			$this->registraFalha($service, $raizId, $payload->id_tipo, $e);
+			$this->registraFalha($service, $raizId, $payload->id_tipo, $e, $conteudo);
 
 			throw $e;
 		}
@@ -199,17 +211,9 @@ class ResultadoCultJob extends JobType
 		return $outcome;
 	}
 
-	private function exigeEditalSemPlanilha(ParEditalId $edital): void
-	{
-		if ((new ModeloPlanilhaService())->doEnvio($edital->id)['possui']) {
-			throw new PlanilhaIndisponivel(i::__('O envio da planilha de contemplados ainda não está disponível.'));
-		}
-	}
-
 	private function motivoSemPost(\Throwable $erro): string
 	{
 		return match (true) {
-			$erro instanceof PlanilhaIndisponivel => $erro->getMessage(),
 			$erro instanceof IntegrationError && $erro->kind() === IntegrationError::KIND_CONFIGURATION => i::__('O envio de resultado ao CultBR não está configurado nesta instalação.'),
 			$erro instanceof IntegrationError => $this->motivoDaConsulta(),
 			default => i::__('Não foi possível montar o envio do resultado.'),
@@ -222,12 +226,12 @@ class ResultadoCultJob extends JobType
 	}
 
 	/** Só 4xx diz que o CultBR recusou; qualquer outra falha depois do POST pode ter publicado. */
-	private function registraFalha(ResultadoService $service, int $raizId, int $tipo, \Throwable $erro): void
+	private function registraFalha(ResultadoService $service, int $raizId, int $tipo, \Throwable $erro, array $conteudo): void
 	{
 		$status = $erro instanceof IntegrationError ? $erro->httpStatus() : null;
 
 		match (true) {
-			$status >= 400 && $status < 500 => $this->registraRecusa($service, $raizId, $tipo, $erro),
+			$status >= 400 && $status < 500 => $this->registraRecusa($service, $raizId, $tipo, $erro, $conteudo),
 			$erro instanceof IntegrationError && $erro->kind() === IntegrationError::KIND_CONFIGURATION => $service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, [
 				'aConferir' => null,
 				'mensagem' => $this->motivoSemPost($erro),
@@ -236,7 +240,7 @@ class ResultadoCultJob extends JobType
 		};
 	}
 
-	private function registraRecusa(ResultadoService $service, int $raizId, int $tipo, IntegrationError $erro): void
+	private function registraRecusa(ResultadoService $service, int $raizId, int $tipo, IntegrationError $erro, array $conteudo): void
 	{
 		$formulario = new FormularioResultadoService();
 
@@ -246,7 +250,7 @@ class ResultadoCultJob extends JobType
 			$estrutura = null;
 		}
 
-		$recusas = ResultadoRecusas::daResposta($erro->httpStatus(), $erro->rawBody(), $estrutura);
+		$recusas = ResultadoRecusas::daResposta($erro->httpStatus(), $erro->rawBody(), $estrutura, $conteudo);
 
 		if ($recusas->isDeOutraVersao) {
 			$formulario->forgetFormStructure($raizId);

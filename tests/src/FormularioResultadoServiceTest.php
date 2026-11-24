@@ -331,7 +331,7 @@ class FormularioResultadoServiceTest extends TestCase
             $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui']);
             $this->assertTrue($servico->isEnvioLiberado($edital));
 
-            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => throw IntegrationError::transport('Connection timed out', 28);
 
             $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui'], 'a tela segue com o guardado');
             $this->assertFalse($servico->isEnvioLiberado($edital));

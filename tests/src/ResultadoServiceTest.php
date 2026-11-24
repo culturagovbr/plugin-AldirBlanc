@@ -124,25 +124,47 @@ class ResultadoServiceTest extends TestCase
         );
     }
 
-    private function contempladaCompleta(Opportunity $raiz, Opportunity $fase): void
+    public function testSituacaoGravadaAntesDeHaverContagemTrazZeroPendentes(): void
     {
-        $this->app->disableAccessControl();
-        $raiz->registrationRanges = [['label' => 'Faixa A', 'value' => '15000']];
-        $raiz->save(true);
-        $this->app->enableAccessControl();
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, json_encode([
+            'oportunidade' => (int) $raiz->id, 'situacao' => 'publicado', 'em' => '2026-11-01T00:00:00-03:00', 'contadoDe' => '2026-11-01T00:00:00-03:00',
+            'aConferir' => null, 'tipo' => 2, 'id' => 1, 'mensagem' => null, 'recusas' => [],
+        ]));
 
-        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
+        $this->assertSame(0, $this->service()->ultimoEnvio((int) $raiz->id)['totalPendentes']);
     }
 
-    public function testCorpoNaoLevaAPlanilhaNoFormatoAntigo(): void
+    public function testEditalSemModeloNaoMandaLinhas(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->contempladaCompleta($raiz, $fase);
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->corpo($fase)->toArray();
+            $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($this->corpo($fase)->toArray()));
+        });
+    }
 
-            $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($payload));
+    public function testEditalComModeloMandaUmaLinhaPorContemplada(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+
+        $this->comFormularioResultado(function () use ($fase) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+
+            $this->assertEquals([self::CELULAS_COMPLETAS + ['cpf' => '52998224725']], $this->corpo($fase)->toArray()['linhas']);
+        });
+    }
+
+    public function testEditalComModeloESemContempladaNaoMandaOCampo(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($fase) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+
+            $this->assertArrayNotHasKey('linhas', $this->corpo($fase)->toArray());
         });
     }
 

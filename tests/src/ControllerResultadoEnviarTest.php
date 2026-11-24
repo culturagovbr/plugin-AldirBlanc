@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\TestableController;
+use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
@@ -26,6 +27,7 @@ class ControllerResultadoEnviarTest extends TestCase
 {
     use UserDirector;
     use IsolatesJobQueue;
+    use BuildsContempladas;
     use BuildsPublishedFinalPhase;
     use ConfiguresPlugin;
 
@@ -185,9 +187,23 @@ class ControllerResultadoEnviarTest extends TestCase
     public static function planilhasQueImpedem(): array
     {
         return [
-            'com modelo' => [fn() => ['possui_planilha' => true], 'planilha de contemplados'],
             'modelo indisponível' => [fn() => throw IntegrationError::transport('Connection timed out', 28), 'Não foi possível consultar'],
         ];
+    }
+
+    public function testPendenciaDaPlanilhaNaoImpedeOPedido(): void
+    {
+        $this->comFormularioResultado(function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+            $raiz = $this->cenario('Subsite Enviar Com Modelo');
+            $this->contempladaComDocumento($raiz, $raiz->lastPhase, '111.444.777-35');
+            $this->clearJobQueue();
+
+            $this->enviar($raiz);
+
+            $this->assertSame(200, $this->app->response->getStatusCode());
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
     }
 
     public function testEditalSemModeloEnvia(): void

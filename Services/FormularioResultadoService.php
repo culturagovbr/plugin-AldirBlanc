@@ -513,7 +513,7 @@ class FormularioResultadoService
             $planilha === null, $planilha['possui'] === false => null,
             $planilha['possui'] === null => $planilha['motivo'],
             $documentosRequeridos !== [] => i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.'),
-            default => i::__('O envio da planilha de contemplados ainda não está disponível.'),
+            default => null,
         };
 
         return $motivo === null ? [] : [['id_questao' => null, 'nome' => '', 'motivo' => $motivo]];

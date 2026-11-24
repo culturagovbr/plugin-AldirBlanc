@@ -11,6 +11,7 @@ use AldirBlanc\Services\ResultadoRecusas;
 use AldirBlanc\Services\ResultadoService;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\Registration;
 use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -826,17 +827,22 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
-    public function testEditalComModeloBloqueiaOEnvio(): void
+    public function testAbrirESalvarNaoConferemAPlanilha(): void
     {
         $this->comFormulario(function () {
-            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true, 'modelo' => 'tec', 'nome_modelo' => 'TEC'];
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
             $raiz = $this->cenarioIntegrado();
+            $this->inscricao($raiz->lastPhase, Registration::STATUS_APPROVED);
 
-            $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+            foreach ($this->app->em->getUnitOfWork()->getIdentityMap()[Registration::class] ?? [] as $inscricao) {
+                $this->app->em->detach($inscricao);
+            }
 
-            $this->assertSame([], $payload['pendencias']);
-            $this->assertStringContainsString('planilha de contemplados', $payload['bloqueios'][0]['motivo']);
-            $this->assertFalse($payload['envioHabilitado']);
+            $salvo = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+
+            $this->assertSame([[], [], true], [$salvo['pendencias'], $salvo['bloqueios'], $salvo['envioHabilitado']]);
+            $this->assertTrue($this->getFormulario($raiz)['envioHabilitado']);
+            $this->assertSame([], $this->app->em->getUnitOfWork()->getIdentityMap()[Registration::class] ?? [], 'nenhuma linha foi montada');
         });
     }
 
@@ -890,10 +896,7 @@ class ControllerResultadoFormularioTest extends TestCase
         $this->comEstrutura($estrutura, function () {
             FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
 
-            $motivos = array_column($this->getFormulario($this->cenarioIntegrado())['bloqueios'], 'motivo');
-
-            $this->assertCount(1, $motivos);
-            $this->assertStringNotContainsString('documentos', $motivos[0]);
+            $this->assertSame([], $this->getFormulario($this->cenarioIntegrado())['bloqueios']);
         });
     }
 

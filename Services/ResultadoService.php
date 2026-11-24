@@ -65,16 +65,19 @@ class ResultadoService
 
     /**
      * O que o resultado diz, seja ele final ou retificado.
-     * @return array{respostas: ?array}
+     * @return array{respostas: ?array, linhas: list<array>, inscricoes: list<string>, colunas: array<string, string>, totalPendentes: int, pendentes: list<array>}
      */
     public function conteudo(Opportunity $raiz): array
     {
-        return ['respostas' => (new FormularioResultadoService())->respostasParaEnvio($raiz)];
+        $planilha = (new ModeloPlanilhaService())->doEnvio((int) $this->parEditalId((int) $raiz->id));
+
+        return ['respostas' => (new FormularioResultadoService())->respostasParaEnvio($raiz)]
+            + ($planilha['possui'] ? (new LinhasDoResultadoService($planilha))->montar($raiz) : LinhasDoResultadoService::SEM_PLANILHA);
     }
 
     /**
      * Corpo do envio: final enquanto o CultBR não tem publicado, retificado depois — publicado é imutável.
-     * @param array{respostas: ?array} $conteudo
+     * @param array{respostas: ?array, linhas: list<array>} $conteudo
      */
     public function buildResultado(Opportunity $faseFinal, array $conteudo, ?int $idPublicado): Resultado
     {
@@ -85,6 +88,7 @@ class ResultadoService
             id_status: ResultadoStatus::Publicado->value,
             data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
             respostas: $conteudo['respostas'],
+            linhas: $conteudo['linhas'],
         );
     }
 
@@ -136,7 +140,7 @@ class ResultadoService
 
     /**
      * Situação do último envio, ou null se nunca houve; o que passou do prazo em andamento vem sem confirmação.
-     * @return array{situacao: string, em: string, tipo: ?int, id: ?int, mensagem: ?string, recusas: array, novoPedidoEm: ?string}|null
+     * @return array{situacao: string, em: string, tipo: ?int, id: ?int, mensagem: ?string, recusas: array, totalPendentes: int, novoPedidoEm: ?string}|null
      */
     public function ultimoEnvio(int $raizId): ?array
     {
@@ -156,6 +160,7 @@ class ResultadoService
             'id' => $gravado['id'],
             'mensagem' => $gravado['mensagem'],
             'recusas' => $gravado['recusas'],
+            'totalPendentes' => $gravado['totalPendentes'] ?? 0,
             'novoPedidoEm' => $situacao->isSemDesfecho() && $isNoPrazo ? $this->fimDoPrazo($gravado['contadoDe'])->format(\DateTime::ATOM) : null,
         ];
     }
@@ -192,6 +197,7 @@ class ResultadoService
             'id' => null,
             'mensagem' => null,
             'recusas' => [],
+            'totalPendentes' => 0,
         ], JSON_UNESCAPED_UNICODE));
     }
 

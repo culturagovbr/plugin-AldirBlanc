@@ -8,6 +8,7 @@ use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Job;
@@ -15,6 +16,7 @@ use MapasCulturais\Entities\Opportunity;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
 use Tests\AldirBlanc\Traits\LoadsConectaResponses;
@@ -28,6 +30,7 @@ class ResultadoCultJobTest extends TestCase
     use IsolatesJobQueue;
     use LoadsConectaResponses;
     use SendsOpportunityThroughJob;
+    use BuildsContempladas;
     use BuildsPublishedFinalPhase;
 
     private const RESPOSTAS_DA_VERSAO_SIMULADA = [
@@ -816,13 +819,13 @@ class ResultadoCultJobTest extends TestCase
         $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
     }
 
-    private function processaComModelo(Opportunity $raiz, callable $modelo): void
+    private function processaComModelo(Opportunity $raiz, callable $modelo, ?callable $aoEnviar = null): void
     {
-        $this->semCacheDoFormulario(fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz, $modelo) {
+        $this->semCacheDoFormulario(fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz, $modelo, $aoEnviar) {
             FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
             FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
             FakeIntegrationProvider::$aoBuscarModelo = $modelo;
-            FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['response' => '{"id_par_edital_resultado": 777}']);
+            FakeIntegrationProvider::$aoEnviarResultado = $aoEnviar ?? fn() => $this->desfecho(['response' => '{"id_par_edital_resultado": 777}']);
             $this->enfileira($raiz);
             $this->processJobs(number_of_jobs: 1);
         }));
@@ -836,16 +839,132 @@ class ResultadoCultJobTest extends TestCase
         );
     }
 
-    public function testEditalComModeloDePlanilhaNaoEnviaEFechaOHistoricoEmErro(): void
+    public function testEditalComModeloEnviaUmaLinhaPorContemplada(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+
+        $this->processaComModelo($raiz, fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'));
+
+        $this->assertEquals([self::CELULAS_COMPLETAS + ['cpf' => '52998224725']], FakeIntegrationProvider::$resultadosEnviados[0]['payload']->linhas);
+        $this->assertSame('publicado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertSame([53790], FakeIntegrationProvider::$modelosBuscados);
+    }
+
+    public function testLinhaQueMudaGeraNovoEnvioEALinhaIgualNao(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $contemplada = $this->contempladaCompleta($raiz, $fase);
+        $modelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+        $this->processaComModelo($raiz, $modelo);
+
+        $this->processaComModelo($raiz, $modelo);
+        $this->assertSame('nada-mudou', $this->ultimoEnvio($raiz)['situacao']);
+
+        (new BeneficiariosService($this->planilha()))->salvarCelulas($raiz, (int) $contemplada->id, ['raca_etnia' => 'Preta']);
+        $this->processaComModelo($raiz, $modelo);
+
+        $this->assertSame('Preta', FakeIntegrationProvider::$resultadosEnviados[0]['payload']->linhas[0]['raca_etnia']);
+    }
+
+    public function testContempladaComPendenciaEncerraSemEnvioEGuardaQuais(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+        $pendente = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+
+        $this->processaComModelo($raiz, fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'));
+
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame(['nao-enviado', 1], [$ultimo['situacao'], $ultimo['totalPendentes']]);
+        $this->assertStringContainsString('lista de beneficiários', $ultimo['mensagem']);
+        $this->assertSame([(string) $pendente->number, 'Tipo de agente responsável'], [$ultimo['recusas'][0]['inscricao'], $ultimo['recusas'][0]['coluna']]);
+        $this->assertSame([], FakeIntegrationProvider::$passos, 'nada é lido nem enviado ao CultBR');
+        $this->assertSame([], $this->statusNoHistorico($raiz));
+        $this->assertNull((new ResultadoService())->resultadoLastPayloadHash((int) $raiz->id));
+    }
+
+    public function testPendenciaSoEncerraDepoisDeConferirOEnvioSemResposta(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $antes = (new \DateTime('-1 hour'))->format(\DateTime::ATOM);
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::SemConfirmacao, [
+            'contadoDe' => $antes,
+            'aConferir' => ['idsAntes' => [], 'hash' => 'x', 'tipo' => 2, 'em' => $antes],
+        ]);
+
+        $this->semCacheDoFormulario(fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+            FakeIntegrationProvider::$aoListarPublicados = fn() => throw IntegrationError::transport('Connection timed out', 28);
+            $this->enfileira($raiz);
+            $this->processJobs(number_of_jobs: 1);
+        }));
+
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame([0, []], [$ultimo['totalPendentes'], $ultimo['recusas']], 'sem a conferência o pedido falha por ela');
+        $this->assertNotNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
+    public function testConteudoQueFalhouNaoERemontadoNoMesmoPedido(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $leituras = 0;
+
+        $this->processaComModelo($raiz, function () use (&$leituras) {
+            return ++$leituras === 1 ? throw IntegrationError::transport('Connection timed out', 28) : $this->respostaDaConecta('modelo-pontos-de-cultura');
+        });
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame(1, $leituras);
+    }
+
+    public function testEditalComModeloESemContempladaEnviaSemOCampo(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
-        $this->processaComModelo($raiz, fn() => ['possui_planilha' => true]);
+        $this->processaComModelo($raiz, fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'));
 
-        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
-        $this->assertSame(['error'], $this->statusNoHistorico($raiz));
-        $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'repetir não muda o modelo do edital');
-        $this->assertStringContainsString('planilha de contemplados', $this->ultimoEnvio($raiz)['mensagem']);
+        $this->assertArrayNotHasKey('linhas', FakeIntegrationProvider::$resultadosEnviados[0]['payload']->toArray());
+    }
+
+    public function testRecusaDeLinhaApontaAInscricaoEAColuna(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $numeros = [
+            (string) $this->contempladaCompleta($raiz, $fase)->number,
+            (string) $this->contempladaCompleta($raiz, $fase, '111.444.777-35')->number,
+        ];
+        sort($numeros, SORT_STRING);
+
+        $this->processaComModelo(
+            $raiz,
+            fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'),
+            fn() => throw $this->recusa(422, 'recusa-422-linhas-invalidas'),
+        );
+
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame('recusado', $ultimo['situacao']);
+        $this->assertSame([$numeros[1], 'CPF'], [$ultimo['recusas'][0]['inscricao'], $ultimo['recusas'][0]['coluna']]);
+    }
+
+    public function testRecusaPelaQuestaoDaPlanilhaNaoFicaComoEnviada(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->contempladaCompleta($raiz, $fase);
+
+        $this->processaComModelo(
+            $raiz,
+            fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'),
+            fn() => throw $this->recusa(422, 'recusa-422-questao-da-planilha'),
+        );
+
+        $this->assertStringContainsString('não tem a questão da planilha', $this->ultimoEnvio($raiz)['mensagem']);
+        $this->assertFalse($this->resultadoId((int) $raiz->id));
+        $this->assertNull((new ResultadoService())->resultadoLastPayloadHash((int) $raiz->id));
     }
 
     public function testFalhaAoLerOModeloNaoEnviaEApareceNoHistorico(): void
