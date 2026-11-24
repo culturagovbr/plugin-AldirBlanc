@@ -17,6 +17,7 @@ use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
@@ -25,6 +26,7 @@ class ResultadoCultJobTest extends TestCase
 {
     use UserDirector;
     use IsolatesJobQueue;
+    use LoadsConectaResponses;
     use SendsOpportunityThroughJob;
     use BuildsPublishedFinalPhase;
 
@@ -319,6 +321,87 @@ class ResultadoCultJobTest extends TestCase
     public static function recusas(): array
     {
         return ['400' => [400], '422' => [422], '499' => [499]];
+    }
+
+    /** Recusa do CultBR ao POST, com o corpo real gravado em homologação. */
+    private function recusa(int $status, string $resposta): SendFailed
+    {
+        return $this->falhaDoPost(IntegrationError::http('recusado', $status, $this->corpoDaConecta($resposta)));
+    }
+
+    public function testRecusaDeQuestaoGuardaONomeDaQuestao(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 60, 'id_questao_etapa' => 13934, 'nome' => 'Declaração', 'tipo_questao' => 'textarea', 'requerida' => false],
+        ]]]]]];
+
+        $this->processaComResposta($raiz, null, $estrutura, function () {
+            FakeIntegrationProvider::$aoEnviarResultado = fn() => throw $this->recusa(422, 'recusa-422-obrigatoria');
+        });
+
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame('O CultBR recusou respostas do formulário.', $ultimo['mensagem']);
+        $this->assertSame([['tipo' => 'questao', 'nome' => 'Declaração', 'descricao' => 'Esta questão é obrigatória.']], $ultimo['recusas']);
+    }
+
+    public function testRecusaEmDetalheGuardaOTextoDoCultBr(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComFalha($raiz, $this->recusa(422, 'recusa-422-sem-modelo'));
+
+        $this->assertStringStartsWith('Edital sem modelo de planilha', $this->ultimoEnvio($raiz)['mensagem']);
+    }
+
+    #[DataProvider('recusasECache')]
+    public function testSoAQuestaoForaDaVersaoFazRelerAEstrutura(int $tipoAcao, string $resposta, int $leituras): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['formularioCacheTTL'] = 300;
+
+                return $config;
+            },
+            fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz, $tipoAcao, $resposta, $leituras) {
+                FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => $tipoAcao;
+                FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
+                FakeIntegrationProvider::$aoEnviarResultado = fn() => throw $this->recusa(400, $resposta);
+                $this->enfileira($raiz);
+                $this->processJobs(number_of_jobs: 1);
+                FakeIntegrationProvider::$formulariosBuscados = [];
+
+                (new FormularioResultadoService())->formStructureForOpportunity((int) $raiz->id);
+
+                $this->assertCount($leituras, FakeIntegrationProvider::$formulariosBuscados);
+            }),
+        );
+    }
+
+    public static function recusasECache(): array
+    {
+        return [
+            'fora da versão' => [9105, 'recusa-400-fora-da-versao', 1],
+            'outra recusa' => [9106, 'recusa-400-nao-permite', 0],
+        ];
+    }
+
+    public function testEstruturaForaDoArNaoImpedeGuardarARecusa(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, null, null, function () {
+            FakeIntegrationProvider::$aoEnviarResultado = function () {
+                FakeIntegrationProvider::$aoBuscarFormulario = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+                throw $this->recusa(422, 'recusa-422-obrigatoria');
+            };
+        });
+
+        $this->assertSame('recusado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertSame('Questão 13934', $this->ultimoEnvio($raiz)['recusas'][0]['nome']);
     }
 
     public function testFalhaQueOProvedorNaoLancouFicaSemConfirmacao(): void

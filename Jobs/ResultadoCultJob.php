@@ -20,6 +20,7 @@ use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\ModeloPlanilhaService;
+use AldirBlanc\Services\ResultadoRecusas;
 use AldirBlanc\Services\ResultadoService;
 
 class ResultadoCultJob extends JobType
@@ -226,11 +227,7 @@ class ResultadoCultJob extends JobType
 		$status = $erro instanceof IntegrationError ? $erro->httpStatus() : null;
 
 		match (true) {
-			$status >= 400 && $status < 500 => $service->persistUltimoEnvio($raizId, EnvioSituacao::Recusado, [
-				'aConferir' => null,
-				'tipo' => $tipo,
-				'mensagem' => i::__('O CultBR recusou o envio.'),
-			]),
+			$status >= 400 && $status < 500 => $this->registraRecusa($service, $raizId, $tipo, $erro),
 			$erro instanceof IntegrationError && $erro->kind() === IntegrationError::KIND_CONFIGURATION => $service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, [
 				'aConferir' => null,
 				'mensagem' => $this->motivoSemPost($erro),
@@ -240,6 +237,30 @@ class ResultadoCultJob extends JobType
 				'mensagem' => i::__('O CultBR não confirmou o envio.'),
 			]),
 		};
+	}
+
+	private function registraRecusa(ResultadoService $service, int $raizId, int $tipo, IntegrationError $erro): void
+	{
+		$formulario = new FormularioResultadoService();
+
+		try {
+			$estrutura = $formulario->formStructureForOpportunity($raizId);
+		} catch (IntegrationError) {
+			$estrutura = null;
+		}
+
+		$recusas = ResultadoRecusas::daResposta($erro->httpStatus(), $erro->rawBody(), $estrutura);
+
+		if ($recusas->isDeOutraVersao) {
+			$formulario->forgetFormStructure($raizId);
+		}
+
+		$service->persistUltimoEnvio($raizId, EnvioSituacao::Recusado, [
+			'aConferir' => null,
+			'tipo' => $tipo,
+			'mensagem' => $recusas->resumo,
+			'recusas' => $recusas->itens,
+		]);
 	}
 
 	private function edital(ResultadoService $service, int $raizId): ParEditalId

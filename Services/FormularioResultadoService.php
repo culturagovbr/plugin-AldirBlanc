@@ -65,6 +65,13 @@ class FormularioResultadoService
         return $estrutura;
     }
 
+    /** Faz a próxima leitura da estrutura do edital ir à origem. */
+    public function forgetFormStructure(int $opportunityId): void
+    {
+        $idTipoAcao = $this->parTipoAcaoForOpportunity($opportunityId);
+        App::i()->cache->delete(self::CACHE_ESTRUTURA . $idTipoAcao);
+    }
+
     /** Estrutura do formulário do tipo de ação, ou null quando não há formulário publicado (404). */
     public function formStructureForTipoAcao(int $idTipoAcao): ?array
     {
