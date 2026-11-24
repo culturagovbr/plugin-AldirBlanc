@@ -11,10 +11,10 @@ class Resultado
         public ?string $data_publicacao = null,
         /** @var array<int, array{id_par_questao: int, resposta: array{resposta: mixed}}>|null */
         public ?array $respostas = null,
-        /** @var array<int, array{nome: string, caminho: string, descricao?: ?string}>|null */
-        public ?array $anexos = null,
         /** @var array<int, array<string, mixed>>|null */
         public ?array $linhas = null,
+        /** @var list<array{nome: string, caminho: string, tipo: string, descricao: string}> fora do corpo: vão como arquivo */
+        public array $arquivos = [],
     ) {
     }
 
@@ -26,7 +26,6 @@ class Resultado
             id_status: (int) ($data['id_status'] ?? 0),
             data_publicacao: isset($data['data_publicacao']) ? (string) $data['data_publicacao'] : null,
             respostas: isset($data['respostas']) && is_array($data['respostas']) ? $data['respostas'] : null,
-            anexos: isset($data['anexos']) && is_array($data['anexos']) ? $data['anexos'] : null,
             linhas: isset($data['linhas']) && is_array($data['linhas']) ? $data['linhas'] : null,
         );
     }
@@ -39,6 +38,6 @@ class Resultado
             'id_status' => $this->id_status,
             'data_publicacao' => $this->data_publicacao,
             'respostas' => $this->respostas,
-        ] + array_filter(['anexos' => $this->anexos, 'linhas' => $this->linhas]);
+        ] + array_filter(['linhas' => $this->linhas]);
     }
 }

@@ -18,9 +18,6 @@ class ResultadoDtoTest extends TestCase
                 ['id_par_questao' => 100, 'resposta' => ['resposta' => 'resposta1']],
                 ['id_par_questao' => 101, 'resposta' => ['resposta' => 42]],
             ],
-            'anexos' => [
-                ['nome' => 'resultado-final.pdf', 'caminho' => 'https://mapas.exemplo/files/resultado-final.pdf', 'descricao' => 'Lista de selecionados'],
-            ],
         ];
     }
 
@@ -39,7 +36,7 @@ class ResultadoDtoTest extends TestCase
         $this->assertSame(3, $dto->id_status);
         $this->assertNull($dto->data_publicacao);
         $this->assertNull($dto->respostas);
-        $this->assertNull($dto->anexos);
+        $this->assertSame([], $dto->arquivos);
     }
 
     public function testConstrucaoDiretaComOsTiposDoContrato(): void
@@ -49,7 +46,7 @@ class ResultadoDtoTest extends TestCase
         $this->assertSame(
             ['id_tipo' => 3, 'id_status' => 3, 'data_publicacao' => '2026-10-16T20:00:00-03:00', 'respostas' => null],
             $dto->toArray(),
-            'anexos e linhas só entram quando há o que enviar',
+            'linhas só entram quando há o que enviar',
         );
     }
 
@@ -61,6 +58,13 @@ class ResultadoDtoTest extends TestCase
 
         $this->assertSame($linhas, $corpo['linhas']);
         $this->assertArrayNotHasKey('tipo_planilha', $corpo);
+    }
+
+    public function testArquivoNaoEntraNoCorpo(): void
+    {
+        $dto = new Resultado(id_tipo: 2, id_status: 3, arquivos: [['nome' => 'ata.pdf', 'caminho' => '/tmp/ata.pdf', 'tipo' => 'application/pdf', 'descricao' => 'Ata']]);
+
+        $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($dto->toArray()));
     }
 
     public function testListaVaziaDeLinhasNaoEntraNoCorpo(): void

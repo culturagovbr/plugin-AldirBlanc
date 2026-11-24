@@ -5,6 +5,7 @@ namespace AldirBlanc\Integration\Conecta\Http;
 use AldirBlanc\Dtos\ParEditalId;
 use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Http\Clients\AbstractClient;
+use AldirBlanc\Http\Transport\RequestBody;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\ResultadoSender;
 use AldirBlanc\Services\ResultadoRecusas;
@@ -20,6 +21,9 @@ class ResultadoClient extends AbstractClient implements ResultadoSender
 
     protected string $document;
 
+    /** @var list<array{nome: string, caminho: string, tipo: string, descricao: string}> */
+    private array $arquivos = [];
+
     public function __construct(?Transport $transport = null)
     {
         $this->endpoint = '';
@@ -34,12 +38,51 @@ class ResultadoClient extends AbstractClient implements ResultadoSender
     {
         $this->endpoint = $this->requiredEndpoint('criarResultadoEndpoint');
         $this->document = (string) $edital->id;
+        $this->arquivos = $payload->arquivos;
 
         return $this->post($payload->toArray());
     }
 
+    /** Com arquivo, o CultBR só recebe multipart. */
+    protected function requestBody(array $data): RequestBody
+    {
+        if ($this->arquivos === []) {
+            return parent::requestBody($data);
+        }
+
+        $campos = array_filter([
+            'id_tipo' => $data['id_tipo'],
+            'id_status' => $data['id_status'],
+            'data_publicacao' => $data['data_publicacao'],
+            'respostas_json' => json_encode($data['respostas'] ?? [], JSON_UNESCAPED_UNICODE),
+        ], fn(mixed $valor) => $valor !== null);
+
+        return RequestBody::multipart([
+            ...array_map(fn(string $campo, mixed $valor) => ['campo' => $campo, 'conteudo' => (string) $valor], array_keys($campos), $campos),
+            ...array_merge(...array_map($this->partesDoArquivo(...), $this->arquivos)),
+        ]);
+    }
+
+    private function partesDoArquivo(array $arquivo): array
+    {
+        $conteudo = file_get_contents($arquivo['caminho']);
+
+        if ($conteudo === false) {
+            throw new \RuntimeException("Arquivo {$arquivo['nome']} não pôde ser lido");
+        }
+
+        return [
+            ['campo' => 'arquivos', 'conteudo' => $conteudo, 'arquivo' => $arquivo['nome'], 'tipo' => $arquivo['tipo']],
+            ['campo' => 'descricoes', 'conteudo' => $arquivo['descricao']],
+        ];
+    }
+
     protected function recordedPayload(array $data): array
     {
+        if ($this->arquivos !== []) {
+            $data['arquivos'] = array_column($this->arquivos, 'nome');
+        }
+
         if (isset($data['linhas'])) {
             $data['linhas'] = ['total' => count($data['linhas']), 'hash' => hash('sha256', (string) json_encode($data['linhas']))];
         }

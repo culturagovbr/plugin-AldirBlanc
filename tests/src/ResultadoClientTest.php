@@ -14,6 +14,7 @@ use AldirBlanc\Integration\SendsResultado;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
+use Tests\AldirBlanc\Traits\BuildsAnexos;
 use Tests\AldirBlanc\Traits\CapturesLog;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Traits\LoadsConectaResponses;
@@ -21,6 +22,7 @@ use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 /** Envio de resultado pela Conecta: só-POST num edital do PAR, sobre a fundação da fase 1. */
 class ResultadoClientTest extends TestCase
 {
+    use BuildsAnexos;
     use CapturesLog;
     use ConfiguresPlugin;
     use LoadsConectaResponses;
@@ -130,6 +132,131 @@ class ResultadoClientTest extends TestCase
                 $this->assertSame('POST', $outcome->method);
             },
         );
+    }
+
+    private function arquivoDoEnvio(string $nome, string $conteudo, string $descricao, string $tipo = 'application/pdf'): array
+    {
+        return ['nome' => $nome, 'caminho' => $this->upload($nome, $conteudo)['tmp_name'], 'tipo' => $tipo, 'descricao' => $descricao];
+    }
+
+    private function enviaComArquivos(array $arquivos, FakeTransport $transporte, ?string $data = '2026-10-16T18:00:00-03:00'): SendOutcome
+    {
+        $respostas = [['id_par_questao' => 13927, 'resposta' => ['resposta' => 'ação.pdf']]];
+
+        try {
+            return (new ConectaProvider($transporte))->sendResultado(
+                new ParEditalId(53790),
+                new Resultado(id_tipo: 2, id_status: 3, data_publicacao: $data, respostas: $respostas, arquivos: $arquivos),
+            );
+        } catch (SendFailed $e) {
+            return $e->outcome();
+        }
+    }
+
+    /** @return list<array{0: string, 1: string}> cabeçalho e conteúdo de cada parte, na ordem do corpo */
+    private function partes(FakeTransport $transporte): array
+    {
+        $tipo = $transporte->ultimosCabecalhos()['Content-Type'];
+        $this->assertMatchesRegularExpression('/^multipart\/form-data; boundary=[0-9a-f]{32}$/', $tipo);
+        $boundary = explode('boundary=', $tipo)[1];
+        $corpo = $transporte->requisicoes[0]['body'];
+        $this->assertStringEndsWith("--{$boundary}--\r\n", $corpo);
+
+        return array_map(
+            fn(string $parte) => explode("\r\n\r\n", substr($parte, 0, -2), 2),
+            array_filter(explode("--{$boundary}\r\n", substr($corpo, 0, -strlen("--{$boundary}--\r\n")))),
+        );
+    }
+
+    public function testComArquivoOCorpoVaiEmMultipartComOsParesNaOrdem(): void
+    {
+        $this->comConecta(function () {
+            $binario = implode('', array_map(chr(...), range(0, 255))) . "\r\n--x\r\n\r\n";
+            $transporte = new FakeTransport(status: 201, body: '{"id_par_edital_resultado": 10}');
+
+            $outcome = $this->enviaComArquivos([
+                $this->arquivoDoEnvio('publicacao.pdf', $binario, 'Publicação'),
+                $this->arquivoDoEnvio('publicacao-2.pdf', 'segundo', 'Publicação'),
+                $this->arquivoDoEnvio('lista.csv', 'a;b', 'Outros documentos', 'text/csv'),
+            ], $transporte);
+
+            $this->assertSame(SendResult::Success, $outcome->result);
+            $this->assertSame([
+                ['Content-Disposition: form-data; name="id_tipo"', '2'],
+                ['Content-Disposition: form-data; name="id_status"', '3'],
+                ['Content-Disposition: form-data; name="data_publicacao"', '2026-10-16T18:00:00-03:00'],
+                ['Content-Disposition: form-data; name="respostas_json"', '[{"id_par_questao":13927,"resposta":{"resposta":"ação.pdf"}}]'],
+                ["Content-Disposition: form-data; name=\"arquivos\"; filename=\"publicacao.pdf\"\r\nContent-Type: application/pdf", $binario],
+                ['Content-Disposition: form-data; name="descricoes"', 'Publicação'],
+                ["Content-Disposition: form-data; name=\"arquivos\"; filename=\"publicacao-2.pdf\"\r\nContent-Type: application/pdf", 'segundo'],
+                ['Content-Disposition: form-data; name="descricoes"', 'Publicação'],
+                ["Content-Disposition: form-data; name=\"arquivos\"; filename=\"lista.csv\"\r\nContent-Type: text/csv", 'a;b'],
+                ['Content-Disposition: form-data; name="descricoes"', 'Outros documentos'],
+            ], array_values($this->partes($transporte)));
+            $this->assertStringContainsString('Bearer token-de-teste', implode('|', $transporte->ultimosCabecalhos()));
+        });
+    }
+
+    public function testNomeDoArquivoNaoQuebraOCabecalho(): void
+    {
+        $this->comConecta(function () {
+            $transporte = new FakeTransport(status: 201, body: '{}');
+
+            $this->enviaComArquivos([['nome' => "a\"b\r\nX: y.pdf"] + $this->arquivoDoEnvio('a.pdf', 'x', 'd')], $transporte, null);
+
+            $partes = array_column($this->partes($transporte), 0);
+            $this->assertContains("Content-Disposition: form-data; name=\"arquivos\"; filename=\"a%22b%0D%0AX: y.pdf\"\r\nContent-Type: application/pdf", $partes);
+            $this->assertSame([], preg_grep('/data_publicacao/', $partes), 'sem data, o campo não vai');
+        });
+    }
+
+    #[DataProvider('desfechosComArquivo')]
+    public function testHistoricoGuardaDoArquivoSoONome(string $modo, int $status): void
+    {
+        $this->comConfigDoPlugin(
+            fn(array $config) => $this->comValoresDoCliente($config, ['host' => self::HOST, 'token' => 'token-de-teste', 'mode' => $modo], 'conecta'),
+            function () use ($status) {
+                $registro = $this->enviaComArquivos([$this->arquivoDoEnvio('ata.pdf', 'CONTEUDO', 'Ata')], new FakeTransport(status: $status, body: '{"detail": "x"}'));
+
+                $this->assertSame(['ata.pdf'], $registro->payload['arquivos']);
+                $this->assertStringNotContainsString('CONTEUDO', json_encode($registro->payload));
+            },
+        );
+    }
+
+    public static function desfechosComArquivo(): array
+    {
+        return ['aceite' => ['live', 201], 'recusa' => ['live', 400], 'simulado' => ['development', 201]];
+    }
+
+    public function testSemArquivoOCorpoEORegistroSeguemEmJson(): void
+    {
+        $this->comConecta(function () {
+            $transporte = new FakeTransport(status: 201, body: '{}');
+
+            $registro = $this->enviaComArquivos([], $transporte);
+
+            $this->assertSame('application/json', $transporte->ultimosCabecalhos()['Content-Type']);
+            $this->assertSame(2, json_decode($transporte->requisicoes[0]['body'], true)['id_tipo']);
+            $this->assertStringContainsString('ação.pdf', $transporte->requisicoes[0]['body']);
+            $this->assertArrayNotHasKey('arquivos', $registro->payload);
+        });
+    }
+
+    public function testArquivoIlegivelNaoSaiPelaRede(): void
+    {
+        $this->comConecta(function () {
+            $transporte = new FakeTransport(status: 201, body: '{}');
+
+            try {
+                @$this->enviaComArquivos([['caminho' => '/nao/existe.pdf'] + $this->arquivoDoEnvio('a.pdf', 'x', 'd')], $transporte);
+                $this->fail('Esperava a falha de leitura');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('a.pdf', $e->getMessage());
+            }
+
+            $this->assertSame([], $transporte->requisicoes);
+        });
     }
 
     private const LINHAS = [['cpf' => '52998224725', 'nome_proponente' => 'Ana Paula Ferreira'], ['cpf' => '11144477735', 'nome_proponente' => 'Bruno']];
