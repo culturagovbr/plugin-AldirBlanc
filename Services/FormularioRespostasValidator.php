@@ -18,15 +18,7 @@ final class FormularioRespostasValidator
 
     public function __construct(array $estrutura)
     {
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    if ($this->isEditavel($questao)) {
-                        $this->questoes[(int) $questao['id_questao']] = $questao;
-                    }
-                }
-            }
-        }
+        $this->questoes = array_filter((new FormularioEstrutura($estrutura))->questoes(), $this->isEditavel(...));
     }
 
     private function isEditavel(array $questao): bool

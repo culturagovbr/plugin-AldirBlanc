@@ -134,15 +134,11 @@ class FormularioResultadoService
 
         $automaticas = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $valor = $this->valorAutomatico($raiz, $questao);
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            $valor = $this->valorAutomatico($raiz, $questao);
 
-                    if ($valor !== null) {
-                        $automaticas[(int) $questao['id_questao']] = $valor;
-                    }
-                }
+            if ($valor !== null) {
+                $automaticas[$id] = $valor;
             }
         }
 
@@ -162,15 +158,9 @@ class FormularioResultadoService
 
         $semFonte = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $id = (int) $questao['id_questao'];
-
-                    if ($this->isTagAutomatica((string) ($questao['tag'] ?? '')) && !array_key_exists($id, $automaticas)) {
-                        $semFonte[] = $id;
-                    }
-                }
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            if ($this->isTagAutomatica((string) ($questao['tag'] ?? '')) && !array_key_exists($id, $automaticas)) {
+                $semFonte[] = $id;
             }
         }
 
@@ -220,19 +210,15 @@ class FormularioResultadoService
 
         $sugeridas = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    if (!str_starts_with((string) ($questao['tag'] ?? ''), 'valor_total_repassado')) {
-                        continue;
-                    }
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            if (!str_starts_with((string) ($questao['tag'] ?? ''), 'valor_total_repassado')) {
+                continue;
+            }
 
-                    $valor = $this->valorTotalRepassado($raiz);
+            $valor = $this->valorTotalRepassado($raiz);
 
-                    if ($valor !== null) {
-                        $sugeridas[(int) $questao['id_questao']] = $valor;
-                    }
-                }
+            if ($valor !== null) {
+                $sugeridas[$id] = $valor;
             }
         }
 
@@ -445,23 +431,19 @@ class FormularioResultadoService
 
         $respostas = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
-                        ? $dataPublicacao
-                        : ($valores[(int) $questao['id_questao']] ?? null);
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
+                ? $dataPublicacao
+                : ($valores[$id] ?? null);
 
-                    // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
-                    $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
+            // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
+            $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
 
-                    if ($valor === null || $idEnvio === 0) {
-                        continue;
-                    }
-
-                    $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $valor)]];
-                }
+            if ($valor === null || $idEnvio === 0) {
+                continue;
             }
+
+            $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $valor)]];
         }
 
         return $respostas;
