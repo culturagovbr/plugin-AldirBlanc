@@ -168,7 +168,8 @@ class FormularioResultadoService
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
         $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $impedimentos = $this->impedimentos($raiz, $estrutura);
+        $planilha = $this->planilha($raiz);
+        $impedimentos = $this->impedimentos($raiz, $estrutura, $planilha);
         $estado = $this->estado($raiz, $estrutura, $impedimentos === self::SEM_IMPEDIMENTOS);
 
         return [
@@ -180,6 +181,7 @@ class FormularioResultadoService
             'respostasAutomaticas' => (object) $automaticas,
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             ...$impedimentos,
+            'planilha' => $planilha,
             'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
             'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
@@ -453,15 +455,45 @@ class FormularioResultadoService
     }
 
     /**
-     * O que impede o envio do formulário: o que falta ao gestor e o que esta versão do sistema não sabe tratar.
+     * O que impede o envio, com a estrutura e o modelo de planilha relidos da origem.
      * @return array{pendencias: list<array>, bloqueios: list<array>}
      */
     public function impedimentosDoEnvio(Opportunity $raiz): array
     {
-        return $this->impedimentos($raiz, $this->formStructureForEnvio((int) $raiz->id));
+        return $this->impedimentos(
+            $raiz,
+            $this->formStructureForEnvio((int) $raiz->id),
+            $this->planilhaDoEnvio($raiz),
+        );
     }
 
-    private function impedimentos(Opportunity $raiz, ?array $estrutura): array
+    private function planilhaDoEnvio(Opportunity $raiz): ?array
+    {
+        return $this->planilha($raiz, (new ModeloPlanilhaService())->doEnvio(...));
+    }
+
+    /**
+     * Situação da planilha de contemplados, ou null no edital que ainda não está no PAR.
+     * @param ?callable(int): array $leitura como ler o modelo; por padrão, o guardado
+     */
+    private function planilha(Opportunity $raiz, ?callable $leitura = null): ?array
+    {
+        $idParEdital = (new ResultadoService())->parEditalId((int) $raiz->id);
+
+        if ($idParEdital === null) {
+            return null;
+        }
+
+        try {
+            $modelo = ($leitura ?? (new ModeloPlanilhaService())->doEdital(...))($idParEdital);
+        } catch (IntegrationError) {
+            $modelo = null;
+        }
+
+        return $modelo ?? ['possui' => null, 'motivo' => i::__('Não foi possível consultar o modelo de planilha no CultBR. Tente novamente em instantes.'), 'modelo' => null, 'nomeModelo' => null];
+    }
+
+    private function impedimentos(Opportunity $raiz, ?array $estrutura, ?array $planilha): array
     {
         if ($estrutura === null) {
             return self::SEM_IMPEDIMENTOS;
@@ -472,14 +504,37 @@ class FormularioResultadoService
             + $this->savedRespostas((int) $raiz->id, $estrutura)
             + $this->respostasSugeridas($raiz, $estrutura);
         $validator = new FormularioRespostasValidator($estrutura);
+        $documentos = $validator->documentosRequeridos($respostas);
 
         // A sem fonte nem aparece na tela: não pode travar o envio invisivelmente.
         $foraDoGestor = $automaticas + array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas));
+        $pendencias = array_diff_key($validator->pendencias($respostas), $foraDoGestor);
+
+        // O CultBR não recebe planilha e documentos no mesmo envio: pedir o documento não resolveria.
+        if (($planilha['possui'] ?? null) === true) {
+            $pendencias = array_diff_key($pendencias, array_flip($documentos));
+        }
 
         return [
-            'pendencias' => $this->comNomes(array_diff_key($validator->pendencias($respostas), $foraDoGestor), $estrutura),
-            'bloqueios' => $this->comNomes(array_diff_key($validator->bloqueios($respostas), $foraDoGestor), $estrutura),
+            'pendencias' => $this->comNomes($pendencias, $estrutura),
+            'bloqueios' => [
+                ...$this->bloqueioDaPlanilha($planilha, $documentos),
+                ...$this->comNomes(array_diff_key($validator->bloqueios($respostas), $foraDoGestor), $estrutura),
+            ],
         ];
+    }
+
+    /** @return list<array{id_questao: null, nome: string, motivo: string}> */
+    private function bloqueioDaPlanilha(?array $planilha, array $documentosRequeridos): array
+    {
+        $motivo = match (true) {
+            $planilha === null, $planilha['possui'] === false => null,
+            $planilha['possui'] === null => $planilha['motivo'],
+            $documentosRequeridos !== [] => i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.'),
+            default => i::__('O envio da planilha de contemplados ainda não está disponível.'),
+        };
+
+        return $motivo === null ? [] : [['id_questao' => null, 'nome' => '', 'motivo' => $motivo]];
     }
 
     /** @return list<array{id_questao: int, nome: string, motivo: string}> */
@@ -494,12 +549,21 @@ class FormularioResultadoService
         );
     }
 
-    /** Nada impede o envio do formulário? Independe de já haver envio — vale para retificações. */
+    /** Nada impede o envio? Independe de já haver envio — vale para retificações. */
+    public function isEnvioLiberado(Opportunity $raiz): bool
+    {
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
+
+        return $estrutura !== null
+            && $this->impedimentos($raiz, $estrutura, $this->planilhaDoEnvio($raiz)) === self::SEM_IMPEDIMENTOS;
+    }
+
+    /** Falta alguma resposta? Não olha a planilha, que o envio confere por conta própria. */
     public function isFormularioCompleto(Opportunity $raiz): bool
     {
         $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
-        return $estrutura !== null && $this->impedimentos($raiz, $estrutura) === self::SEM_IMPEDIMENTOS;
+        return $estrutura !== null && $this->impedimentos($raiz, $estrutura, null) === self::SEM_IMPEDIMENTOS;
     }
 
     /**

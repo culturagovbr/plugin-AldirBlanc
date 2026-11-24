@@ -74,11 +74,11 @@ class ResultadoService
         );
     }
 
-    /** O envio exige o formulário de resultado completo; sem certeza da completude, nada é enfileirado. */
+    /** O envio exige o formulário completo e a planilha resolvida; sem certeza disso, nada é enfileirado. */
     public function isResultadoFormComplete(Opportunity $raiz): bool
     {
         try {
-            return (new FormularioResultadoService())->isFormularioCompleto($raiz);
+            return (new FormularioResultadoService())->isEnvioLiberado($raiz);
         } catch (IntegrationError $e) {
             App::i()->log->warning("Resultado do edital {$raiz->id}: completude do formulário indisponível - " . $e->getMessage());
 

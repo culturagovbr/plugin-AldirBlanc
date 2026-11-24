@@ -272,6 +272,7 @@ class FormularioResultadoServiceTest extends TestCase
             FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
 
             $this->assertFalse($servico->isFormularioCompleto($edital));
+            $this->assertFalse($servico->isEnvioLiberado($edital));
         });
     }
 
@@ -317,6 +318,22 @@ class FormularioResultadoServiceTest extends TestCase
             $servico->respostasParaEnvio($edital);
 
             $this->assertCount(2, FakeIntegrationProvider::$formulariosBuscados);
+        });
+    }
+
+    public function testImpedimentosDoEnvioLeemOModeloDePlanilhaDaOrigem(): void
+    {
+        $edital = $this->app->repo('Opportunity')->find($this->editalNoPar());
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9104;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui']);
+
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+
+            $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui'], 'a tela segue com o guardado');
+            $this->assertCount(1, $servico->impedimentosDoEnvio($edital)['bloqueios']);
         });
     }
 }

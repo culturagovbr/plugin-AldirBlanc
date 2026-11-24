@@ -165,6 +165,41 @@ class ControllerResultadoEnviarTest extends TestCase
         });
     }
 
+    #[DataProvider('planilhasQueImpedem')]
+    public function testPlanilhaNaoResolvidaRecusaComOMotivo(callable $modelo, string $motivo): void
+    {
+        $this->comFormularioResultado(function () use ($modelo, $motivo) {
+            FakeIntegrationProvider::$aoBuscarModelo = $modelo;
+            $raiz = $this->cenario('Subsite Enviar Planilha ' . uniqid());
+
+            $payload = $this->enviar($raiz);
+
+            $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertStringContainsString($motivo, $payload['data']['bloqueios'][0]['motivo']);
+            $this->assertCount(0, $this->jobsDeResultado());
+        });
+    }
+
+    public static function planilhasQueImpedem(): array
+    {
+        return [
+            'com modelo' => [fn() => ['possui_planilha' => true], 'planilha de contemplados'],
+            'modelo indisponível' => [fn() => throw IntegrationError::transport('Connection timed out', 28), 'Não foi possível consultar'],
+        ];
+    }
+
+    public function testEditalSemModeloEnvia(): void
+    {
+        $this->comFormularioResultado(function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => false, 'motivo' => 'A ação 1.2 não possui modelo de planilha'];
+            $raiz = $this->cenario('Subsite Enviar Sem Modelo');
+
+            $this->enviar($raiz);
+
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
     public function testAcaoQueNaoRecebeResultadoRecusaComOMotivo(): void
     {
         $this->comFormularioResultado(function () {

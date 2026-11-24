@@ -797,6 +797,103 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    public function testEstadoTrazAPlanilhaDoEdital(): void
+    {
+        $this->comFormulario(function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => false, 'motivo' => 'A ação 1.2 não possui modelo de planilha'];
+            $raiz = $this->cenarioIntegrado();
+
+            $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+
+            $this->assertSame(
+                ['possui' => false, 'motivo' => 'A ação 1.2 não possui modelo de planilha', 'modelo' => null, 'nomeModelo' => null],
+                $payload['planilha'],
+            );
+            $this->assertTrue($payload['envioHabilitado'], 'sem modelo, envia só as respostas');
+        });
+    }
+
+    public function testEditalSemIdNoParNaoConsultaAPlanilha(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $this->assertNull($this->getFormulario($raiz)['planilha']);
+            $this->assertSame([], FakeIntegrationProvider::$modelosBuscados);
+        });
+    }
+
+    public function testEditalComModeloBloqueiaOEnvio(): void
+    {
+        $this->comFormulario(function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true, 'modelo' => 'tec', 'nome_modelo' => 'TEC'];
+            $raiz = $this->cenarioIntegrado();
+
+            $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
+
+            $this->assertSame([], $payload['pendencias']);
+            $this->assertStringContainsString('planilha de contemplados', $payload['bloqueios'][0]['motivo']);
+            $this->assertFalse($payload['envioHabilitado']);
+        });
+    }
+
+    public function testModeloIndisponivelBloqueiaOEnvioComOMotivo(): void
+    {
+        $this->comFormulario(function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => throw \AldirBlanc\Exceptions\IntegrationError::transport('Connection timed out', 28);
+            $raiz = $this->cenarioIntegrado();
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertNull($payload['planilha']['possui']);
+            $this->assertStringContainsString('Não foi possível consultar', $payload['planilha']['motivo']);
+            $this->assertSame([$payload['planilha']['motivo']], array_column($payload['bloqueios'], 'motivo'));
+        });
+    }
+
+    #[DataProvider('planilhaEDocumentos')]
+    public function testPlanilhaEDocumentosNoMesmoEditalDependemDoCultBr(int $tipoAcao, bool $possui, bool $dependente, array $documentos): void
+    {
+        $this->comEstrutura($this->respostaDaConecta("estrutura-tipo-{$tipoAcao}"), function () use ($possui, $dependente, $documentos) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => $possui];
+
+            $payload = $this->getFormulario($this->cenarioIntegrado());
+            $motivos = implode(' ', array_column($payload['bloqueios'], 'motivo'));
+
+            $this->assertSame($dependente, str_contains($motivos, 'planilha e documentos'));
+            $this->assertSame($documentos, array_values(array_intersect($documentos ?: [2547, 2548], array_column($payload['pendencias'], 'id_questao'))));
+        });
+    }
+
+    public static function planilhaEDocumentos(): array
+    {
+        return [
+            '2.3 com modelo' => [14, true, true, []],
+            '2.3 sem modelo' => [14, false, false, [2547, 2548]],
+            '2.4 com modelo' => [15, true, true, []],
+            '2.1 com modelo' => [12, true, false, []],
+            '2.5 sem modelo' => [16, false, false, []],
+        ];
+    }
+
+    public function testDocumentoInvisivelNaoTornaOEditalDependenteDoCultBr(): void
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 900]];
+        $estrutura = $this->estruturaCom([
+            ['id_questao' => 70, 'id_questao_etapa' => 900, 'nome' => 'Houve?', 'tipo_questao' => 'booleano'],
+            ['id_questao' => 71, 'nome' => 'Documento', 'tipo_questao' => 'anexo', 'tag' => 'x', 'requerida' => true, 'config' => ['regras' => ['itens' => [$regra]]]],
+        ]);
+
+        $this->comEstrutura($estrutura, function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+
+            $motivos = array_column($this->getFormulario($this->cenarioIntegrado())['bloqueios'], 'motivo');
+
+            $this->assertCount(1, $motivos);
+            $this->assertStringNotContainsString('documentos', $motivos[0]);
+        });
+    }
+
     public function testPendenteDizOQueFalta(): void
     {
         $this->comFormulario(function () {

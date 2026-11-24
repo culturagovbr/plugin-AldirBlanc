@@ -94,6 +94,15 @@ final class FormularioRespostasValidator
         return $motivos;
     }
 
+    /** @return list<int> documentos que o gestor é obrigado a anexar */
+    public function documentosRequeridos(array $respostas): array
+    {
+        return array_keys(array_filter(
+            array_intersect_key($this->documentos, $this->visiveis($respostas)),
+            fn(array $questao) => !empty($questao['requerida']),
+        ));
+    }
+
     /** @return array<int, mixed> só as respostas completas de questões que o gestor preenche */
     public function enviaveis(array $respostas): array
     {
