@@ -59,18 +59,28 @@ class ResultadoService
         return $valor === null ? null : (int) $valor;
     }
 
-    /** Monta o corpo do envio: final na primeira vez, retificado nas correções — publicado é imutável. */
-    public function buildResultado(Opportunity $faseFinal): Resultado
+    /**
+     * O que o resultado diz, seja ele final ou retificado.
+     * @return array{respostas: ?array}
+     */
+    public function conteudo(Opportunity $raiz): array
     {
-        $raiz = $faseFinal->firstPhase;
-        $retificacao = $this->parEditalResultadoId((int) $raiz->id) !== null;
-        $dataPublicacao = $this->dataPublicacao($faseFinal, $retificacao);
+        return ['respostas' => (new FormularioResultadoService())->respostasParaEnvio($raiz)];
+    }
+
+    /**
+     * Corpo do envio: final enquanto o CultBR não tem publicado, retificado depois — publicado é imutável.
+     * @param array{respostas: ?array} $conteudo
+     */
+    public function buildResultado(Opportunity $faseFinal, array $conteudo, ?int $idPublicado): Resultado
+    {
+        $retificacao = $idPublicado !== null;
 
         return new Resultado(
             id_tipo: ($retificacao ? ResultadoTipo::FinalRetificado : ResultadoTipo::Final)->value,
             id_status: ResultadoStatus::Publicado->value,
-            data_publicacao: $dataPublicacao,
-            respostas: (new FormularioResultadoService())->respostasParaEnvio($raiz),
+            data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
+            respostas: $conteudo['respostas'],
         );
     }
 

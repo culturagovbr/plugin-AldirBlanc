@@ -3,7 +3,6 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
-use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
@@ -63,15 +62,20 @@ class ResultadoCultJobTest extends TestCase
         );
     }
 
-    private function processaComResposta(Opportunity $raiz, ?string $response, ?array $estrutura = null): void
+    private function processaComResposta(Opportunity $raiz, ?string $response, ?array $estrutura = null, ?callable $preparo = null): void
     {
         $this->semCacheDoFormulario(
             fn() => $this->comProvedorDuble(
                 fn() => $this->desfecho(),
-                function () use ($raiz, $response, $estrutura) {
+                function () use ($raiz, $response, $estrutura, $preparo) {
                     FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
                     FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura ?? self::ESTRUTURA_SEM_OBRIGATORIAS;
                     FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['response' => $response]);
+
+                    if ($preparo !== null) {
+                        $preparo();
+                    }
+
                     $this->enfileira($raiz);
                     $this->processJobs(number_of_jobs: 1);
                 }
@@ -122,7 +126,9 @@ class ResultadoCultJobTest extends TestCase
 
         // O conteúdo muda, senão o reenvio idêntico seria dispensado (dedup do envio).
         $this->atualizaRespostasSalvas((int) $raiz->id, [60 => 'Segunda versão']);
-        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $estrutura);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $estrutura, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 777;
+        });
         $segundoTipo = FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo;
 
         // Literais de propósito: o contrato do PAR é 2 = final, 3 = retificado.
@@ -131,14 +137,122 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame('888', $this->resultadoId((int) $raiz->id), 'o metadado guarda o resultado vigente');
     }
 
-    function testRespostaSemIdNaoGravaENaoFalha()
+    public function testPublicadoCriadoPorForaViraRetificado(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
-        $this->processaComResposta($raiz, '{"detail": "sem o id"}');
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', null, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20127;
+        });
+
+        $this->assertSame(3, FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo, 'sem metadado local, quem decide é o CultBR');
+    }
+
+    public function testMetadadoLocalSemPublicadoNoCultBrEnviaFinal(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}');
+
+        $this->assertSame(2, FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo);
+    }
+
+    public function testLeituraVemAntesDoEnvio(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+
+        $this->assertSame(['publicado', 'lista', 'envio'], FakeIntegrationProvider::$passos);
+    }
+
+    #[DataProvider('leiturasIndeterminadas')]
+    public function testLeituraIndeterminadaNaoEnviaEApareceNoHistorico(string $leitura): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () use ($leitura) {
+            FakeIntegrationProvider::${$leitura} = fn() => throw IntegrationError::contract('a lista de resultados do edital veio incompleta');
+        });
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame(['error'], $this->statusNoHistorico($raiz));
+        $this->assertFalse($this->resultadoId((int) $raiz->id));
+    }
+
+    public static function leiturasIndeterminadas(): array
+    {
+        return ['publicado' => ['aoLerPublicado'], 'lista' => ['aoListarPublicados']];
+    }
+
+    /** Listas do edital lidas na ordem: antes do POST e, se preciso, depois dele. */
+    private function comListas(array ...$listas): callable
+    {
+        return function () use ($listas) {
+            FakeIntegrationProvider::$aoListarPublicados = function () use (&$listas) {
+                return array_shift($listas);
+            };
+        };
+    }
+
+    public function testRespostaSemIdRecuperaOIdPelaLista(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        // No edital 53809 o retificado tem data anterior, e o publicado continua apontando o final.
+        $this->processaComResposta($raiz, '{"detail": "sem o id"}', null, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20010;
+            $this->comListas([20010], [20010, 20011])();
+        });
+
+        $this->assertSame('20011', $this->resultadoId((int) $raiz->id));
+        $this->assertSame(['publicado', 'lista', 'envio', 'lista'], FakeIntegrationProvider::$passos);
+    }
+
+    public function testComMaisDeUmResultadoNovoValeOMaisRecente(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"detail": "sem o id"}', null, $this->comListas([20010], [20010, 20011, 20012]));
+
+        $this->assertSame('20012', $this->resultadoId((int) $raiz->id));
+    }
+
+    public function testRespostaComIdNaoReleALista(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, $this->comListas([20010], [20010, 20011]));
+
+        $this->assertSame('777', $this->resultadoId((int) $raiz->id));
+    }
+
+    public function testRespostaSemIdEListaIgualNaoGravaENaoFalha(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"detail": "sem o id"}', null, $this->comListas([20010], [20010]));
 
         $this->assertFalse($this->resultadoId((int) $raiz->id));
+        $this->assertSame(['success'], $this->statusNoHistorico($raiz));
         $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'a captura ausente não pode falhar o envio nem gerar retry');
+    }
+
+    public function testRespostaSemIdEListaForaDoArNaoFalhaOEnvio(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"detail": "sem o id"}', null, function () {
+            $leituras = 0;
+            FakeIntegrationProvider::$aoListarPublicados = function () use (&$leituras) {
+                return ++$leituras === 1 ? [] : throw IntegrationError::transport('Connection timed out', 28);
+            };
+        });
+
+        $this->assertFalse($this->resultadoId((int) $raiz->id));
+        $this->assertSame(['success'], $this->statusNoHistorico($raiz));
+        $this->assertCount(0, $this->app->repo(Job::class)->findAll());
     }
 
     function testFalhaDeServidorReenfileira()
@@ -314,7 +428,7 @@ class ResultadoCultJobTest extends TestCase
 
         return $metodo->invoke(
             $this->app->getRegisteredJobType(ResultadoCultJob::SLUG),
-            new Resultado(id_tipo: 2, id_status: 3, respostas: $respostas, linhas: $linhas),
+            ['respostas' => $respostas, 'linhas' => $linhas],
         );
     }
 

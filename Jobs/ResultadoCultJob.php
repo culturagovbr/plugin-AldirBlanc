@@ -8,9 +8,10 @@ use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Definitions\JobType;
 use AldirBlanc\Dtos\ParEditalId;
-use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Dtos\SendOutcome;
+use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Integration\FetchesResultadosDoEdital;
 use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Services\CultBrRequestLogService;
@@ -66,14 +67,14 @@ class ResultadoCultJob extends JobType
 			return true;
 		}
 
-		// Montar aqui é só para o hash; se falhar, cai no null e o runner remonta, loga e decide o retry (como antes).
+		// Se a montagem falhar aqui, o runner remonta, loga e decide o retry.
 		try {
-			$payload = $service->buildResultado($faseFinal);
+			$conteudo = $service->conteudo($fresca);
 		} catch (\Throwable $e) {
-			$payload = null;
+			$conteudo = null;
 		}
 
-		$hash = $payload !== null ? $this->contentHash($payload) : null;
+		$hash = $conteudo !== null ? $this->contentHash($conteudo) : null;
 
 		// Alteração que não muda o conteúdo não vira retificado novo (eles coexistem publicados).
 		if ($hash !== null && $service->resultadoLastPayloadHash($raizId) === $hash) {
@@ -82,6 +83,7 @@ class ResultadoCultJob extends JobType
 			return true;
 		}
 
+		$idsAntes = [];
 		$runner = new SendRunner('ResultadoCultJob', self::MAX_ATTEMPTS, new CultBrRequestLogService());
 
 		$runner->run(
@@ -90,9 +92,11 @@ class ResultadoCultJob extends JobType
 			requestUuid: $job->requestUuid ?? null,
 			user: $job->user ?? null,
 			attempt: $attempt,
-			send: fn() => $this->sendToCult($payload ?? $service->buildResultado($faseFinal), $raizId, $service),
-			onSuccess: function (SendOutcome $outcome) use ($app, $service, $raizId, $hash) {
-				$this->persistResultadoId($app, $service, $raizId, $outcome->response);
+			send: function () use ($faseFinal, $fresca, $conteudo, $service, &$idsAntes) {
+				return $this->sendToCult($faseFinal, $conteudo ?? $service->conteudo($fresca), $service, $idsAntes);
+			},
+			onSuccess: function (SendOutcome $outcome) use ($service, $raizId, $hash, &$idsAntes) {
+				$this->persistResultadoId($service, $raizId, $outcome, $idsAntes);
 				if ($hash !== null) {
 					$service->persistResultadoLastPayloadHash($raizId, $hash);
 				}
@@ -107,29 +111,39 @@ class ResultadoCultJob extends JobType
 		return true;
 	}
 
-	private function sendToCult(Resultado $payload, int $raizId, ResultadoService $service): SendOutcome
+	/** @param list<int> $idsAntes sai com os ids publicados lidos antes do POST */
+	private function sendToCult(Opportunity $faseFinal, array $conteudo, ResultadoService $service, array &$idsAntes): SendOutcome
 	{
-		$provider = Plugin::getInstance()->integrationProvider();
+		$provider = $this->provider();
+		$edital = new ParEditalId((int) $service->parEditalId((int) $faseFinal->firstPhase->id));
 
-		if (!$provider instanceof SendsResultado) {
-			throw IntegrationError::configuration('client.provider', 'o provedor configurado não envia resultado');
-		}
-
-		$idParEdital = (int) $service->parEditalId($raizId);
-
-		if ((new ModeloPlanilhaService())->doEnvio($idParEdital)['possui']) {
+		if ((new ModeloPlanilhaService())->doEnvio($edital->id)['possui']) {
 			throw IntegrationError::contract('o edital tem modelo de planilha, e o envio da planilha de contemplados ainda não está disponível');
 		}
 
-		return $provider->sendResultado(new ParEditalId($idParEdital), $payload);
+		$idPublicado = $provider->fetchIdPublicado($edital);
+		$idsAntes = $provider->fetchIdsPublicados($edital);
+
+		return $provider->sendResultado($edital, $service->buildResultado($faseFinal, $conteudo, $idPublicado));
+	}
+
+	private function provider(): SendsResultado&FetchesResultadosDoEdital
+	{
+		$provider = Plugin::getInstance()->integrationProvider();
+
+		if (!$provider instanceof SendsResultado || !$provider instanceof FetchesResultadosDoEdital) {
+			throw IntegrationError::configuration('client.provider', 'o provedor configurado não envia resultado');
+		}
+
+		return $provider;
 	}
 
 	/** Hash do conteúdo: a ordem das respostas, das linhas e das marcações não faz um envio diferente. */
-	private function contentHash(Resultado $payload): string
+	private function contentHash(array $conteudo): string
 	{
-		$conteudo = [$this->emOrdem($payload->respostas ?? []), $this->emOrdem($payload->linhas ?? [])];
+		$ordenado = [$this->emOrdem($conteudo['respostas'] ?? []), $this->emOrdem($conteudo['linhas'] ?? [])];
 
-		return hash('sha256', (string) json_encode($conteudo, JSON_UNESCAPED_UNICODE));
+		return hash('sha256', (string) json_encode($ordenado, JSON_UNESCAPED_UNICODE));
 	}
 
 	private function emOrdem(array $dados): array
@@ -147,18 +161,47 @@ class ResultadoCultJob extends JobType
 		return $dados;
 	}
 
-	/** Resposta sem o id (ou não-JSON) não falha o envio: a captura se recupera num reenvio. */
-	private function persistResultadoId(App $app, ResultadoService $service, int $raizId, ?string $response): void
+	/**
+	 * Resposta sem o id não falha o envio: o resultado que passou a existir na lista é o que acabou de sair.
+	 * @param list<int> $idsAntes
+	 */
+	private function persistResultadoId(ResultadoService $service, int $raizId, SendOutcome $outcome, array $idsAntes): void
 	{
-		$decoded = is_string($response) ? json_decode($response, true) : null;
-		$id = filter_var($decoded['id_par_edital_resultado'] ?? null, FILTER_VALIDATE_INT);
+		$id = $this->idDaResposta($outcome->response) ?? $this->idNovoNaLista($service, $raizId, $outcome, $idsAntes);
 
-		if ($id === false || $id < 1) {
-			$app->log->warning("ResultadoCultJob: resposta sem id_par_edital_resultado para oportunidade: {$raizId}");
+		if ($id === null) {
+			App::i()->log->warning("ResultadoCultJob: resposta sem id_par_edital_resultado para oportunidade: {$raizId}");
 
 			return;
 		}
 
 		$service->persistParEditalResultadoId($raizId, $id);
+	}
+
+	private function idDaResposta(?string $response): ?int
+	{
+		$decoded = is_string($response) ? json_decode($response, true) : null;
+		$id = filter_var($decoded['id_par_edital_resultado'] ?? null, FILTER_VALIDATE_INT);
+
+		return $id === false || $id < 1 ? null : $id;
+	}
+
+	private function idNovoNaLista(ResultadoService $service, int $raizId, SendOutcome $outcome, array $idsAntes): ?int
+	{
+		if ($outcome->result === SendResult::Simulated) {
+			return null;
+		}
+
+		try {
+			$idsDepois = $this->provider()->fetchIdsPublicados(new ParEditalId((int) $service->parEditalId($raizId)));
+		} catch (IntegrationError $e) {
+			App::i()->log->warning("ResultadoCultJob: lista de resultados indisponível para oportunidade: {$raizId} - " . $e->getMessage());
+
+			return null;
+		}
+
+		$novos = array_diff($idsDepois, $idsAntes);
+
+		return $novos === [] ? null : max($novos);
 	}
 }

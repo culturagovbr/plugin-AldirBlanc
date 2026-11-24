@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Opportunity;
@@ -23,6 +24,11 @@ class ResultadoServiceTest extends TestCase
     use BuildsContempladas;
     use ConfiguresPlugin;
     use LoadsConectaResponses;
+
+    private function corpo(Opportunity $fase, ?int $idPublicado = null): Resultado
+    {
+        return $this->service()->buildResultado($fase, $this->service()->conteudo($fase->firstPhase), $idPublicado);
+    }
 
     private function service(): ResultadoService
     {
@@ -94,7 +100,7 @@ class ResultadoServiceTest extends TestCase
         [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            $payload = $this->corpo($fase)->toArray();
 
             // Literais de propósito: os valores são contrato do PAR, e comparar com o enum seria tautologia.
             $this->assertSame(2, $payload['id_tipo']);
@@ -119,23 +125,32 @@ class ResultadoServiceTest extends TestCase
         $this->contempladaCompleta($raiz, $fase);
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            $payload = $this->corpo($fase)->toArray();
 
             $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($payload));
         });
     }
 
-    function testComResultadoVigenteMontaRetificadoDatadoDaRetificacao()
+    public function testComPublicadoNoCultBrMontaRetificadoDatadoDaRetificacao(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->corpo($fase, 20127)->toArray();
+
+            $this->assertSame(3, $payload['id_tipo']);
+            $this->assertSame(3, $payload['id_status']);
+            $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+        });
+    }
+
+    public function testMetadadoLocalNaoDecideOTipo(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
-
-            $this->assertSame(3, $payload['id_tipo']);
-            $this->assertSame(3, $payload['id_status']);
-            $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+            $this->assertSame(2, $this->corpo($fase)->toArray()['id_tipo'], 'sem publicado no CultBR, o envio é final');
         });
     }
 
@@ -148,7 +163,7 @@ class ResultadoServiceTest extends TestCase
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            $payload = $this->corpo($fase)->toArray();
 
             $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
         });
@@ -180,7 +195,7 @@ class ResultadoServiceTest extends TestCase
                 $preparo($raiz, $fase);
             }
 
-            $corpo = array_column($this->service()->buildResultado($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
         }, $this->respostaDaConecta('estrutura-tipo-1'));
 
         return array_map(fn(array $resposta) => $resposta['resposta'], $corpo);
@@ -276,7 +291,7 @@ class ResultadoServiceTest extends TestCase
         ]));
 
         $this->comFormularioResultado(function () use ($fase) {
-            $corpo = array_column($this->service()->buildResultado($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
 
             $this->assertSame(
                 [['tipo_documento' => 'CNPJ', 'numero_documento' => '11222333000181', 'nome_razao_social' => '2026', 'valor_contrato' => 10.5]],
@@ -294,7 +309,7 @@ class ResultadoServiceTest extends TestCase
         ]));
 
         $this->comFormularioResultado(function () use ($fase) {
-            $corpo = array_column($this->service()->buildResultado($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
 
             $this->assertSame([], $corpo[14784]['resposta']);
         }, $this->respostaDaConecta('estrutura-tipo-9'));
@@ -306,7 +321,7 @@ class ResultadoServiceTest extends TestCase
         $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 951]];
 
         $this->comFormularioResultado(function () use ($fase) {
-            $this->assertSame([], $this->service()->buildResultado($fase)->toArray()['respostas']);
+            $this->assertSame([], $this->corpo($fase)->toArray()['respostas']);
         }, ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
             ['id_questao' => 50, 'id_questao_etapa' => 950, 'nome' => 'Total', 'tipo_questao' => 'número', 'tag' => 'total_inscritos_1_1', 'config' => ['regras' => ['itens' => [$regra]]]],
             ['id_questao' => 51, 'id_questao_etapa' => 951, 'nome' => 'Houve?', 'tipo_questao' => 'booleano'],
@@ -318,7 +333,7 @@ class ResultadoServiceTest extends TestCase
         [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->comFormularioResultado(function () use ($fase) {
-            $this->assertSame([], $this->service()->buildResultado($fase)->toArray()['respostas']);
+            $this->assertSame([], $this->corpo($fase)->toArray()['respostas']);
         }, ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
             ['id_questao' => 50, 'nome' => 'Total', 'tipo_questao' => 'número', 'tag' => 'total_inscritos_1_1'],
         ]]]]]]);
