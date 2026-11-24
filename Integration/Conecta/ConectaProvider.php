@@ -22,6 +22,7 @@ use AldirBlanc\Integration\Conecta\Http\EntesClient;
 use AldirBlanc\Integration\Conecta\Http\FormularioEstruturaClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeConsultaClient;
+use AldirBlanc\Integration\Conecta\Http\OportunidadesListaClient;
 use AldirBlanc\Integration\Conecta\Http\ParAcoesClient;
 use AldirBlanc\Integration\Conecta\Http\ParCadastroAnalisesClient;
 use AldirBlanc\Integration\Conecta\Http\ParCadastroClient;
@@ -29,6 +30,7 @@ use AldirBlanc\Integration\Conecta\Http\ResultadoClient;
 use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
 use AldirBlanc\Integration\FetchesFormularioResultado;
 use AldirBlanc\Integration\FetchesParSituation;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
@@ -39,7 +41,7 @@ use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 
 /** A API Conecta MinC por trás do contrato. */
-final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado, FetchesParSituation
+final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado, FetchesResultadoPermitido, FetchesParSituation
 {
     /** A Gestão usa 403 para credencial; a Conecta usa 401. Os dois significam recusa. */
     private const REFUSED_STATUSES = [401, 403];
@@ -114,6 +116,13 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
     public function fetchFormularioResultado(int $idTipoAcao): ?array
     {
         return (new FormularioEstruturaClient($idTipoAcao, $this->transport))->fetch();
+    }
+
+    public function fetchResultadoPermitido(ParEditalId $edital): ?bool
+    {
+        $transport = $this->transport ?? CurlTransport::forLoginSync();
+
+        return (new OportunidadesListaClient($edital, $transport))->fetchPermiteResultado();
     }
 
     public function fetchParSituation(string $cnpj): array
