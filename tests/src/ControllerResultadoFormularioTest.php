@@ -3,9 +3,12 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Services\FormularioEstrutura;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\FormularioTabela;
+use AldirBlanc\Services\ResultadoRecusas;
+use AldirBlanc\Services\ResultadoService;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
@@ -891,6 +894,28 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $this->assertCount(1, $motivos);
             $this->assertStringNotContainsString('documentos', $motivos[0]);
+        });
+    }
+
+    public function testEstadoTrazOUltimoEnvioParaQuemControlaOEdital(): void
+    {
+        $this->comFormulario(function () {
+            [$owner, $raiz] = $this->cenario();
+            $this->assertFalse($owner->is('admin'));
+            $this->assertNull($this->getFormulario($raiz)['ultimoEnvio']);
+
+            $recusas = ResultadoRecusas::daResposta(422, $this->corpoDaConecta('recusa-422-linha-valor'), null);
+            (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Recusado, [
+                'tipo' => 2, 'mensagem' => $recusas->resumo, 'recusas' => $recusas->itens,
+            ]);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame('recusado', $payload['ultimoEnvio']['situacao']);
+            $this->assertSame($recusas->resumo, $payload['ultimoEnvio']['mensagem']);
+            $this->assertSame('valor_total_subsidio', $payload['ultimoEnvio']['recusas'][0]['coluna']);
+            $this->assertStringNotContainsString('15.000,00', (string) $this->app->response->getBody());
+            $this->assertArrayNotHasKey('aConferir', $payload['ultimoEnvio'], 'o que serve à conferência não vai para a tela');
         });
     }
 

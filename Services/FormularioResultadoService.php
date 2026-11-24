@@ -189,6 +189,7 @@ class FormularioResultadoService
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             ...$impedimentos,
             'planilha' => $planilha,
+            'ultimoEnvio' => (new ResultadoService())->ultimoEnvio((int) $raiz->id),
             'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
             'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
