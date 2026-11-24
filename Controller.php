@@ -85,10 +85,6 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** De/para por edital: coluna do modelo de planilha => fonte que a alimenta. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA = 'cultBrResultadoPlanilhaDePara';
 
-    /** De/para do formato antigo de planilha. */
-    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
-    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO = 'cultBrResultadoDocumentoPorTipo';
-
     /** Células que o gestor digitou, na inscrição de origem, com o modelo de planilha a que pertencem. */
     public const REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA = 'cultBrResultadoPlanilhaLinha';
 

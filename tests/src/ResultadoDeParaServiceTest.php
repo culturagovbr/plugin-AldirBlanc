@@ -70,13 +70,21 @@ class ResultadoDeParaServiceTest extends TestCase
     {
         $edital = $this->novoEdital();
         $cep = $this->addCampo($edital, 'CEP', 'text', 1);
-        $antigo = $this->service()->salvarMapeamento($edital, ['cep_local_execucao' => $cep]);
+        $conn = $this->app->em->getConnection();
+        $antigo = json_encode(['cep_local_execucao' => $cep]);
+        foreach (['cultBrResultadoDePara', 'cultBrResultadoDocumentoPorTipo'] as $chave) {
+            $conn->executeStatement('INSERT INTO opportunity_meta (object_id, key, value) VALUES (?, ?, ?)', [(int) $edital->id, $chave, $antigo]);
+        }
 
         $this->assertSame([], $this->service()->fontes((int) $edital->id, 'pontos_de_cultura'));
 
         $this->service()->salvarFontes($edital, $this->planilha('modelo-pontos-de-cultura'), ['cep_espaco_cultural' => "campo:{$cep}"]);
 
-        $this->assertSame($antigo, $this->service()->mapeamento((int) $edital->id), 'o de/para antigo segue no banco como estava');
+        $this->assertSame(
+            [$antigo, $antigo],
+            $conn->fetchFirstColumn("SELECT value FROM opportunity_meta WHERE object_id = ? AND key IN ('cultBrResultadoDePara', 'cultBrResultadoDocumentoPorTipo')", [(int) $edital->id]),
+            'o de/para antigo segue no banco como estava',
+        );
     }
 
     #[DataProvider('modelos')]
@@ -173,68 +181,5 @@ class ResultadoDeParaServiceTest extends TestCase
         $this->service()->salvarFontes($edital, $planilha, ['tipo_agente' => 'inscricao:tipo']);
 
         $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $this->service()->fontes((int) $edital->id, 'pontos_de_cultura'));
-    }
-
-    function testSalvarMapeamentoValidaOsCamposEPersiste()
-    {
-        $edital = $this->novoEdital();
-        $cep = $this->addCampo($edital, 'CEP', 'text', 1);
-
-        $salvo = $this->service()->salvarMapeamento($edital, [
-            'cep_local_execucao' => $cep,
-            'qtd_pessoas_remuneradas_exec' => 999999,
-            'formato_execucao' => null,
-        ]);
-
-        $this->assertSame($cep, $salvo['cep_local_execucao']);
-        $this->assertNull($salvo['qtd_pessoas_remuneradas_exec'], 'id que não é campo do edital vira null');
-        $this->assertNull($salvo['formato_execucao']);
-        $this->assertArrayHasKey('recebeu_recursos_outras_fontes', $salvo, 'toda coluna mapeável entra no mapeamento salvo');
-
-        $this->assertSame($salvo, $this->service()->mapeamento((int) $edital->id), 'o mapeamento é lido de volta igual');
-    }
-
-    function testSalvarMapeamentoIgnoraColunaDesconhecida()
-    {
-        $edital = $this->novoEdital();
-        $cep = $this->addCampo($edital, 'CEP', 'text', 1);
-
-        $salvo = $this->service()->salvarMapeamento($edital, [
-            'cep_local_execucao' => $cep,
-            'coluna_inventada' => $cep,
-        ]);
-
-        $this->assertArrayNotHasKey('coluna_inventada', $salvo, 'só as colunas conhecidas são persistidas');
-        $this->assertCount(count(ResultadoDeParaService::COLUNAS), $salvo);
-    }
-
-    function testMapeamentoVazioQuandoNuncaSalvou()
-    {
-        $edital = $this->novoEdital();
-
-        $this->assertSame([], $this->service()->mapeamento((int) $edital->id));
-    }
-
-    function testDocumentoPorTipoTrazTodosOsTiposMesmoSemNadaSalvo()
-    {
-        $edital = $this->novoEdital();
-        $tipos = $this->service()->tiposDeProponente();
-
-        $porTipo = $this->service()->documentoPorTipo((int) $edital->id);
-
-        $this->assertSame($tipos, array_keys($porTipo), 'mapa sem chaves viraria lista no json e o front perderia a escolha');
-        $this->assertSame(array_fill(0, count($tipos), null), array_values($porTipo));
-    }
-
-    function testDocumentoPorTipoSoAceitaCampoDoProprioEdital()
-    {
-        $edital = $this->novoEdital();
-        $cpf = $this->addCampo($edital, 'CPF', 'cpf', 1);
-
-        $salvo = $this->service()->salvarDocumentoPorTipo($edital, ['Pessoa Física' => $cpf, 'MEI' => 999999]);
-
-        $this->assertSame($cpf, $salvo['Pessoa Física']);
-        $this->assertNull($salvo['MEI'], 'campo de outro edital não entra no de/para');
-        $this->assertSame($salvo, $this->service()->documentoPorTipo((int) $edital->id));
     }
 }

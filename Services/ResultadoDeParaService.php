@@ -16,18 +16,6 @@ class ResultadoDeParaService
     public const FONTE_FAIXA = 'inscricao:faixa';
     public const FONTE_VALOR_POR_CONTEMPLADO = 'inscricao:valor';
 
-    /**
-     * Colunas que vêm de campo da ficha. Ficam fora: automáticos (cpf, valor da categoria) e os de
-     * pós-execução (datas efetivas, recebimento, cpfs remunerados), digitados direto na planilha.
-     */
-    public const COLUNAS = [
-        'qtd_pessoas_remuneradas_exec' => ['tipos' => ['number'], 'termos' => ['remunerad']],
-        'formato_execucao' => ['tipos' => ['select', 'checkbox', 'checkboxes', 'text'], 'termos' => ['formato', 'modalidade', 'presencial']],
-        'cep_local_execucao' => ['tipos' => ['text'], 'termos' => ['cep']],
-        'recebeu_recursos_outras_fontes' => ['tipos' => ['select', 'checkbox', 'checkboxes'], 'termos' => ['outras fontes', 'outros recursos', 'contrapartida']],
-        'valor_recursos_outras_fontes' => ['tipos' => ['currency', 'number'], 'termos' => ['valor de outras fontes', 'valor outras fontes', 'valor da contrapartida', 'valor contrapartida']],
-    ];
-
     /** Os campos da ficha de todas as fases do edital, que alimentam os seletores do de/para. */
     public function camposDaFicha(Opportunity $raiz): array
     {
@@ -52,90 +40,10 @@ class ResultadoDeParaService
         return $campos;
     }
 
-    public function colunas(): array
-    {
-        $labels = [
-            'qtd_pessoas_remuneradas_exec' => i::__('Quantidade de pessoas remuneradas na execução'),
-            'formato_execucao' => i::__('Formato de execução'),
-            'cep_local_execucao' => i::__('CEP do local de execução'),
-            'recebeu_recursos_outras_fontes' => i::__('Recebeu recursos de outras fontes?'),
-            'valor_recursos_outras_fontes' => i::__('Valor de recursos de outras fontes'),
-        ];
-
-        $colunas = [];
-        foreach (self::COLUNAS as $chave => $_def) {
-            $colunas[] = ['chave' => $chave, 'label' => $labels[$chave] ?? $chave];
-        }
-
-        return $colunas;
-    }
-
-    /** Mapeamento salvo (coluna => id do campo da ficha, ou null para "não se aplica"). */
-    public function mapeamento(int $raizId): array
-    {
-        return $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA);
-    }
-
     /** Todos os tipos de proponente do sistema: a inscrição pode trazer tipo que o edital já não aceita mais. */
     public function tiposDeProponente(): array
     {
         return array_values(array_map('strval', App::i()->config['registration.proponentTypes'] ?? []));
-    }
-
-    /**
-     * Campo da ficha que guarda o documento do responsável, por tipo de proponente.
-     * Todos os tipos vêm na resposta: um mapa vazio viraria lista no json e perderia o que o gestor escolher.
-     */
-    public function documentoPorTipo(int $raizId): array
-    {
-        $salvo = $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO);
-
-        $porTipo = [];
-        foreach ($this->tiposDeProponente() as $tipo) {
-            $porTipo[$tipo] = isset($salvo[$tipo]) ? (int) $salvo[$tipo] : null;
-        }
-
-        return $porTipo;
-    }
-
-    /** Validado contra os campos reais do edital; devolve o mapeamento gravado. */
-    public function salvarDocumentoPorTipo(Opportunity $raiz, array $mapeamento): array
-    {
-        $idsValidos = array_column($this->camposDaFicha($raiz), 'id');
-
-        $limpo = [];
-        foreach ($this->tiposDeProponente() as $tipo) {
-            $valor = $mapeamento[$tipo] ?? null;
-            $limpo[$tipo] = ($valor !== null && in_array((int) $valor, $idsValidos, true)) ? (int) $valor : null;
-        }
-
-        $this->upsertMeta(
-            (int) $raiz->id,
-            Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO,
-            json_encode($limpo, JSON_UNESCAPED_UNICODE),
-        );
-
-        return $limpo;
-    }
-
-    /** Validado contra os campos reais do edital e persistido na raiz; devolve o mapeamento gravado. */
-    public function salvarMapeamento(Opportunity $raiz, array $mapeamento): array
-    {
-        $idsValidos = array_column($this->camposDaFicha($raiz), 'id');
-
-        $limpo = [];
-        foreach (self::COLUNAS as $chave => $_def) {
-            $valor = $mapeamento[$chave] ?? null;
-            $limpo[$chave] = ($valor !== null && in_array((int) $valor, $idsValidos, true)) ? (int) $valor : null;
-        }
-
-        $this->upsertMeta(
-            (int) $raiz->id,
-            Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA,
-            json_encode($limpo, JSON_UNESCAPED_UNICODE),
-        );
-
-        return $limpo;
     }
 
     /** Dados da própria inscrição que também servem de fonte. */
