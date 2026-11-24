@@ -5,7 +5,9 @@ namespace AldirBlanc\Services;
 /** Estrutura do formulário de resultado publicada pelo PAR, com as questões por id. */
 final class FormularioEstrutura
 {
-    private const TIPOS_DE_ANEXO = ['anexo', 'múltiplos anexos'];
+    public const MULTIPLOS_ANEXOS = 'múltiplos anexos';
+
+    private const TIPOS_DE_ANEXO = ['anexo', self::MULTIPLOS_ANEXOS];
 
     private const NOME_DA_PLANILHA = 'Planilha de resultados';
 

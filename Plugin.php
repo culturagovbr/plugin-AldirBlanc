@@ -14,6 +14,8 @@ use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\ResultadoAnexosService;
+use MapasCulturais\Definitions\FileGroup;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -286,6 +288,8 @@ class Plugin extends \MapasCulturais\Plugin
             'type' => 'json',
             'private' => true,
         ]);
+
+        $app->registerFileGroup('opportunity', new FileGroup(ResultadoAnexosService::GRUPO, private: true));
 
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));

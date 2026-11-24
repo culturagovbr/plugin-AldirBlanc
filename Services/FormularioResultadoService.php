@@ -694,17 +694,24 @@ class FormularioResultadoService
      */
     public function saveRespostas(Opportunity $raiz, array $respostas, array $estrutura): array
     {
-        $raizId = (int) $raiz->id;
         $validator = new FormularioRespostasValidator($estrutura);
         $doGestor = $this->semCalculadas($raiz, $validator->editaveis($respostas), $estrutura);
         $erros = $validator->validate($doGestor);
         $validas = array_diff_key($doGestor, $erros);
 
-        if ($validas === []) {
-            return $erros;
+        if ($validas !== []) {
+            $this->gravaRespostas($raiz, $validas, $estrutura);
         }
 
-        $salvas = array_replace($this->savedRespostas($raizId, $estrutura), $validas);
+        return $erros;
+    }
+
+    /** Merge sobre as salvas na versão vigente (null limpa); na troca de versão, saem também os documentos. */
+    public function gravaRespostas(Opportunity $raiz, array $respostas, array $estrutura): void
+    {
+        $raizId = (int) $raiz->id;
+        $isTrocaDeVersao = $this->isDeOutraVersao($this->savedFormData($raizId), $estrutura);
+        $salvas = array_replace($this->savedRespostas($raizId, $estrutura), $respostas);
 
         $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => $estrutura['id_formulario'] ?? null,
@@ -713,7 +720,9 @@ class FormularioResultadoService
             'respostas' => array_filter($salvas, fn($valor) => $valor !== null),
         ], JSON_UNESCAPED_UNICODE));
 
-        return $erros;
+        if ($isTrocaDeVersao) {
+            (new ResultadoAnexosService($raiz, $estrutura))->retirarSemQuestao();
+        }
     }
 
     /** Fora também as sem fonte: o cálculo do edital é a única origem delas. */
