@@ -488,8 +488,7 @@ class FormularioResultadoService
     }
 
     /**
-     * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, mais a data de
-     * publicação informada — a mesma do campo próprio do POST, para nunca divergirem.
+     * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, só as visíveis e válidas.
      * @return list<array{id_par_questao: int, resposta: array{resposta: mixed}}>|null null sem formulário
      */
     public function respostasParaEnvio(Opportunity $raiz): ?array
@@ -500,67 +499,74 @@ class FormularioResultadoService
             return null;
         }
 
-        $valores = $this->respostasAutomaticas($raiz, $estrutura)
+        $leitura = new FormularioEstrutura($estrutura);
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $valores = $automaticas
             + $this->savedRespostas((int) $raiz->id, $estrutura)
             + $this->respostasSugeridas($raiz, $estrutura);
 
+        $enviaveis = $automaticas + (new FormularioRespostasValidator($estrutura))->enviaveis($valores);
+        $regras = new FormularioRegras($leitura);
         $respostas = [];
 
-        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
-            $valor = $valores[$id] ?? null;
-
+        foreach (array_intersect_key($leitura->questoes(), $enviaveis) as $id => $questao) {
             // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
             $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
 
-            if ($valor === null || $idEnvio === 0) {
-                continue;
+            if ($idEnvio !== 0 && $regras->isVisivel($questao, $valores)) {
+                $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $enviaveis[$id])]];
             }
-
-            $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $valor)]];
         }
 
         return $respostas;
     }
 
-    /** Ajusta o valor ao que o formulário do PAR espera por tipo de questão; os demais tipos viajam como estão. */
+    /** Ajusta o valor ao que o CultBR aceita por tipo de questão; os demais tipos viajam como estão. */
     private function valorParaEnvio(array $questao, mixed $valor): mixed
     {
         return match ($questao['tipo_questao'] ?? '') {
-            'data' => $this->comoDataSimples($valor),
-            'múltipla escolha' => $this->comoRotulosDasOpcoes($questao, $valor),
+            'número', 'moeda' => $this->comoNumero($valor),
+            'radio' => $this->comoRotulo($questao, $valor),
+            'checkbox', 'múltipla escolha' => array_map(fn(mixed $escolha) => $this->comoRotulo($questao, $escolha), $valor),
+            'tabela', 'Tabela Dinâmica' => $this->comoLinhas($questao, $valor),
             default => $valor,
         };
     }
 
-    /** O campo de data do PAR só lê Y-m-d; datetime com fuso não renderiza. */
-    private function comoDataSimples(mixed $valor): mixed
+    /** Inteiro sem casa decimal: 15000 e 15000.0 são o mesmo conteúdo. */
+    private function comoNumero(mixed $valor): int|float
     {
-        if (!is_string($valor) || $valor === '') {
-            return $valor;
-        }
+        $numero = $valor + 0;
 
-        try {
-            return (new \DateTimeImmutable($valor))->format('Y-m-d');
-        } catch (\Exception) {
-            return $valor;
-        }
+        return floor($numero) == $numero ? (int) $numero : $numero;
     }
 
-    /** Múltipla escolha viaja com o texto (label) da opção; salvamos o valor/slug e o PAR casa por label. */
-    private function comoRotulosDasOpcoes(array $questao, mixed $valor): mixed
+    /** A opção viaja pelo texto, e a complementada como "Rótulo: texto". */
+    private function comoRotulo(array $questao, mixed $escolha): string
     {
-        if (!is_array($valor)) {
-            return $valor;
-        }
+        $id = is_array($escolha) ? $escolha['id'] : $escolha;
+        $rotulos = array_column(FormularioEstrutura::itens($questao), 'label', 'id');
 
-        $rotuloPorValor = [];
-        foreach ($questao['opcao']['itens'] ?? [] as $item) {
-            if (isset($item['valor'], $item['label'])) {
-                $rotuloPorValor[$item['valor']] = $item['label'];
-            }
-        }
+        return is_array($escolha) ? "{$rotulos[$id]}: {$escolha['complemento']}" : $rotulos[$id];
+    }
 
-        return array_map(fn($escolha) => $rotuloPorValor[$escolha] ?? $escolha, $valor);
+    private function comoLinhas(array $questao, array $linhas): array
+    {
+        $tipos = array_column(FormularioTabela::daQuestao($questao)->colunas, 'tipo', 'id');
+
+        return array_map(fn(array $linha) => array_combine(
+            array_keys($linha),
+            array_map(
+                fn(string $coluna, mixed $celula) => $this->isCelulaNumerica($tipos[$coluna] ?? '', $celula) ? $this->comoNumero($celula) : $celula,
+                array_keys($linha),
+                $linha,
+            ),
+        ), $linhas);
+    }
+
+    private function isCelulaNumerica(string $tipo, mixed $celula): bool
+    {
+        return in_array($tipo, ['number', 'currency'], true) && is_numeric($celula);
     }
 
     /** O travamento do card tem espelho aqui: sem a publicação final, nada se edita nem se salva. */

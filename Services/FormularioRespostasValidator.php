@@ -94,6 +94,16 @@ final class FormularioRespostasValidator
         return $motivos;
     }
 
+    /** @return array<int, mixed> só as respostas completas de questões que o gestor preenche */
+    public function enviaveis(array $respostas): array
+    {
+        return array_filter(
+            $this->editaveis($respostas),
+            fn(mixed $valor, int $id) => $this->isRespondida($this->questoes[$id], $valor) && $this->veredito($this->questoes[$id], $valor) === null,
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
     /** @return array<int, string> o que esta versão do sistema não sabe tratar, por id_questao */
     public function bloqueios(array $respostas): array
     {
