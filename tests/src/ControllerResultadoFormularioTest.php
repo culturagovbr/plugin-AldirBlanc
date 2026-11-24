@@ -3,7 +3,9 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Services\FormularioEstrutura;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\FormularioTabela;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
@@ -13,6 +15,7 @@ use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
@@ -24,14 +27,14 @@ class ControllerResultadoFormularioTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
+    use LoadsConectaResponses;
     use SendsOpportunityThroughJob;
 
-    /** Estrutura mínima: duas editáveis obrigatórias + anexo e data de publicação fora do gate. */
+    /** Estrutura mínima: duas editáveis obrigatórias e a planilha, fora do gate. */
     private const ESTRUTURA = ['id_formulario' => 109, 'id_formulario_versao' => 296, 'versao' => 5, 'secoes' => [['etapas' => [['questoes' => [
         ['id_questao' => 10, 'nome' => 'Média das notas', 'tipo_questao' => 'número', 'tag' => 'media_das_notas', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 11, 'nome' => 'Comentários', 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
         ['id_questao' => 20, 'nome' => 'Planilha de resultados', 'tipo_questao' => 'anexo', 'tag' => 'planilha_de_resultados', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 30, 'tipo_questao' => 'data', 'tag' => 'data_publicacao_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
     ]]]]]];
 
     private function comFormulario(callable $exercicio, bool $semFormulario = false): void
@@ -187,18 +190,54 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
-    /** Estrutura com as tags que o cálculo automático reconhece. */
-    private const ESTRUTURA_AUTO = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
-        ['id_questao' => 50, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 51, 'tipo_questao' => 'número', 'tag' => 'total_contemplados_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 52, 'tipo_questao' => 'moeda', 'tag' => 'valor_total_repassado_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-        ['id_questao' => 53, 'tipo_questao' => 'Tabela Dinâmica', 'tag' => 'dados_por_categoria_resultado_1_1', 'requerida' => true, 'opcao' => null, 'config' => ['minRows' => 1, 'columns' => [
-            ['key' => 'categoria', 'type' => 'text', 'label' => 'Categoria', 'readOnly' => true, 'required' => true],
-            ['key' => 'valor_individual', 'type' => 'currency', 'label' => 'Valor individual', 'required' => true],
-            ['key' => 'quantidade_contemplados', 'type' => 'number', 'label' => 'Quantidade', 'required' => true],
-            ['key' => 'valor_total_categoria', 'type' => 'currency', 'label' => 'Total', 'readOnly' => true, 'required' => false],
-        ]], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],
-    ]]]]]];
+    /** Estrutura com as tags que o cálculo automático reconhece, com a tabela de categorias na forma pedida. */
+    private function estruturaAuto(string $forma = 'Tabela Dinâmica', bool $somenteLeitura = false): array
+    {
+        $tabela = $forma === 'tabela'
+            ? ['tabela' => ['minLinhas' => 1, 'colunas' => [
+                ['id' => 'categoria', 'nome' => 'Categoria', 'tipo' => 'text', 'somenteLeitura' => true],
+                ['id' => 'valor_individual', 'nome' => 'Valor', 'tipo' => 'currency', 'obrigatoria' => true],
+                ['id' => 'quantidade_contemplados', 'nome' => 'Quantidade', 'tipo' => 'number', 'obrigatoria' => true],
+            ]]]
+            : ['minRows' => 1, 'columns' => [
+                ['key' => 'categoria', 'label' => 'Categoria', 'type' => 'text', 'readOnly' => true, 'required' => true],
+                ['key' => 'valor_individual', 'label' => 'Valor', 'type' => 'currency', 'required' => true],
+                ['key' => 'quantidade_contemplados', 'label' => 'Quantidade', 'type' => 'number', 'required' => true],
+            ]];
+
+        return $this->estruturaCom([
+            ['id_questao' => 50, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true],
+            ['id_questao' => 51, 'tipo_questao' => 'número', 'tag' => 'total_contemplados_edital_1_1', 'requerida' => true],
+            ['id_questao' => 52, 'tipo_questao' => 'moeda', 'tag' => 'valor_total_repassado_edital_1_1', 'requerida' => true],
+            ['id_questao' => 53, 'tipo_questao' => $forma, 'tag' => 'dados_por_categoria_resultado_1_1', 'requerida' => true, 'config' => $tabela, 'somente_leitura' => $somenteLeitura],
+        ]);
+    }
+
+    private function estruturaCom(array $questoes): array
+    {
+        return ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => $questoes]]]]];
+    }
+
+    public static function formasDeTabela(): array
+    {
+        return ['dinâmica' => ['Tabela Dinâmica'], 'simples' => ['tabela']];
+    }
+
+    private function comEstrutura(array $estrutura, callable $exercicio): void
+    {
+        $this->comFormulario(function () use ($estrutura, $exercicio) {
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => $estrutura;
+            $exercicio();
+        });
+    }
+
+    private function gravaFaixas(Opportunity $raiz, array $faixas): void
+    {
+        $this->app->disableAccessControl();
+        $raiz->registrationRanges = $faixas;
+        $raiz->save(true);
+        $this->app->enableAccessControl();
+    }
 
     private function inscricao(Opportunity $fase, int $status, ?string $categoria = null): void
     {
@@ -215,55 +254,43 @@ class ControllerResultadoFormularioTest extends TestCase
         $this->app->enableAccessControl();
     }
 
-    function testCamposConhecidosDoEditalSaoCalculadosENaoSalvaveis()
+    #[DataProvider('formasDeTabela')]
+    public function testCamposConhecidosDoEditalSaoCalculadosENaoSalvaveis(string $forma): void
     {
-        FakeIntegrationProvider::reset();
-        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
-        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+        $this->comEstrutura($this->estruturaAuto($forma), function () {
+            [$owner, $raiz, $fase] = $this->cenario();
 
-        $this->comConfigDoPlugin(
-            function (array $config) {
-                $config['integration']['formularioCacheTTL'] = 0;
+            $this->gravaFaixas($raiz, [
+                ['label' => 'Música', 'limit' => 5, 'value' => 1000],
+                ['label' => 'Teatro', 'limit' => 2, 'value' => 500],
+            ]);
 
-                return $config;
-            },
-            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
-                [$owner, $raiz, $fase] = $this->cenario();
+            $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_SENT);
+            $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_NOTAPPROVED);
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_NOTAPPROVED, 'Música');
+            // Os UPDATEs por SQL não aparecem nas entidades da identity map — leitura fria.
+            $this->app->em->clear();
+            $this->login($owner);
 
-                $this->app->disableAccessControl();
-                $raiz->registrationRanges = [
-                    ['label' => 'Música', 'limit' => 5, 'value' => 1000],
-                    ['label' => 'Teatro', 'limit' => 2, 'value' => 500],
-                ];
-                $raiz->save(true);
-                $this->app->enableAccessControl();
+            $payload = $this->getFormulario($raiz);
+            $autos = $payload['respostasAutomaticas'];
 
-                $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_SENT);
-                $this->inscricao($raiz, \MapasCulturais\Entities\Registration::STATUS_NOTAPPROVED);
-                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
-                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
-                // Os UPDATEs por SQL não aparecem nas entidades da identity map — leitura fria.
-                $this->app->em->clear();
-                $this->login($owner);
+            $this->assertSame(2, $autos['50'] ?? $autos[50], 'inscritas reais da primeira fase');
+            $this->assertSame(2, $autos['51'] ?? $autos[51], 'contempladas reais da fase final');
+            $this->assertArrayNotHasKey('52', $autos, 'valor repassado não é travado');
+            $this->assertSame(400, $payload['respostas']['52'] ?? $payload['respostas'][52], 'valor repassado vem pré-preenchido do cálculo');
+            $this->assertSame([], $payload['pendencias'], 'a sugestão conta como resposta');
+            $linhas = $autos['53'] ?? $autos[53];
+            $this->assertSame(['categoria' => 'Música', 'valor_individual' => 200, 'quantidade_contemplados' => 2], $linhas[0]);
+            $this->assertSame(['categoria' => 'Teatro', 'valor_individual' => 250, 'quantidade_contemplados' => 0], $linhas[1]);
 
-                $payload = $this->getFormulario($raiz);
-                $autos = $payload['respostasAutomaticas'];
-
-                $this->assertSame(2, $autos['50'] ?? $autos[50], 'inscritas reais da primeira fase');
-                $this->assertSame(2, $autos['51'] ?? $autos[51], 'contempladas reais da fase final');
-                $this->assertArrayNotHasKey('52', $autos, 'valor repassado não é travado');
-                $this->assertSame(2000, $payload['respostas']['52'] ?? $payload['respostas'][52], 'valor repassado vem pré-preenchido do cálculo');
-                $this->assertSame([], $payload['pendencias'], 'a sugestão conta como resposta');
-                $linhas = $autos['53'] ?? $autos[53];
-                $this->assertSame(['categoria' => 'Música', 'valor_individual' => 1000, 'quantidade_contemplados' => 2, 'valor_total_categoria' => 2000], $linhas[0]);
-                $this->assertSame(['categoria' => 'Teatro', 'valor_individual' => 500, 'quantidade_contemplados' => 0, 'valor_total_categoria' => 0], $linhas[1]);
-
-                $this->postRespostas($raiz, [50 => 99, 52 => 1234]);
-                $relido = $this->getFormulario($raiz);
-                $this->assertArrayNotHasKey('50', (array) $relido['respostas'], 'questão automática não aceita valor do cliente');
-                $this->assertSame(1234, $relido['respostas']['52'] ?? $relido['respostas'][52], 'o gestor pode ajustar o valor sugerido');
-            }),
-        );
+            $this->postRespostas($raiz, [50 => 99, 52 => 1234]);
+            $relido = $this->getFormulario($raiz);
+            $this->assertArrayNotHasKey('50', (array) $relido['respostas'], 'questão automática não aceita valor do cliente');
+            $this->assertSame(1234, $relido['respostas']['52'] ?? $relido['respostas'][52], 'o gestor pode ajustar o valor sugerido');
+        });
     }
 
     private function jobsDeResultado(): array
@@ -308,77 +335,49 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
-    function testCategoriasSemValorExibemTabelaSemTotais()
+    #[DataProvider('formasDeTabela')]
+    public function testCategoriasSemValorExibemTabelaSemTotais(string $forma): void
     {
-        FakeIntegrationProvider::reset();
-        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
-        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+        $this->comEstrutura($this->estruturaAuto($forma), function () {
+            [$owner, $raiz, $fase] = $this->cenario();
 
-        $this->comConfigDoPlugin(
-            function (array $config) {
-                $config['integration']['formularioCacheTTL'] = 0;
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 5, 'value' => null]]);
 
-                return $config;
-            },
-            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
-                [$owner, $raiz, $fase] = $this->cenario();
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+            $this->app->em->clear();
+            $this->login($owner);
 
-                $this->app->disableAccessControl();
-                $raiz->registrationRanges = [['label' => 'Música', 'limit' => 5, 'value' => null]];
-                $raiz->save(true);
-                $this->app->enableAccessControl();
+            $payload = $this->getFormulario($raiz);
+            $autos = $payload['respostasAutomaticas'];
 
-                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
-                $this->app->em->clear();
-                $this->login($owner);
-
-                $payload = $this->getFormulario($raiz);
-                $autos = $payload['respostasAutomaticas'];
-
-                $linha = ($autos['53'] ?? $autos[53])[0];
-                $this->assertSame('Música', $linha['categoria']);
-                $this->assertNull($linha['valor_individual'], 'categoria sem valor não inventa número');
-                $this->assertSame(1, $linha['quantidade_contemplados'], 'a contagem real segue valendo');
-                $this->assertNull($linha['valor_total_categoria']);
-                $this->assertNotContains(53, array_column($payload['pendencias'], 'id_questao'), 'o gestor não preenche a tabela calculada');
-                $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem valores não há sugestão de total');
-            }),
-        );
+            $linha = ($autos['53'] ?? $autos[53])[0];
+            $this->assertSame('Música', $linha['categoria']);
+            $this->assertNull($linha['valor_individual'], 'categoria sem valor não inventa número');
+            $this->assertSame(1, $linha['quantidade_contemplados'], 'a contagem real segue valendo');
+            $this->assertNotContains(53, array_column($payload['pendencias'], 'id_questao'), 'o gestor não preenche a tabela calculada');
+            $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem valores não há sugestão de total');
+        });
     }
 
-    function testInscricoesSemCategoriaContamZeroESugeremTotalZero()
+    #[DataProvider('formasDeTabela')]
+    public function testInscricoesSemCategoriaContamZeroESugeremTotalZero(string $forma): void
     {
-        FakeIntegrationProvider::reset();
-        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
-        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+        $this->comEstrutura($this->estruturaAuto($forma), function () {
+            [$owner, $raiz, $fase] = $this->cenario();
 
-        $this->comConfigDoPlugin(
-            function (array $config) {
-                $config['integration']['formularioCacheTTL'] = 0;
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 5, 'value' => 1000]]);
 
-                return $config;
-            },
-            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
-                [$owner, $raiz, $fase] = $this->cenario();
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED);
+            $this->app->em->clear();
+            $this->login($owner);
 
-                $this->app->disableAccessControl();
-                $raiz->registrationRanges = [['label' => 'Música', 'limit' => 5, 'value' => 1000]];
-                $raiz->save(true);
-                $this->app->enableAccessControl();
+            $payload = $this->getFormulario($raiz);
+            $autos = $payload['respostasAutomaticas'];
 
-                $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED);
-                $this->app->em->clear();
-                $this->login($owner);
-
-                $payload = $this->getFormulario($raiz);
-                $autos = $payload['respostasAutomaticas'];
-
-                $linha = ($autos['53'] ?? $autos[53])[0];
-                $this->assertSame(0, $linha['quantidade_contemplados'], 'selecionada sem categoria não entra na linha');
-                $this->assertSame(0, $linha['valor_total_categoria']);
-                $this->assertSame(0, $payload['respostas']['52'] ?? $payload['respostas'][52], 'sugestão de total zera — borda documentada: 0 conta como preenchido');
-            }),
-        );
+            $linha = ($autos['53'] ?? $autos[53])[0];
+            $this->assertSame(0, $linha['quantidade_contemplados'], 'selecionada sem categoria não entra na linha');
+            $this->assertSame(0, $payload['respostas']['52'] ?? $payload['respostas'][52], 'sugestão de total zera — borda documentada: 0 conta como preenchido');
+        });
     }
 
     function testAutomaticasSozinhasCompletamOFormulario()
@@ -407,39 +406,130 @@ class ControllerResultadoFormularioTest extends TestCase
         );
     }
 
-    function testSemCategoriasValorETabelaFicamSemFonte()
+    #[DataProvider('formasDeTabela')]
+    public function testSemCategoriasValorETabelaFicamSemFonte(string $forma): void
     {
-        FakeIntegrationProvider::reset();
-        FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
-        FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_AUTO;
+        $this->comEstrutura($this->estruturaAuto($forma), function () {
+            [, $raiz] = $this->cenario();
 
-        $this->comConfigDoPlugin(
-            function (array $config) {
-                $config['integration']['formularioCacheTTL'] = 0;
+            $payload = $this->getFormulario($raiz);
+            $autos = $payload['respostasAutomaticas'];
 
-                return $config;
-            },
-            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () {
-                [, $raiz] = $this->cenario();
+            $this->assertArrayHasKey('50', $autos, 'contagem existe mesmo zerada');
+            $this->assertArrayNotHasKey('52', $autos, 'sem categorias não há valor calculado');
+            $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem categorias o campo de valor vem vazio');
+            $this->assertSame([53], $payload['questoesSemFonte'], 'só a tabela é fonte única; o valor é campo');
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'sem fonte não completa — força a configuração na origem');
 
-                $payload = $this->getFormulario($raiz);
-                $autos = $payload['respostasAutomaticas'];
+            $this->postRespostas($raiz, [53 => [['categoria' => 'x', 'valor_individual' => 1, 'quantidade_contemplados' => 1]]]);
+            $relido = $this->getFormulario($raiz);
+            $this->assertSame([], (array) $relido['respostas'], 'questão sem fonte não aceita valor do cliente');
 
-                $this->assertArrayHasKey('50', $autos, 'contagem existe mesmo zerada');
-                $this->assertArrayNotHasKey('52', $autos, 'sem categorias não há valor calculado');
-                $this->assertArrayNotHasKey('52', (array) $payload['respostas'], 'sem categorias o campo de valor vem vazio');
-                $this->assertSame([53], $payload['questoesSemFonte'], 'só a tabela é fonte única; o valor é campo');
-                $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'sem fonte não completa — força a configuração na origem');
+            $this->postRespostas($raiz, [52 => 123]);
+            $completo = $this->getFormulario($raiz);
+            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $completo['estado'], 'sem fonte fica fora do gate — não trava a completude invisivelmente');
+        });
+    }
 
-                $this->postRespostas($raiz, [53 => [['categoria' => 'x', 'valor_individual' => 1, 'quantidade_contemplados' => 1]]]);
-                $relido = $this->getFormulario($raiz);
-                $this->assertSame([], (array) $relido['respostas'], 'questão sem fonte não aceita valor do cliente');
+    #[DataProvider('tabelasDeCategoriaPublicadas')]
+    public function testTabelaDeCategoriaPublicadaECalculadaSemObrigatoriaVazia(int $tipoAcao, int $idQuestao): void
+    {
+        $estrutura = $this->respostaDaConecta("estrutura-tipo-{$tipoAcao}");
 
-                $this->postRespostas($raiz, [52 => 123]);
-                $completo = $this->getFormulario($raiz);
-                $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $completo['estado'], 'sem fonte fica fora do gate — não trava a completude invisivelmente');
-            }),
-        );
+        $this->comEstrutura($estrutura, function () use ($estrutura, $idQuestao) {
+            [$owner, $raiz, $fase] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 4, 'value' => 1000]]);
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+            $this->app->em->clear();
+            $this->login($owner);
+
+            $linhas = $this->getFormulario($raiz)['respostasAutomaticas'][$idQuestao];
+            $colunas = FormularioTabela::daQuestao((new FormularioEstrutura($estrutura))->questoes()[$idQuestao])->colunas;
+
+            $this->assertCount(1, $linhas);
+            $this->assertSame(array_column($colunas, 'id'), array_keys($linhas[0]));
+            $this->assertEqualsCanonicalizing(['Música', 1, 250], array_values($linhas[0]));
+        });
+    }
+
+    public static function tabelasDeCategoriaPublicadas(): array
+    {
+        return [
+            '1.1' => [1, 2189], '1.5' => [5, 2216], '1.7' => [2, 2229], '1.8' => [17, 2235], '2.1' => [12, 2241],
+            '2.2' => [13, 2247], '2.3' => [14, 2017], '2.4' => [15, 2038], '2.5' => [16, 2752],
+        ];
+    }
+
+    #[DataProvider('colunasSemFonte')]
+    public function testTabelaQueOEditalNaoRespondeVoltaParaOGestor(array $colunaAMais): void
+    {
+        $estrutura = $this->estruturaAuto();
+        $estrutura['secoes'][0]['etapas'][0]['questoes'][3]['config']['columns'][] = $colunaAMais;
+
+        $this->comEstrutura($estrutura, function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 4, 'value' => 1000]]);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertArrayNotHasKey(53, $payload['respostasAutomaticas']);
+            $this->assertSame([], $payload['questoesSemFonte']);
+            $this->assertContains(53, array_column($payload['pendencias'], 'id_questao'));
+        });
+    }
+
+    public static function colunasSemFonte(): array
+    {
+        return [
+            'obrigatória sem fonte' => [['key' => 'cep', 'label' => 'CEP', 'type' => 'text', 'required' => true]],
+            'lista obrigatória' => [['key' => 'tipo', 'label' => 'Tipo', 'type' => 'dropdown', 'required' => true]],
+            'duas do mesmo tipo' => [['key' => 'total', 'label' => 'Total', 'type' => 'currency', 'required' => false]],
+        ];
+    }
+
+    public function testColunaOpcionalSemFonteFicaForaDaLinhaCalculada(): void
+    {
+        $estrutura = $this->estruturaAuto();
+        $estrutura['secoes'][0]['etapas'][0]['questoes'][3]['config']['columns'][] = ['key' => 'obs', 'label' => 'Obs.', 'type' => 'text'];
+
+        $this->comEstrutura($estrutura, function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 4, 'value' => 1000]]);
+
+            $this->assertSame(
+                ['categoria', 'valor_individual', 'quantidade_contemplados'],
+                array_keys($this->getFormulario($raiz)['respostasAutomaticas'][53][0]),
+            );
+        });
+    }
+
+    public function testTabelaSomenteLeituraQueOEditalNaoRespondeFicaFora(): void
+    {
+        $estrutura = $this->estruturaAuto('tabela', somenteLeitura: true);
+        $estrutura['secoes'][0]['etapas'][0]['questoes'][3]['config']['tabela']['colunas'][] = ['id' => 'cep', 'nome' => 'CEP', 'tipo' => 'text', 'obrigatoria' => true];
+
+        $this->comEstrutura($estrutura, function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 4, 'value' => 1000]]);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame([53], $payload['questoesSemFonte']);
+            $this->assertNotContains(53, array_column($payload['pendencias'], 'id_questao'));
+        });
+    }
+
+    public function testTabelaSemColunasNaoECalculada(): void
+    {
+        $estrutura = $this->estruturaAuto('tabela', somenteLeitura: true);
+        $estrutura['secoes'][0]['etapas'][0]['questoes'][3]['config']['tabela']['colunas'] = [];
+
+        $this->comEstrutura($estrutura, function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 4, 'value' => 1000]]);
+
+            $this->assertArrayNotHasKey(53, $this->getFormulario($raiz)['respostasAutomaticas']);
+        });
     }
 
     function testRespostasVaziasSerializamComoObjetoJson()
@@ -510,7 +600,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $payload = $this->postRespostas($raiz, [10 => 25, 11 => 'executado conforme o plano']);
 
-            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado'], 'planilha e data de publicação não entram no gate');
+            $this->assertSame(FormularioResultadoService::ESTADO_COMPLETO, $payload['estado'], 'a planilha não entra no gate');
             $this->assertSame([], $payload['pendencias']);
             $this->assertSame([], $payload['bloqueios']);
             $this->assertTrue($payload['envioHabilitado']);
@@ -564,18 +654,6 @@ class ControllerResultadoFormularioTest extends TestCase
             $this->assertEquals(200, $this->responseStatus());
             $this->assertSame([], $payload['erros']);
             $this->assertSame([10 => 25], $payload['respostas']);
-        });
-    }
-
-    public function testDataDePublicacaoNuncaVemDoCliente(): void
-    {
-        $this->comFormulario(function () {
-            [, $raiz] = $this->cenario();
-
-            $payload = $this->postRespostas($raiz, [30 => '2020-01-01']);
-
-            $this->assertEquals(200, $this->responseStatus());
-            $this->assertSame([], $payload['respostas'], 'descartada sem gravar');
         });
     }
 

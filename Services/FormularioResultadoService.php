@@ -28,6 +28,10 @@ class FormularioResultadoService
 
     private const SEM_IMPEDIMENTOS = ['pendencias' => [], 'bloqueios' => []];
 
+    private const FONTE_ROTULO = 'rotulo';
+    private const FONTE_CONTAGEM = 'contagem';
+    private const FONTE_VALOR = 'valor';
+
     private const CACHE_ESTRUTURA = 'aldirblanc:cultbr:formulario_resultado:tipo_acao:';
     private const CACHE_TIPO_ACAO = 'aldirblanc:cultbr:par_tipo_acao:oportunidade:';
     private const CACHE_PERMITE_RESULTADO = 'aldirblanc:cultbr:permite_resultado:edital:';
@@ -210,12 +214,21 @@ class FormularioResultadoService
         $semFonte = [];
 
         foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
-            if ($this->isTagAutomatica((string) ($questao['tag'] ?? '')) && !array_key_exists($id, $automaticas)) {
+            if ($this->isTagAutomatica((string) ($questao['tag'] ?? ''))
+                && !array_key_exists($id, $automaticas)
+                && !$this->isTabelaDoGestor($raiz, $questao)
+            ) {
                 $semFonte[] = $id;
             }
         }
 
         return $semFonte;
+    }
+
+    /** Com faixas no edital, a tabela que o cálculo não preenche volta para o gestor, se ele puder editá-la. */
+    private function isTabelaDoGestor(Opportunity $raiz, array $questao): bool
+    {
+        return empty($questao['somente_leitura']) && $this->faixas($raiz)->rotulos() !== [];
     }
 
     private function isTagAutomatica(string $tag): bool
@@ -304,115 +317,95 @@ class FormularioResultadoService
         ]);
     }
 
-    /**
-     * Categorias das Configurações do edital (registrationRanges: label, limit, value) com a
-     * contagem REAL de contempladas por categoria — contemplado é desfecho, não vaga.
-     * @return list<array{label: string, valor: ?float, contempladas: int}>|null null sem categorias
-     */
-    private function categoriasComContagem(Opportunity $raiz): ?array
+    private function faixas(Opportunity $raiz): FaixasDoEdital
     {
-        $categorias = $raiz->registrationRanges;
+        return new FaixasDoEdital($raiz->registrationRanges);
+    }
 
-        if (!is_array($categorias) || $categorias === []) {
-            return null;
-        }
-
+    /** Contemplado é desfecho, não vaga. @return array<string, int> contagem real por rótulo da faixa */
+    private function contempladasPorFaixa(Opportunity $raiz): array
+    {
         $faseFinal = $raiz->lastPhase;
         $temFaseFinal = $faseFinal && $faseFinal->isLastPhase;
+        $contempladas = [];
 
-        $linhas = [];
-        foreach ($categorias as $categoria) {
-            $rotulo = trim((string) ($categoria['label'] ?? ''));
-            if ($rotulo === '') {
-                continue;
-            }
-
-            $valor = $categoria['value'] ?? null;
-
-            // Um count por categoria (são poucas): hidratar as selecionadas pesaria em edital grande.
-            $contempladas = $temFaseFinal ? (int) App::i()->repo('Registration')->count([
+        // Um count por faixa (são poucas): hidratar as selecionadas pesaria em edital grande.
+        foreach ($this->faixas($raiz)->rotulos() as $rotulo) {
+            $contempladas[$rotulo] = $temFaseFinal ? (int) App::i()->repo('Registration')->count([
                 'opportunity' => $faseFinal,
                 'status' => Registration::STATUS_APPROVED,
                 'range' => $rotulo,
             ]) : 0;
-
-            $linhas[] = [
-                'label' => $rotulo,
-                'valor' => is_numeric($valor) ? (float) $valor : null,
-                'contempladas' => $contempladas,
-            ];
         }
 
-        return $linhas === [] ? null : $linhas;
+        return $contempladas;
     }
 
     private function valorTotalRepassado(Opportunity $raiz): ?float
     {
-        $categorias = $this->categoriasComContagem($raiz);
+        $contempladas = $this->contempladasPorFaixa($raiz);
 
-        if ($categorias === null) {
-            return null;
-        }
-
-        $total = 0.0;
-        foreach ($categorias as $categoria) {
-            if ($categoria['valor'] === null) {
-                // Categoria sem valor configurado: o total seria mentira — o campo volta ao gestor.
-                return null;
-            }
-
-            $total += $categoria['valor'] * $categoria['contempladas'];
-        }
-
-        return round($total, 2);
+        return $contempladas === [] ? null : $this->faixas($raiz)->totalRepassado($contempladas);
     }
 
-    /** Linhas na forma das colunas da própria questão (os formulários variam as chaves por tipo de ação). */
+    /** Uma linha por faixa, nas colunas da questão; null sem faixas ou com coluna que o edital não responde. */
     private function linhasPorCategoria(Opportunity $raiz, array $questao): ?array
     {
-        $categorias = $this->categoriasComContagem($raiz);
+        $fontes = $this->fontesDasColunas(FormularioTabela::daQuestao($questao)->colunas);
+        $contempladas = $this->contempladasPorFaixa($raiz);
 
-        if ($categorias === null) {
+        if ($fontes === null || $contempladas === []) {
             return null;
         }
 
-        $colunas = array_column($questao['config']['columns'] ?? [], 'key');
-
-        if ($colunas === []) {
-            return null;
-        }
-
+        $faixas = $this->faixas($raiz);
         $linhas = [];
-        foreach ($categorias as $categoria) {
-            $linha = [];
-            foreach ($colunas as $chave) {
-                $linha[$chave] = $this->celulaAutomatica($chave, $categoria);
-            }
-            $linhas[] = $linha;
+
+        foreach ($contempladas as $rotulo => $quantidade) {
+            $valores = [
+                self::FONTE_ROTULO => (string) $rotulo,
+                self::FONTE_CONTAGEM => $quantidade,
+                self::FONTE_VALOR => $faixas->valorPorContemplado((string) $rotulo),
+            ];
+            $linhas[] = array_map(fn(string $fonte) => $valores[$fonte], $fontes);
         }
 
         return $linhas;
     }
 
-    private function celulaAutomatica(string $chave, array $categoria): mixed
+    /**
+     * De onde sai cada coluna, pelo tipo; null quando falta fonte para uma obrigatória ou duas disputam a mesma.
+     * @return array<string, string>|null fonte por id da coluna
+     */
+    private function fontesDasColunas(array $colunas): ?array
     {
-        if (str_contains($chave, 'valor_total')) {
-            return $categoria['valor'] === null ? null : round($categoria['valor'] * $categoria['contempladas'], 2);
+        $fontes = [];
+
+        foreach ($colunas as $coluna) {
+            $fonte = $this->fonteDaColuna($coluna);
+
+            if ($fonte === null && !$coluna['obrigatoria']) {
+                continue;
+            }
+
+            if ($fonte === null || in_array($fonte, $fontes, true)) {
+                return null;
+            }
+
+            $fontes[$coluna['id']] = $fonte;
         }
 
-        if (str_contains($chave, 'valor')) {
-            return $categoria['valor'];
-        }
+        return $fontes === [] ? null : $fontes;
+    }
 
-        if (str_contains($chave, 'quantidade')) {
-            return $categoria['contempladas'];
-        }
-
-        if (str_contains($chave, 'categoria')) {
-            return $categoria['label'];
-        }
-
-        return null;
+    private function fonteDaColuna(array $coluna): ?string
+    {
+        return match (true) {
+            $coluna['tipo'] === 'number' => self::FONTE_CONTAGEM,
+            $coluna['tipo'] === 'currency' => self::FONTE_VALOR,
+            $coluna['tipo'] === 'text' && $coluna['somenteLeitura'] => self::FONTE_ROTULO,
+            default => null,
+        };
     }
 
     /** A data que o envio usará (a questão do formulário é somente leitura); null antes de publicar. */
