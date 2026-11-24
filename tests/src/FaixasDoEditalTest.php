@@ -16,6 +16,7 @@ class FaixasDoEditalTest extends TestCase
 
         $this->assertSame(['Música'], $faixas->rotulos());
         $this->assertSame($esperado, $faixas->valorPorContemplado('Música'));
+        $this->assertNull($faixas->valorPorContemplado('Faixa que o edital não tem'));
     }
 
     public static function faixas(): array

@@ -62,7 +62,13 @@ final class FaixasDoEdital
 
     private function valorExato(string $label): ?float
     {
-        $faixa = $this->faixas[array_search($label, $this->rotulos(), true)];
+        $indice = array_search($label, $this->rotulos(), true);
+
+        if ($indice === false) {
+            return null;
+        }
+
+        $faixa = $this->faixas[$indice];
 
         return $faixa['valor'] === null || $faixa['vagas'] < 1 ? null : $faixa['valor'] / $faixa['vagas'];
     }
