@@ -160,7 +160,7 @@ abstract class AbstractClient
                 // isset e não prepareUrl() direto: as propriedades são tipadas e podem não estar
                 // inicializadas numa subclasse, e o erro aqui derrubaria o envio, não só o log.
                 'endpoint' => isset($this->endpoint, $this->document) ? $this->prepareUrl() : ($this->endpoint ?? ''),
-                'payload' => $data,
+                'payload' => $this->recordedPayload($data),
                 'status' => CultBrRequestLogAttempt::RESULT_SIMULATED,
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
@@ -172,12 +172,12 @@ abstract class AbstractClient
         $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         $app = App::i();
-        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl} | Body: {$jsonPayload}");
+        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl}" . $this->bodyForLog($jsonPayload));
 
         try {
             $resposta = $this->send($metodo, $fullUrl, $jsonPayload);
             $rawResponse = $resposta->body;
-            $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
+            $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status}" . $this->bodyForLog(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)));
             $parsed = $this->parseResponse(
                 $rawResponse,
                 $resposta->status,
@@ -189,8 +189,8 @@ abstract class AbstractClient
             $this->recordExchange([
                 'method' => $metodo,
                 'endpoint' => $fullUrl,
-                'payload' => $data,
-                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'payload' => $this->recordedPayload($data),
+                'response' => $this->recordedResponse(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)),
                 'responseHeaders' => $resposta->headers,
                 'httpStatus' => $resposta->status,
                 'status' => CultBrRequestLogAttempt::RESULT_SUCCESS,
@@ -205,8 +205,8 @@ abstract class AbstractClient
             $this->recordExchange([
                 'method' => $metodo,
                 'endpoint' => $fullUrl,
-                'payload' => $data,
-                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'payload' => $this->recordedPayload($data),
+                'response' => $this->recordedResponse(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)),
                 'responseHeaders' => $this->lastResponse?->headers,
                 'httpStatus' => $this->lastResponse?->status,
                 'error' => $this->exchangeErrorMessage($e),
@@ -217,6 +217,24 @@ abstract class AbstractClient
 
             $this->handleError($mensagemErro, $e, true);
         }
+    }
+
+    /** O corpo enviado como o histórico o guarda; o que sai pela rede é sempre o original. */
+    protected function recordedPayload(array $data): array
+    {
+        return $data;
+    }
+
+    /** A resposta como o histórico a guarda. */
+    protected function recordedResponse(string $response): string
+    {
+        return $response;
+    }
+
+    /** O corpo como vai ao log da aplicação; vazio tira o corpo da linha. */
+    protected function bodyForLog(string $body): string
+    {
+        return " | Body: {$body}";
     }
 
     private function elapsedMs(float $startedAt): int
