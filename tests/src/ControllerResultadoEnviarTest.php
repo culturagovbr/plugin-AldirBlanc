@@ -3,9 +3,11 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\ResultadoService;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
@@ -197,6 +199,127 @@ class ControllerResultadoEnviarTest extends TestCase
             $this->enviar($raiz);
 
             $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
+    private function gravaUltimoEnvio(Opportunity $raiz, EnvioSituacao $situacao, int $segundos): void
+    {
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, $situacao, [
+            'contadoDe' => (new \DateTime("-{$segundos} seconds"))->format(\DateTime::ATOM),
+        ]);
+    }
+
+    #[DataProvider('situacoesSemDesfecho')]
+    public function testEnvioSemDesfechoDentroDoPrazoRecusaComAHora(EnvioSituacao $situacao): void
+    {
+        $this->comFormularioResultado(function () use ($situacao) {
+            $raiz = $this->cenario('Subsite Enviar No Prazo ' . uniqid());
+            $this->gravaUltimoEnvio($raiz, $situacao, 60);
+
+            $payload = $this->enviar($raiz);
+
+            $this->assertSame(409, $this->app->response->getStatusCode());
+            $hora = (new \DateTime('+' . (ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO - 60) . ' seconds'))->format('H:i');
+            $this->assertStringContainsString($hora, $payload['data']);
+            $this->assertCount(0, $this->jobsDeResultado());
+        });
+    }
+
+    #[DataProvider('situacoesSemDesfecho')]
+    public function testDepoisDoPrazoOPedidoEAceito(EnvioSituacao $situacao): void
+    {
+        $this->comFormularioResultado(function () use ($situacao) {
+            $raiz = $this->cenario('Subsite Enviar Vencido ' . uniqid());
+            $this->gravaUltimoEnvio($raiz, $situacao, ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1);
+
+            $this->assertSame('sem-confirmacao', (new ResultadoService())->ultimoEnvio((int) $raiz->id)['situacao']);
+
+            $this->enviar($raiz);
+
+            $this->assertCount(1, $this->jobsDeResultado());
+            $ultimo = (new ResultadoService())->ultimoEnvio((int) $raiz->id);
+            $this->assertSame('aguardando', $ultimo['situacao']);
+            $this->assertNotNull($ultimo['novoPedidoEm'], 'o novo pedido abre o seu próprio prazo');
+        });
+    }
+
+    public static function situacoesSemDesfecho(): array
+    {
+        return [
+            'aguardando' => [EnvioSituacao::Aguardando],
+            'enviando' => [EnvioSituacao::Enviando],
+            'sem confirmação' => [EnvioSituacao::SemConfirmacao],
+        ];
+    }
+
+    #[DataProvider('situacoesComDesfecho')]
+    public function testEnvioComDesfechoNaoImpedeONovoPedido(EnvioSituacao $situacao): void
+    {
+        $this->comFormularioResultado(function () use ($situacao) {
+            $raiz = $this->cenario('Subsite Enviar Desfecho ' . uniqid());
+            $this->gravaUltimoEnvio($raiz, $situacao, 1);
+
+            $this->enviar($raiz);
+
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
+    public static function situacoesComDesfecho(): array
+    {
+        return array_map(fn(EnvioSituacao $situacao) => [$situacao], [
+            EnvioSituacao::Publicado, EnvioSituacao::Simulado, EnvioSituacao::NadaMudou, EnvioSituacao::Recusado, EnvioSituacao::NaoEnviado,
+        ]);
+    }
+
+    public function testSituacaoCopiadaDeOutraOportunidadeEIgnorada(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Copiado');
+            $this->gravaUltimoEnvio($raiz, EnvioSituacao::Enviando, 60);
+            $this->app->em->getConnection()->executeStatement(
+                'UPDATE opportunity_meta SET value = replace(value, :de, :para) WHERE object_id = :id AND key = :key',
+                ['de' => '"oportunidade":' . $raiz->id, 'para' => '"oportunidade":1', 'id' => $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO],
+            );
+
+            $this->assertNull((new ResultadoService())->ultimoEnvio((int) $raiz->id));
+
+            $this->enviar($raiz);
+
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
+    public function testPedidoNovoGuardaOEnvioAConferir(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Guarda');
+            $em = (new \DateTime('-1 hour'))->format(\DateTime::ATOM);
+            (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::SemConfirmacao, [
+                'contadoDe' => $em, 'aConferir' => ['idsAntes' => [20010], 'hash' => 'x', 'tipo' => 2, 'em' => $em],
+            ]);
+
+            $this->enviar($raiz);
+
+            $this->assertSame([20010], (new ResultadoService())->envioAConferir((int) $raiz->id)['idsAntes']);
+        });
+    }
+
+    public function testExecucaoImediataNaoTemODesfechoSobrescrito(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Imediato');
+            FakeIntegrationProvider::$aoEnviarResultado = fn() => throw IntegrationError::http('recusado', 422);
+            $original = $this->app->config['app.executeJobsImmediately'] ?? null;
+            $this->app->config['app.executeJobsImmediately'] = true;
+
+            try {
+                $this->enviar($raiz);
+            } finally {
+                $this->app->config['app.executeJobsImmediately'] = $original;
+            }
+
+            $this->assertSame('recusado', (new ResultadoService())->ultimoEnvio((int) $raiz->id)['situacao']);
         });
     }
 

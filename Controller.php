@@ -333,6 +333,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        $novoPedidoEm = $service->ultimoEnvio((int) $raiz->id)['novoPedidoEm'] ?? null;
+        if ($novoPedidoEm !== null) {
+            $hora = (new \DateTime($novoPedidoEm))->format('H:i');
+            $this->errorJson(sprintf(i::__('Já há um envio em andamento. Um novo pedido poderá ser feito às %s.'), $hora), 409);
+            return;
+        }
+
         if (!$service->isResultadoFormComplete($raiz)) {
             $this->errorJson(
                 ['message' => i::__('Complete o formulário do resultado antes de enviar.')] + $this->impedimentosDoEnvio($raiz),
