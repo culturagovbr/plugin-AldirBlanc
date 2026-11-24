@@ -12,6 +12,7 @@ use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 use Tests\Traits\UserDirector;
 
 /** Nada envia resultado sozinho: nem publicar, nem mudar status, nem remover inscrição, nem gravar célula. */
@@ -21,6 +22,7 @@ class ThemeResultadoHooksTest extends TestCase
     use IsolatesJobQueue;
     use BuildsPublishedFinalPhase;
     use ConfiguresPlugin;
+    use LoadsConectaResponses;
 
     protected function setUp(): void
     {
@@ -133,7 +135,9 @@ class ThemeResultadoHooksTest extends TestCase
             $inscricao = $this->contempladaNa($fase);
             $this->clearJobQueue();
 
-            (new BeneficiariosService())->salvarCelulas($raiz, (int) $inscricao->id, ['data_recebimento_recurso' => '10/01/2026']);
+            $modelo = $this->respostaDaConecta('modelo-pontos-de-cultura');
+            $service = new BeneficiariosService(['modelo' => $modelo['modelo'], 'colunas' => $modelo['campos']]);
+            $service->salvarCelulas($raiz, (int) $inscricao->id, ['raca_etnia' => 'Parda']);
 
             $this->assertCount(0, $this->jobsDeResultado(), 'completar a grade não dispara envio: o gestor retifica quando quiser');
         });

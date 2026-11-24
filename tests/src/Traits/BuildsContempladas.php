@@ -11,6 +11,8 @@ use MapasCulturais\Entities\RegistrationStep;
 /** Edital com resultado publicado e inscrições contempladas, como a grade de beneficiários encontra. */
 trait BuildsContempladas
 {
+    use LoadsConectaResponses;
+
     protected function editalComCategorias(array $categorias = []): array
     {
         $owner = $this->userDirector->createUser();
@@ -116,17 +118,37 @@ trait BuildsContempladas
         return $contemplada;
     }
 
-    /** O de/para do documento do responsável pela execução: tipo de proponente => id do campo da ficha. */
-    protected function mapeiaDocumentos(Opportunity $raiz, array $porTipo): void
+    /** O modelo de planilha, na forma em que os serviços o recebem. */
+    protected function planilha(string $resposta = 'modelo-pontos-de-cultura'): array
+    {
+        $modelo = $this->respostaDaConecta($resposta);
+
+        return ['modelo' => $modelo['modelo'], 'colunas' => $modelo['campos']];
+    }
+
+    /** Acrescenta fontes ao de/para do edital, sem passar pela validação do serviço. */
+    protected function mapeia(Opportunity $raiz, array $fontes): void
     {
         $conn = $this->app->em->getConnection();
-        $parametros = ['id' => (int) $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO];
+        $parametros = ['id' => (int) $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA];
+        $gravado = json_decode((string) $conn->fetchOne('SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key', $parametros), true);
 
         $conn->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', $parametros);
-        $conn->executeStatement(
-            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
-            $parametros + ['value' => json_encode($porTipo, JSON_UNESCAPED_UNICODE)],
-        );
+        $conn->executeStatement('INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)', $parametros + [
+            'value' => json_encode([
+                'oportunidade' => (int) $raiz->id,
+                'modelo' => 'pontos_de_cultura',
+                'fontes' => $fontes + ($gravado['fontes'] ?? []),
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+    }
+
+    /** O mesmo campo de documento serve às colunas de CPF e de CNPJ, por tipo de proponente. */
+    protected function mapeiaDocumentos(Opportunity $raiz, array $porTipo): void
+    {
+        $fontes = array_map(fn(int $id) => "campo:{$id}", $porTipo);
+
+        $this->mapeia($raiz, ['cpf' => $fontes, 'cnpj' => $fontes]);
     }
 
     /** Campo de documento na fase indicada, já apontado pelo de/para dos tipos informados. */

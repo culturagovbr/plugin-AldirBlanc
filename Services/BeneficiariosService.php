@@ -6,6 +6,7 @@ use AldirBlanc\Controller;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
+use MapasCulturais\Entities\RegistrationFieldConfiguration;
 use MapasCulturais\Entities\RegistrationMeta;
 
 /**
@@ -14,16 +15,16 @@ use MapasCulturais\Entities\RegistrationMeta;
  */
 class BeneficiariosService
 {
-    private const CPF_DIGITOS = 11;
-    private const CNPJ_DIGITOS = 14;
-    private const CNPJ_ALFANUMERICO = '/^[A-Z0-9]{12}[0-9]{2}$/';
+    /** Um campo só pode guardar CPF ou CNPJ: o tamanho sem a máscara diz a qual das duas colunas ele serve. */
+    private const TAMANHO_DO_OUTRO_DOCUMENTO = ['cpf' => 14, 'cnpj' => 11];
 
     private LinhasBeneficiariosService $linhas;
     private ResultadoDeParaService $dePara;
 
-    public function __construct()
+    /** @param array{modelo: ?string, colunas: list<array>} $planilha modelo de planilha do edital */
+    public function __construct(private readonly array $planilha)
     {
-        $this->linhas = new LinhasBeneficiariosService();
+        $this->linhas = new LinhasBeneficiariosService($planilha['colunas']);
         $this->dePara = new ResultadoDeParaService();
     }
 
@@ -103,26 +104,28 @@ class BeneficiariosService
 
     private function montar(Opportunity $raiz, array $contempladas): array
     {
-        $campos = $this->camposMapeados($raiz);
-        $documentos = $this->camposDeDocumento($raiz);
-        $inscricoes = $this->inscricoesPorNumero($raiz, array_merge($campos, $documentos), $contempladas);
+        $fontes = $this->dePara->fontes((int) $raiz->id, $this->planilha['modelo']);
+        $campos = $this->camposDasFontes($fontes);
+        $faixas = new FaixasDoEdital($raiz->registrationRanges);
+        $inscricoes = $this->inscricoesPorNumero($raiz, $campos, $contempladas);
 
         $linhas = [];
         foreach ($contempladas as $contemplada) {
             $porFase = $inscricoes[$contemplada->number] ?? [];
-            $linhas[] = $this->linha(
-                $raiz,
-                $contemplada,
-                $this->ancora($raiz, $contemplada, $porFase),
-                $this->daFicha($campos, $porFase),
-                $this->documentoDaFicha($documentos, $contemplada, $porFase),
-            );
+            $daFonte = [];
+
+            foreach ($this->planilha['colunas'] as $coluna) {
+                $valor = $this->valorDaFonte($fontes[$coluna['coluna']] ?? '', $contemplada, $porFase, $campos, $faixas);
+                $daFonte[$coluna['coluna']] = $this->semDocumentoDeOutroTipo($coluna['tipo'], $valor);
+            }
+
+            $linhas[] = $this->linha($contemplada, $this->ancora($raiz, $contemplada, $porFase), $daFonte);
         }
 
         return $linhas;
     }
 
-    /** Grava na inscrição de origem o que o gestor digitou e devolve a linha recalculada. */
+    /** Grava na inscrição de origem o que o gestor digitou e devolve a linha recalculada, ou null se não é contemplada. */
     public function salvarCelulas(Opportunity $raiz, int $registrationId, array $celulas): ?array
     {
         $faseFinal = $this->faseFinalPublicada($raiz);
@@ -139,27 +142,11 @@ class BeneficiariosService
             return null;
         }
 
-        $campos = $this->camposMapeados($raiz);
-        $documentos = $this->camposDeDocumento($raiz);
-        $porFase = $this->inscricoesPorNumero($raiz, array_merge($campos, $documentos), [$contemplada])[$contemplada->number] ?? [];
+        $porFase = $this->inscricoesPorNumero($raiz, [], [$contemplada])[$contemplada->number] ?? [];
         $ancora = $this->ancora($raiz, $contemplada, $porFase);
-        $daFicha = $this->daFicha($campos, $porFase);
-        $documento = $this->documentoDaFicha($documentos, $contemplada, $porFase);
-        $candidato = $this->celulasAceitas($celulas, $this->override($ancora));
+        $this->gravaOverride($ancora, $this->celulasAceitas($celulas, $this->override($ancora)));
 
-        $automatico = $this->automatico($raiz, $contemplada, $documento);
-        $jaEstavamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $this->override($ancora)));
-        $ficariamForaDaOrdem = $this->linhas->datasForaDaOrdem($this->linhas->mesclar($automatico, $daFicha, $candidato));
-
-        // Recusa o que esta edição quebra, não o que já estava quebrado: senão a linha trava por inteiro.
-        $recusadas = array_values(array_diff($ficariamForaDaOrdem, $jaEstavamForaDaOrdem));
-        if ($recusadas !== []) {
-            return ['recusadas' => $recusadas];
-        }
-
-        $this->gravaOverride($ancora, $candidato);
-
-        return ['linha' => $this->linha($raiz, $contemplada, $ancora, $daFicha, $documento)];
+        return $this->montar($raiz, [$contemplada])[0];
     }
 
     /** Fase final publicada do edital, ou null quando o resultado ainda não saiu. */
@@ -179,13 +166,9 @@ class BeneficiariosService
         return $inscricoesPorFase[(int) $raiz->id] ?? $contemplada;
     }
 
-    private function linha(Opportunity $raiz, Registration $contemplada, Registration $ancora, array $daFicha, ?string $documento): array
+    private function linha(Registration $contemplada, Registration $ancora, array $daFonte): array
     {
-        $mesclada = $this->linhas->mesclar(
-            $this->automatico($raiz, $contemplada, $documento),
-            $daFicha,
-            $this->override($ancora),
-        );
+        $mesclada = $this->linhas->mesclar($daFonte, $this->override($ancora));
 
         return [
             'registrationId' => (int) $contemplada->id,
@@ -196,38 +179,37 @@ class BeneficiariosService
         ];
     }
 
-    /** O campo da ficha que alimenta cada coluna mapeada, pelo de/para salvo no edital. */
-    private function camposMapeados(Opportunity $raiz): array
+    /** @return array<string, RegistrationFieldConfiguration> os campos da ficha que o de/para aponta, pela fonte */
+    private function camposDasFontes(array $fontes): array
     {
-        return $this->camposDoMapeamento($this->dePara->mapeamento((int) $raiz->id));
-    }
-
-    /** O campo que guarda o documento do responsável, por tipo de proponente, pelo de/para do edital. */
-    private function camposDeDocumento(Opportunity $raiz): array
-    {
-        return $this->camposDoMapeamento($this->dePara->documentoPorTipo((int) $raiz->id));
-    }
-
-    private function camposDoMapeamento(array $mapeamento): array
-    {
-        $mapeamento = array_filter($mapeamento);
-        if ($mapeamento === []) {
-            return [];
-        }
-
-        $configuracoes = [];
-        foreach (App::i()->repo('RegistrationFieldConfiguration')->findBy(['id' => array_values($mapeamento)]) as $campo) {
-            $configuracoes[(int) $campo->id] = $campo;
-        }
-
-        $porChave = [];
-        foreach ($mapeamento as $chave => $id) {
-            if (isset($configuracoes[(int) $id])) {
-                $porChave[$chave] = $configuracoes[(int) $id];
+        $ids = [];
+        array_walk_recursive($fontes, function (string $fonte) use (&$ids) {
+            if (str_starts_with($fonte, ResultadoDeParaService::FONTE_CAMPO)) {
+                $ids[] = (int) substr($fonte, strlen(ResultadoDeParaService::FONTE_CAMPO));
             }
+        });
+
+        $campos = [];
+        foreach ($ids === [] ? [] : App::i()->repo('RegistrationFieldConfiguration')->findBy(['id' => $ids]) as $campo) {
+            $campos[ResultadoDeParaService::FONTE_CAMPO . $campo->id] = $campo;
         }
 
-        return $porChave;
+        return $campos;
+    }
+
+    /** O valor da fonte para esta contemplada; fonte por tipo de proponente é de documento. */
+    private function valorDaFonte(string|array $fonte, Registration $contemplada, array $inscricoesPorFase, array $campos, FaixasDoEdital $faixas): mixed
+    {
+        if (is_array($fonte)) {
+            $fonte = $fonte[(string) $contemplada->proponentType] ?? '';
+        }
+
+        return match ($fonte) {
+            ResultadoDeParaService::FONTE_TIPO_DE_PROPONENTE => $contemplada->proponentType,
+            ResultadoDeParaService::FONTE_FAIXA => $contemplada->range,
+            ResultadoDeParaService::FONTE_VALOR_POR_CONTEMPLADO => $faixas->valorPorContemplado(trim((string) $contemplada->range)),
+            default => $this->daFicha($campos[$fonte] ?? null, $inscricoesPorFase),
+        };
     }
 
     /** As inscrições das contempladas da página, por número e fase, numa consulta só. */
@@ -259,103 +241,30 @@ class BeneficiariosService
         return $indice;
     }
 
-    private function daFicha(array $campos, array $inscricoesPorFase): array
+    /** A resposta da inscrição da fase em que o campo está. */
+    private function daFicha(?RegistrationFieldConfiguration $campo, array $inscricoesPorFase): mixed
     {
-        $valores = [];
-        foreach ($campos as $coluna => $campo) {
-            // Qualquer inscrição da cadeia devolveria o valor, mas por uma consulta do core a cada célula.
-            $inscricao = $inscricoesPorFase[(int) $campo->owner->id] ?? null;
-            if ($inscricao) {
-                $valores[$coluna] = $inscricao->{$campo->fieldName};
-            }
-        }
+        // Qualquer inscrição da cadeia devolveria o valor, mas por uma consulta do core a cada célula.
+        $inscricao = $campo ? $inscricoesPorFase[(int) $campo->owner->id] ?? null : null;
 
-        return $valores;
+        return $inscricao?->{$campo->fieldName};
     }
 
-    /** O documento respondido na ficha, pelo campo que o gestor indicou para o tipo de proponente da inscrição. */
-    private function documentoDaFicha(array $documentos, Registration $contemplada, array $inscricoesPorFase): ?string
+    private function semDocumentoDeOutroTipo(string $tipo, mixed $respondido): mixed
     {
-        $campo = $documentos[(string) $contemplada->proponentType] ?? null;
-        if ($campo === null) {
-            return null;
-        }
+        $isDeOutroTipo = is_scalar($respondido)
+            && strlen(FormularioMascara::semPontuacao((string) $respondido)) === (self::TAMANHO_DO_OUTRO_DOCUMENTO[$tipo] ?? null);
 
-        $valor = ($inscricoesPorFase[(int) $campo->owner->id] ?? null)?->{$campo->fieldName};
-
-        // O gestor pode apontar um campo de múltipla escolha, cujo valor é array.
-        return is_scalar($valor) ? (string) $valor : null;
+        return $isDeOutroTipo ? null : $respondido;
     }
 
-    private function automatico(Opportunity $raiz, Registration $contemplada, ?string $documento): array
-    {
-        $cpf = $this->documentoCom($documento, self::CPF_DIGITOS);
-        $cnpj = $this->documentoCom($documento, self::CNPJ_DIGITOS);
-
-        return [
-            'tipo_agente' => $this->tipoDeAgente($cpf, $cnpj),
-            'identificador_edital' => (string) $raiz->name,
-            'cpf_responsavel_execucao' => $cpf,
-            'cnpj_responsavel_execucao' => $cnpj,
-            'valor_recebido_pnab' => $this->valorDaCategoria($raiz, $contemplada),
-        ];
-    }
-
-    /** Orienta o gestor na grade: as duas naturezas que o CultBr nomeia, decididas pelo documento do responsável. */
-    private function tipoDeAgente(?string $cpf, ?string $cnpj): string
-    {
-        if ($cnpj !== null) {
-            return 'Pessoa jurídica';
-        }
-
-        return $cpf !== null ? 'Pessoa física' : '';
-    }
-
-    /** O documento vem mascarado na ficha; a quantidade de dígitos diz se é CPF ou CNPJ, que também pode ter letras. */
-    private function documentoCom(?string $respondido, int $digitos): ?string
-    {
-        $limpo = preg_replace('/\D/', '', (string) $respondido);
-        if (strlen($limpo) === $digitos) {
-            return $limpo;
-        }
-
-        if ($digitos !== self::CNPJ_DIGITOS) {
-            return null;
-        }
-
-        $alfanumerico = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $respondido));
-
-        return preg_match(self::CNPJ_ALFANUMERICO, $alfanumerico) ? $alfanumerico : null;
-    }
-
-    private function valorDaCategoria(Opportunity $raiz, Registration $contemplada): ?string
-    {
-        $faixa = trim((string) $contemplada->range);
-        if ($faixa === '') {
-            return null;
-        }
-
-        foreach ($raiz->registrationRanges ?: [] as $categoria) {
-            $valor = $categoria['value'] ?? null;
-            if (trim((string) ($categoria['label'] ?? '')) === $faixa && is_numeric($valor)) {
-                return number_format((float) $valor, 2, '.', '');
-            }
-        }
-
-        return null;
-    }
-
-    /** Coluna que a grade não edita é descartada, e célula apagada sai do override em vez de gravar vazio. */
+    /** Só coluna do modelo entra no override; o vazio é gravado porque apagar é decisão do gestor. */
     private function celulasAceitas(array $recebidas, array $override): array
     {
-        foreach ($recebidas as $coluna => $valor) {
-            $definicao = LinhasBeneficiariosService::COLUNAS[$coluna] ?? null;
-            if ($definicao === null || !$definicao['editavel']) {
-                continue;
+        foreach (array_column($this->planilha['colunas'], 'coluna') as $coluna) {
+            if (array_key_exists($coluna, $recebidas) && !is_array($recebidas[$coluna])) {
+                $override[$coluna] = (string) $recebidas[$coluna];
             }
-
-            // Guarda o vazio em vez de remover a chave: apagar é uma decisão do gestor, não ausência dela.
-            $override[$coluna] = is_array($valor) ? $valor : (string) $valor;
         }
 
         return $override;
@@ -369,18 +278,19 @@ class BeneficiariosService
         $app->disableAccessControl();
 
         try {
-            $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA} = $override;
+            $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA} = ['modelo' => $this->planilha['modelo'], 'celulas' => $override];
             $ancora->saveMetadata(true);
         } finally {
             $app->enableAccessControl();
         }
     }
 
+    /** O que o gestor digitou para este modelo; célula de outro modelo é ignorada. */
     private function override(Registration $ancora): array
     {
         // A propriedade mágica desserializa o json do metadado, e devolve objeto onde queremos array.
-        $salvo = $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA};
+        $salvo = (array) $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA};
 
-        return is_object($salvo) || is_array($salvo) ? (array) $salvo : [];
+        return ($salvo['modelo'] ?? null) === $this->planilha['modelo'] ? (array) ($salvo['celulas'] ?? []) : [];
     }
 }

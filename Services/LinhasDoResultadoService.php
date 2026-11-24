@@ -16,10 +16,11 @@ class LinhasDoResultadoService
     private BeneficiariosService $beneficiarios;
     private LinhasBeneficiariosService $linhas;
 
-    public function __construct()
+    /** @param array{modelo: ?string, colunas: list<array>} $planilha modelo de planilha do edital */
+    public function __construct(array $planilha)
     {
-        $this->beneficiarios = new BeneficiariosService();
-        $this->linhas = new LinhasBeneficiariosService();
+        $this->beneficiarios = new BeneficiariosService($planilha);
+        $this->linhas = new LinhasBeneficiariosService($planilha['colunas']);
     }
 
     /**
@@ -35,11 +36,9 @@ class LinhasDoResultadoService
 
         $this->beneficiarios->emLotes($raiz, self::TAMANHO_DO_LOTE, function (array $lote) use (&$prontas, &$incompletas) {
             foreach ($lote as $linha) {
-                $faltas = $this->linhas->faltasParaEnvio($linha['celulas']);
-
-                if ($faltas !== []) {
+                if ($linha['pendencias'] !== []) {
                     // A varredura segue para contar as incompletas, mas o que estava pronto não vai mais.
-                    $incompletas[(string) $linha['number']] = $faltas;
+                    $incompletas[(string) $linha['number']] = array_keys($linha['pendencias']);
                     $prontas = [];
                     continue;
                 }

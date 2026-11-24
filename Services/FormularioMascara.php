@@ -27,10 +27,16 @@ final class FormularioMascara
         return in_array($mascara, self::CONHECIDAS, true);
     }
 
+    /** Documento sem a pontuação da máscara; letra do CNPJ alfanumérico fica, em maiúscula. */
+    public static function semPontuacao(string $texto): string
+    {
+        return strtoupper(preg_replace('/[.\-\/\s]/', '', $texto));
+    }
+
     /** Veredito do texto pela máscara; nome desconhecido é recusado. */
     public static function confere(string $mascara, string $texto): ?FormularioVeredito
     {
-        $limpo = strtoupper(preg_replace('/[.\-\/\s]/', '', $texto));
+        $limpo = self::semPontuacao($texto);
 
         return match ($mascara) {
             self::NENHUMA => null,

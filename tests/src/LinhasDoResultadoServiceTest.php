@@ -2,45 +2,61 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\LinhasDoResultadoService;
+use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\Registration;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\Traits\UserDirector;
 
-/** Planilha de ação cultural do envio: só vai quando o conjunto inteiro passa no que o validador exige. */
+/** Planilha de contemplados do envio: só vai quando o conjunto inteiro passa no que o validador exige. */
 class LinhasDoResultadoServiceTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
     use BuildsContempladas;
 
+    private const RESTANTE = [
+        'tipo_agente' => 'Pessoa física',
+        'cota' => 'Proposta selecionada em ampla concorrência',
+        'raca_etnia' => 'Parda',
+        'pessoa_com_deficiencia' => 'Não',
+        'valor_total_subsidio' => '15000.00',
+        'tipo_espaco_cultural' => 'Atelier',
+        'cep_espaco_cultural' => '70070-000',
+    ];
+
     private function service(): LinhasDoResultadoService
     {
-        return new LinhasDoResultadoService();
+        return new LinhasDoResultadoService($this->planilha());
     }
 
-    function testMontaUmaLinhaPorContempladaComOsCamposDoContrato()
+    /** Contemplada com tudo o que o modelo cobra, menos o documento, que vem da ficha. */
+    private function completa(Opportunity $raiz, Opportunity $fase, string $cpf): Registration
     {
-        [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, $cpf);
+        (new BeneficiariosService($this->planilha()))->salvarCelulas($raiz, (int) $contemplada->id, self::RESTANTE);
 
-        $linhas = $this->service()->montar($raiz);
-
-        $this->assertCount(1, $linhas);
-        $this->assertSame('15000.00', $linhas[0]['valor_recebido_pnab']);
-        $this->assertSame('11144477735', $linhas[0]['cpf_responsavel_execucao']);
-        $this->assertSame((string) $raiz->name, $linhas[0]['identificador_edital']);
-        $this->assertSame('Pessoa física', $linhas[0]['tipo_agente']);
+        return $contemplada;
     }
 
-    function testUmaContempladaIncompletaSeguraAPlanilhaInteira()
+    public function testMontaUmaLinhaPorContempladaComAsColunasDoModelo(): void
     {
-        [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
-        $this->contempladaComDocumento($raiz, $fase, '529.982.247-25', 'Pessoa Física');
+        [$raiz, $fase] = $this->editalComCategorias();
+        $this->completa($raiz, $fase, '529.982.247-25');
 
-        $this->assertNull($this->service()->montar($raiz), 'o validador é atômico: linha incompleta derrubaria o resultado');
+        $this->assertEquals([self::RESTANTE + ['cpf' => '52998224725']], $this->service()->montar($raiz));
+    }
+
+    public function testUmaContempladaPendenteSeguraAPlanilhaInteira(): void
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        $this->completa($raiz, $fase, '529.982.247-25');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+
+        $this->assertNull($this->service()->montar($raiz), 'o validador é atômico: linha pendente derrubaria o resultado');
     }
 
     function testEditalSemContempladaNaoGeraPlanilha()
@@ -50,17 +66,15 @@ class LinhasDoResultadoServiceTest extends TestCase
         $this->assertNull($this->service()->montar($raiz));
     }
 
-    function testLinhasSaemNaOrdemDoNumeroDaInscricao()
+    public function testLinhasSaemNaOrdemDoNumeroDaInscricao(): void
     {
-        [$raiz, $fase] = $this->editalComCategorias([['label' => 'Faixa A', 'value' => '15000']]);
-        $uma = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
-        $outra = $this->contempladaComDocumento($raiz, $fase, '529.982.247-25', 'Pessoa Física', 'Faixa A');
-
-        $cpfPorNumero = [(string) $uma->number => '11144477735', (string) $outra->number => '52998224725'];
+        [$raiz, $fase] = $this->editalComCategorias();
+        $cpfPorNumero = [
+            (string) $this->completa($raiz, $fase, '111.444.777-35')->number => '11144477735',
+            (string) $this->completa($raiz, $fase, '529.982.247-25')->number => '52998224725',
+        ];
         ksort($cpfPorNumero, SORT_STRING);
 
-        $cpfs = array_map(fn(array $linha) => $linha['cpf_responsavel_execucao'], $this->service()->montar($raiz));
-
-        $this->assertSame(array_values($cpfPorNumero), $cpfs, 'ordem instável geraria retificado sem nada ter mudado');
+        $this->assertSame(array_values($cpfPorNumero), array_column($this->service()->montar($raiz), 'cpf'), 'ordem instável geraria retificado sem nada ter mudado');
     }
 }

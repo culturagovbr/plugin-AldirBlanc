@@ -287,8 +287,8 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
-        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA, [
-            'label' => i::__('Dados de execução informados pelo gestor para a planilha de resultado (CultBR)'),
+        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA, [
+            'label' => i::__('Dados informados pelo gestor para a planilha de contemplados (CultBR)'),
             'type' => 'json',
             'private' => true,
         ]);

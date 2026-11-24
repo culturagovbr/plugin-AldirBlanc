@@ -27,7 +27,6 @@ use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\BeneficiariosService;
-use AldirBlanc\Services\LinhasBeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\ParSituationService;
 use AldirBlanc\Services\ResultadoDeParaService;
@@ -90,8 +89,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO = 'cultBrResultadoDocumentoPorTipo';
 
-    /** Células da linha digitadas pelo gestor, na inscrição de origem: coluna => valor. */
-    public const REGISTRATION_META_CULT_BR_RESULTADO_LINHA = 'cultBrResultadoLinha';
+    /** Células que o gestor digitou, na inscrição de origem, com o modelo de planilha a que pertencem. */
+    public const REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA = 'cultBrResultadoPlanilhaLinha';
 
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
@@ -450,8 +449,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service = new BeneficiariosService();
-        $colunas = (new LinhasBeneficiariosService())->colunas();
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
+
+        $service = new BeneficiariosService($planilha);
+        $colunas = $planilha['colunas'];
         $faseFinal = $service->faseFinalPublicada($opportunity);
 
         // A tabela da aplicação já pagina e filtra; aqui só vêm as células das inscrições que ela listou.
@@ -509,24 +513,24 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service = new BeneficiariosService();
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
+
+        $service = new BeneficiariosService($planilha);
         if ($service->faseFinalPublicada($opportunity) === null) {
             $this->errorJson(i::__('O resultado deste edital ainda não foi publicado.'), 409);
             return;
         }
 
-        $resultado = $service->salvarCelulas($opportunity, $registrationId, $celulas);
-        if ($resultado === null) {
+        $linha = $service->salvarCelulas($opportunity, $registrationId, $celulas);
+        if ($linha === null) {
             $this->errorJson(i::__('Inscrição contemplada não encontrada neste edital.'), 404);
             return;
         }
 
-        if (isset($resultado['recusadas'])) {
-            $this->errorJson(i::__('O recurso é recebido antes da execução começar, e ela termina depois de começada. Confira as datas da linha.'), 400);
-            return;
-        }
-
-        $this->json(['linha' => $resultado['linha']]);
+        $this->json(['linha' => $linha]);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */
