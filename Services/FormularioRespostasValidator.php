@@ -34,6 +34,12 @@ final class FormularioRespostasValidator
         return !str_starts_with((string) ($questao['tag'] ?? ''), self::TAG_DATA_PUBLICACAO);
     }
 
+    /** @return array<int, mixed> só as respostas de questões que o gestor preenche */
+    public function editaveis(array $respostas): array
+    {
+        return array_intersect_key($respostas, $this->questoes);
+    }
+
     /** @return array<int, string> erros por id_questao; vazio quando todas as respostas são válidas */
     public function validate(array $respostas): array
     {

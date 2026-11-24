@@ -529,37 +529,40 @@ class FormularioResultadoService
     }
 
     /**
-     * Merge parcial sobre as respostas salvas (null limpa a resposta) e grava com a versão do
-     * formulário vigente, para detectar estrutura que mudou entre o preenchimento e o envio.
-     * Questões automáticas são descartadas: o cálculo do edital é a única fonte delas.
-     * @return array<int, mixed> as respostas como ficaram salvas
+     * Merge das respostas válidas sobre as salvas na versão vigente (null limpa a resposta). A recusada
+     * não apaga a que estava salva, e o que não cabe ao gestor responder é descartado.
+     * @return array<int, string> erros das recusadas, por id_questao
      */
     public function saveRespostas(Opportunity $raiz, array $respostas, array $estrutura): array
     {
         $raizId = (int) $raiz->id;
-        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $respostas = array_diff_key($respostas, $automaticas);
-        $respostas = array_diff_key($respostas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
+        $validator = new FormularioRespostasValidator($estrutura);
+        $doGestor = $this->semCalculadas($raiz, $validator->editaveis($respostas), $estrutura);
+        $erros = $validator->validate($doGestor);
+        $validas = array_diff_key($doGestor, $erros);
 
-        $salvas = $this->savedRespostas($raizId, $estrutura);
-
-        foreach ($respostas as $idQuestao => $valor) {
-            if ($valor === null) {
-                unset($salvas[(int) $idQuestao]);
-                continue;
-            }
-
-            $salvas[(int) $idQuestao] = $valor;
+        if ($validas === []) {
+            return $erros;
         }
+
+        $salvas = array_replace($this->savedRespostas($raizId, $estrutura), $validas);
 
         $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => $estrutura['id_formulario'] ?? null,
             'id_formulario_versao' => $estrutura['id_formulario_versao'] ?? null,
             'versao' => $estrutura['versao'] ?? null,
-            'respostas' => $salvas,
+            'respostas' => array_filter($salvas, fn($valor) => $valor !== null),
         ], JSON_UNESCAPED_UNICODE));
 
-        return $salvas;
+        return $erros;
+    }
+
+    /** Fora também as sem fonte: o cálculo do edital é a única origem delas. */
+    private function semCalculadas(Opportunity $raiz, array $respostas, array $estrutura): array
+    {
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+
+        return array_diff_key($respostas, $automaticas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
     }
 
     private function savedFormData(int $raizId): array

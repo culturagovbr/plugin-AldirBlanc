@@ -364,7 +364,7 @@ class ControllerResultadoFormularioTest extends TestCase
                 $this->assertSame([53], $payload['questoesSemFonte'], 'só a tabela é fonte única; o valor é campo');
                 $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'sem fonte não completa — força a configuração na origem');
 
-                $this->postRespostas($raiz, [53 => [['categoria' => 'x']]]);
+                $this->postRespostas($raiz, [53 => [['categoria' => 'x', 'valor_individual' => 1, 'quantidade_contemplados' => 1]]]);
                 $relido = $this->getFormulario($raiz);
                 $this->assertSame([], (array) $relido['respostas'], 'questão sem fonte não aceita valor do cliente');
 
@@ -448,28 +448,65 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
-    function testRespostaInvalidaRetorna400SemSalvarNada()
+    public function testRespostaInvalidaVoltaComErroSemDerrubarAValida(): void
     {
         $this->comFormulario(function () {
             [, $raiz] = $this->cenario();
 
-            $payload = $this->postRespostas($raiz, [10 => 'não sou número']);
+            $payload = $this->postRespostas($raiz, [10 => 'não sou número', 11 => 'Cronograma cumprido.']);
 
-            $this->assertEquals(400, $this->responseStatus());
-            $this->assertArrayHasKey('10', $payload['data']['respostas']);
-            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id, self::ESTRUTURA));
+            $this->assertEquals(200, $this->responseStatus());
+            $this->assertSame([10], array_keys($payload['erros']));
+            $this->assertSame([11 => 'Cronograma cumprido.'], $payload['respostas'], 'a válida grava mesmo com outra recusada');
         });
     }
 
-    function testDataDePublicacaoNuncaVemDoCliente()
+    public function testRespostaRecusadaNaoApagaAQueEstavaGravada(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $this->postRespostas($raiz, [10 => 25]);
+            $payload = $this->postRespostas($raiz, [10 => 'não sou número']);
+
+            $this->assertSame([10 => 25], $payload['respostas']);
+            $this->assertArrayHasKey(10, $payload['erros']);
+        });
+    }
+
+    public function testSemErroODicionarioDeErrosVaiVazio(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $this->postRespostas($raiz, [10 => 25]);
+
+            $this->assertStringContainsString('"erros":{}', (string) $this->app->response->getBody(), 'vazio como [] viraria lista no cliente');
+        });
+    }
+
+    public function testRespostaForaDoAlcanceDoGestorEDescartadaSemErro(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $payload = $this->postRespostas($raiz, [999 => 'questão de outra versão', 10 => 25]);
+
+            $this->assertEquals(200, $this->responseStatus());
+            $this->assertSame([], $payload['erros']);
+            $this->assertSame([10 => 25], $payload['respostas']);
+        });
+    }
+
+    public function testDataDePublicacaoNuncaVemDoCliente(): void
     {
         $this->comFormulario(function () {
             [, $raiz] = $this->cenario();
 
             $payload = $this->postRespostas($raiz, [30 => '2020-01-01']);
 
-            $this->assertEquals(400, $this->responseStatus());
-            $this->assertArrayHasKey('30', $payload['data']['respostas']);
+            $this->assertEquals(200, $this->responseStatus());
+            $this->assertSame([], $payload['respostas'], 'descartada sem gravar');
         });
     }
 
@@ -504,6 +541,18 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $this->assertSame([11 => 'Cronograma cumprido.'], $payload['respostas']);
             $this->assertFalse($payload['versaoAlterada']);
+        });
+    }
+
+    public function testRespostaSoRecusadaNaoTocaNoQueEstavaGravado(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaRespostasNaVersao($raiz, 100, [10 => 25]);
+
+            $payload = $this->postRespostas($raiz, [10 => 'não sou número']);
+
+            $this->assertTrue($payload['versaoAlterada'], 'sem resposta válida nada é regravado');
         });
     }
 

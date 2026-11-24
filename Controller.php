@@ -21,7 +21,6 @@ use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Services\FormularioEstrutura;
-use AldirBlanc\Services\FormularioRespostasValidator;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
@@ -280,15 +279,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $erros = (new FormularioRespostasValidator($estrutura))->validate($respostas);
-        if ($erros !== []) {
-            $this->errorJson(['message' => i::__('Há respostas inválidas.'), 'respostas' => $erros], 400);
-            return;
-        }
+        $erros = $service->saveRespostas($opportunity, $respostas, $estrutura);
 
-        $service->saveRespostas($opportunity, $respostas, $estrutura);
-
-        $this->json($service->formStateForOpportunity($opportunity));
+        $this->json($service->formStateForOpportunity($opportunity) + ['erros' => (object) $erros]);
     }
 
     /** A aba aberta antes da troca de versão responde a questões que podem ter mudado de sentido. */
