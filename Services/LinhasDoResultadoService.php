@@ -11,8 +11,6 @@ use MapasCulturais\Entities\Opportunity;
  */
 class LinhasDoResultadoService
 {
-    public const TIPO_PLANILHA = 'acao_cultural_realizada';
-
     private const TAMANHO_DO_LOTE = 200;
 
     private BeneficiariosService $beneficiarios;

@@ -66,17 +66,11 @@ class ResultadoService
         $retificacao = $this->parEditalResultadoId((int) $raiz->id) !== null;
         $dataPublicacao = $this->dataPublicacao($faseFinal, $retificacao);
 
-        // Linha incompleta derrubaria o resultado inteiro no validador, que é atômico; sem o conjunto
-        // pronto o resultado publica sem planilha, e o reenvio sai quando o gestor completar a grade.
-        $linhas = (new LinhasDoResultadoService())->montar($raiz);
-
         return new Resultado(
             id_tipo: ($retificacao ? ResultadoTipo::FinalRetificado : ResultadoTipo::Final)->value,
             id_status: ResultadoStatus::Publicado->value,
             data_publicacao: $dataPublicacao,
             respostas: (new FormularioResultadoService())->respostasParaEnvio($raiz),
-            tipo_planilha: $linhas === null ? null : LinhasDoResultadoService::TIPO_PLANILHA,
-            linhas: $linhas,
         );
     }
 

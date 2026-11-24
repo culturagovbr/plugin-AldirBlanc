@@ -100,18 +100,17 @@ class ResultadoServiceTest extends TestCase
         });
     }
 
-    /** Contemplada com o mínimo que o validador exige; sem categoria, fica sem valor e segura a planilha. */
-    private function contempladaCompleta(Opportunity $raiz, Opportunity $fase, bool $semCategoria = false): void
+    private function contempladaCompleta(Opportunity $raiz, Opportunity $fase): void
     {
         $this->app->disableAccessControl();
         $raiz->registrationRanges = [['label' => 'Faixa A', 'value' => '15000']];
         $raiz->save(true);
         $this->app->enableAccessControl();
 
-        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', $semCategoria ? '' : 'Faixa A');
+        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'Faixa A');
     }
 
-    function testPlanilhaEntraNoCorpoQuandoAsContempladasEstaoCompletas()
+    public function testCorpoNaoLevaAPlanilhaNoFormatoAntigo(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->contempladaCompleta($raiz, $fase);
@@ -119,23 +118,7 @@ class ResultadoServiceTest extends TestCase
         $this->comFormularioResultado(function () use ($fase) {
             $payload = $this->service()->buildResultado($fase)->toArray();
 
-            $this->assertSame('acao_cultural_realizada', $payload['tipo_planilha']);
-            $this->assertCount(1, $payload['linhas']);
-            $this->assertSame('15000.00', $payload['linhas'][0]['valor_recebido_pnab']);
-        });
-    }
-
-    function testContempladaIncompletaDeixaOResultadoSairSemPlanilha()
-    {
-        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-        $this->contempladaCompleta($raiz, $fase);
-        $this->contempladaCompleta($raiz, $fase, semCategoria: true);
-
-        $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
-
-            $this->assertArrayNotHasKey('linhas', $payload, 'o resultado publica, e a planilha espera o gestor completar a grade');
-            $this->assertArrayNotHasKey('tipo_planilha', $payload);
+            $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($payload));
         });
     }
 

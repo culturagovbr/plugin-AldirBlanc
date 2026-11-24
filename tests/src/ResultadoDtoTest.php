@@ -42,54 +42,35 @@ class ResultadoDtoTest extends TestCase
         $this->assertNull($dto->anexos);
     }
 
-    function testConstrucaoDiretaComOsTiposDoContrato()
+    public function testConstrucaoDiretaComOsTiposDoContrato(): void
     {
         $dto = new Resultado(id_tipo: 3, id_status: 3, data_publicacao: '2026-10-16T20:00:00-03:00');
 
         $this->assertSame(
-            [
-                'id_tipo' => 3,
-                'id_status' => 3,
-                'data_publicacao' => '2026-10-16T20:00:00-03:00',
-                'respostas' => null,
-                'anexos' => null,
-            ],
-            $dto->toArray()
+            ['id_tipo' => 3, 'id_status' => 3, 'data_publicacao' => '2026-10-16T20:00:00-03:00', 'respostas' => null],
+            $dto->toArray(),
+            'anexos e linhas só entram quando há o que enviar',
         );
     }
 
-    function testSemPlanilhaOCorpoNaoGanhaAsChavesDaPlanilha()
-    {
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3))->toArray();
-
-        $this->assertArrayNotHasKey('tipo_planilha', $corpo, 'chave a mais mudaria o hash e faria todo resultado publicado virar retificado');
-        $this->assertArrayNotHasKey('linhas', $corpo);
-    }
-
-    function testComPlanilhaOCorpoCarregaOTipoEAsLinhas()
+    public function testLinhasEntramSemOTipoDaPlanilha(): void
     {
         $linhas = [['identificador_edital' => 'Edital X', 'valor_recebido_pnab' => '15000.00']];
 
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3, tipo_planilha: 'acao_cultural_realizada', linhas: $linhas))->toArray();
+        $corpo = (new Resultado(id_tipo: 2, id_status: 3, linhas: $linhas))->toArray();
 
-        $this->assertSame('acao_cultural_realizada', $corpo['tipo_planilha']);
         $this->assertSame($linhas, $corpo['linhas']);
-    }
-
-    function testLinhasSemOTipoDaPlanilhaNaoEntramNoCorpo()
-    {
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3, linhas: [['identificador_edital' => 'Edital X']]))->toArray();
-
-        $this->assertArrayNotHasKey('linhas', $corpo, 'as duas chaves só fazem sentido juntas');
         $this->assertArrayNotHasKey('tipo_planilha', $corpo);
     }
 
-    function testRoundTripPreservaAPlanilha()
+    public function testListaVaziaDeLinhasNaoEntraNoCorpo(): void
     {
-        $payload = $this->payloadCompleto() + [
-            'tipo_planilha' => 'acao_cultural_realizada',
-            'linhas' => [['identificador_edital' => 'Edital X']],
-        ];
+        $this->assertArrayNotHasKey('linhas', (new Resultado(id_tipo: 2, id_status: 3, linhas: []))->toArray());
+    }
+
+    public function testRoundTripPreservaAsLinhas(): void
+    {
+        $payload = $this->payloadCompleto() + ['linhas' => [['identificador_edital' => 'Edital X']]];
 
         $this->assertSame($payload, Resultado::fromArray($payload)->toArray());
     }
