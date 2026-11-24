@@ -1,0 +1,15 @@
+{
+ "message": "Erro ao processar a requisição. Há questões obrigatórias não respondidas: Declarações com assinatura via certificado digital do govbr..",
+ "errors": [
+  {
+   "field": "questao:13934",
+   "message": "Esta questão é obrigatória.",
+   "location": [
+    "body",
+    "respostas",
+    "13934"
+   ]
+  }
+ ],
+ "error_count": 1
+}

@@ -1,0 +1,27 @@
+{
+ "message": "Há linhas inválidas. Nenhuma linha foi salva.",
+ "modelo_planilha": "pontos_de_cultura",
+ "processamento_id": null,
+ "total_linhas": 1,
+ "total_inconsistencias": 2,
+ "inconsistencias": [
+  {
+   "linha": 2,
+   "indice": 0,
+   "coluna": "tipo_agente",
+   "regra": "tipo_agente_valido",
+   "descricao": "Valor 'pessoa física' não está na lista de valores permitidos. Valores aceitos: Pessoa física, Microempreendedor individual - MEI, Pessoa Jurídica com fins lucrativos (empresas)...",
+   "categoria": "erro de domínio",
+   "valor_recebido": "pessoa física"
+  },
+  {
+   "linha": 2,
+   "indice": 0,
+   "coluna": "raca_etnia",
+   "regra": "raca_etnia_valido",
+   "descricao": "Valor 'parda' não está na lista de valores permitidos. Valores aceitos: Branca, Preta, Parda...",
+   "categoria": "erro de domínio",
+   "valor_recebido": "parda"
+  }
+ ]
+}

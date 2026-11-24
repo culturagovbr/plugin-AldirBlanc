@@ -1,0 +1,181 @@
+{
+ "id_par_edital": 53692,
+ "acao": {
+  "id_par_plano_acao_meta_acao": 20486,
+  "id_par_tipo_acao": 13,
+  "codigo": "2.2",
+  "nome": "2.2 Fomento a projetos de Pontões de Cultura"
+ },
+ "forma_execucao": null,
+ "possui_planilha": true,
+ "motivo": null,
+ "modelo": "pontoes_de_cultura",
+ "nome_modelo": "Meta 2, Ação 2.2: Fomento a projetos de Pontões de Cultura",
+ "campos": [
+  {
+   "ordem": 1,
+   "coluna": "tipo_agente",
+   "nome": "Tipo de agente responsável",
+   "tipo": "lista",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": [
+    "Pessoa física",
+    "Microempreendedor individual - MEI",
+    "Pessoa Jurídica com fins lucrativos (empresas)",
+    "Pessoa Jurídica sem fins lucrativos (OSCs)",
+    "Grupo ou coletivo sem constituição jurídica"
+   ],
+   "observacao": null
+  },
+  {
+   "ordem": 2,
+   "coluna": "cnpj",
+   "nome": "CNPJ",
+   "tipo": "cnpj",
+   "obrigatoriedade": "condicional",
+   "condicao": "Em caso de pessoa jurídica ou MEI",
+   "opcoes": null,
+   "observacao": "Validar CNPJ"
+  },
+  {
+   "ordem": 3,
+   "coluna": "cpf",
+   "nome": "CPF",
+   "tipo": "cpf",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": null,
+   "observacao": "Do contemplado ou representante do coletivo/pessoa jurídica; validar CPF"
+  },
+  {
+   "ordem": 4,
+   "coluna": "cota",
+   "nome": "Ampla concorrência ou cota (especificar tipo de cota)",
+   "tipo": "lista",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": [
+    "Proposta selecionada em ampla concorrência",
+    "Reserva de vagas para pessoas negras",
+    "Reserva de vagas para pessoas indígenas",
+    "Reserva de vagas para pessoas com deficiência",
+    "Reserva de vagas para outros grupos"
+   ],
+   "observacao": null
+  },
+  {
+   "ordem": 5,
+   "coluna": "raca_etnia",
+   "nome": "Raça/etnia",
+   "tipo": "lista",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": [
+    "Branca",
+    "Preta",
+    "Parda",
+    "Amarela",
+    "Indígena"
+   ],
+   "observacao": null
+  },
+  {
+   "ordem": 6,
+   "coluna": "pessoa_com_deficiencia",
+   "nome": "Pessoa com deficiência",
+   "tipo": "lista",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": [
+    "Não",
+    "Sim, auditiva",
+    "Sim, física ou motora",
+    "Sim, intelectual",
+    "Sim, visual",
+    "Sim, transtorno do espectro autista",
+    "Sim, múltipla",
+    "Sim, outra"
+   ],
+   "observacao": null
+  },
+  {
+   "ordem": 7,
+   "coluna": "valor_total_subsidio",
+   "nome": "Valor total do subsídio",
+   "tipo": "monetario",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": null,
+   "observacao": "Validar valor monetário"
+  },
+  {
+   "ordem": 8,
+   "coluna": "tipo_espaco_cultural",
+   "nome": "Tipo de espaço cultural",
+   "tipo": "lista",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": [
+    "Arena ou semi arena de apresentação",
+    "Associação comunitária; Espaço multiuso",
+    "Atelier",
+    "Auditório",
+    "Arquivo público; Centro de documentação; Acervo",
+    "Espaço de agremiações; Espaço de cultura popular",
+    "Biblioteca comunitária; Biblioteca parque; Espaço de leitura, Ponto de leitura",
+    "Biblioteca pública",
+    "Casa de concerto; Casa de espetáculo",
+    "Casa de cultura; Centro cultural",
+    "Centro de convenções",
+    "Centro de Inovação e Apoio ao Desenvolvimento de Territórios Criativos (CRIA)",
+    "Centro de Memória e Patrimônio",
+    "Centro de Tradição Regional",
+    "CEU da Cultura, CEU das Artes, CEUs",
+    "Cinema",
+    "Cineclube; Espaço de exibição",
+    "Cinemateca",
+    "Circo; Circo itinerante",
+    "Escola de alimentação e cultura",
+    "Escola de artes e cultura",
+    "Espaço makers; FabLabs; Laboratório de Economia Criativa",
+    "Estúdio de audiovisual",
+    "Estúdio de dança",
+    "Estúdio de música; Rádio comunitária",
+    "Galeria de artes visuais",
+    "Imóvel patrimonializado",
+    "Livraria; Alfarrábio; Sebo",
+    "Mercado ou feira de artes visuais e artesanato",
+    "Memorial; Ponto de memória",
+    "MovCEU, Equipamento itinerante",
+    "Museu",
+    "Ponto de Cultura; Pontão de cultura",
+    "Teatro",
+    "Sala de espetáculo",
+    "Sambódromo, Bumbódromo; similares",
+    "Outro"
+   ],
+   "observacao": null
+  },
+  {
+   "ordem": 9,
+   "coluna": "cep_espaco_cultural",
+   "nome": "CEP do espaço cultural",
+   "tipo": "cep",
+   "obrigatoriedade": "obrigatorio",
+   "condicao": null,
+   "opcoes": null,
+   "observacao": "Validar CEP"
+  },
+  {
+   "ordem": 10,
+   "coluna": "povos_comunidades_tradicionais",
+   "nome": "Povos e comunidades tradicionais",
+   "tipo": "a_definir",
+   "obrigatoriedade": "nao_informado",
+   "condicao": null,
+   "opcoes": null,
+   "observacao": "Campo adicional indicado para ações da Meta 2; tipo, opções e obrigatoriedade ainda não definidos no padrão de dados"
+  }
+ ]
+}

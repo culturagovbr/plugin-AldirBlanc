@@ -1,0 +1,15 @@
+{
+ "id_par_edital": 33966,
+ "acao": {
+  "id_par_plano_acao_meta_acao": 22328,
+  "id_par_tipo_acao": 3,
+  "codigo": "1.2",
+  "nome": "1.2 Contratação de serviços diretos"
+ },
+ "forma_execucao": null,
+ "possui_planilha": false,
+ "motivo": "A ação 1.2 não possui modelo de planilha",
+ "modelo": null,
+ "nome_modelo": null,
+ "campos": []
+}

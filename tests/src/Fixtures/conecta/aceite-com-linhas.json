@@ -1,0 +1,29 @@
+{
+ "id_par_edital_resultado_tipo": 2,
+ "id_par_edital_resultado_status": 1,
+ "id_par_edital": 54042,
+ "data_publicacao": "2026-11-20T10:00:00-03:00",
+ "id_par_edital_resultado": 20107,
+ "id_oportunidade_mapas": 12570,
+ "tipo": {
+  "id_par_edital_resultado_tipo": 2,
+  "nome": "Resultado final",
+  "descricao": "Resultado final do edital",
+  "ativo": true,
+  "sequencial": 2
+ },
+ "status_obj": {
+  "id_par_edital_resultado_status": 1,
+  "nome": "em rascunho",
+  "descricao": "Resultado em elaboração",
+  "ativo": true,
+  "permite_edicao": true,
+  "permite_exclusao": true,
+  "sequencial": 1
+ },
+ "anexos": [],
+ "processamento_id": "5153ffbf-60f8-4cab-9601-bf25b329e9fc",
+ "modelo_planilha": "pontos_de_cultura",
+ "status_validacao": "CONCLUIDO_SEM_INCONSISTENCIAS",
+ "total_linhas": 1
+}

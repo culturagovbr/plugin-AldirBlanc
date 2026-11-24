@@ -1,0 +1,29 @@
+{
+ "id_par_edital_resultado_tipo": 2,
+ "id_par_edital_resultado_status": 1,
+ "id_par_edital": 53844,
+ "data_publicacao": "2026-10-16T10:00:00-03:00",
+ "id_par_edital_resultado": 20088,
+ "id_oportunidade_mapas": 12499,
+ "tipo": {
+  "id_par_edital_resultado_tipo": 2,
+  "nome": "Resultado final",
+  "descricao": "Resultado final do edital",
+  "ativo": true,
+  "sequencial": 2
+ },
+ "status_obj": {
+  "id_par_edital_resultado_status": 1,
+  "nome": "em rascunho",
+  "descricao": "Resultado em elaboração",
+  "ativo": true,
+  "permite_edicao": true,
+  "permite_exclusao": true,
+  "sequencial": 1
+ },
+ "anexos": [],
+ "processamento_id": null,
+ "modelo_planilha": null,
+ "status_validacao": null,
+ "total_linhas": null
+}

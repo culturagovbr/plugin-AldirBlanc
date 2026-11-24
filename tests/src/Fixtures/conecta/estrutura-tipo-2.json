@@ -1,0 +1,829 @@
+{
+ "id_formulario": 113,
+ "id_formulario_versao": 527,
+ "versao": 8,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1996,
+   "etapas": [
+    {
+     "id_etapa": 2785,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 13972,
+       "id_questao": 2226,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "radio",
+       "tag": "resultado_1_7_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": {
+        "itens": [
+         {
+          "id": "fe_tec",
+          "tipo": "simples",
+          "label": "Termo de Execução Cultural (Lei nº 14.903/2024)"
+         },
+         {
+          "id": "fe_fomento",
+          "tipo": "simples",
+          "label": "Termo de Fomento (Lei nº 13.019/2014)"
+         },
+         {
+          "id": "fe_outros",
+          "tipo": "campoComplementar",
+          "label": "Outros",
+          "campoComplementar": {
+           "nome": "Informe a forma de execução",
+           "placeholder": "Informe qual é a outra forma de execução.",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 120
+          }
+         }
+        ]
+       },
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13973,
+       "id_questao": 2227,
+       "nome": "Número e título do edital",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_7_espelho_numero_titulo_instrumento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13974,
+       "id_questao": 2228,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_1_7_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13975,
+       "id_questao": 1777,
+       "nome": "Enquadramento no Art. 4º da Portaria MinC nº 216/2025",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "enquadramento_portaria_216_1_7",
+       "requerida": false,
+       "opcao": {
+        "itens": [
+         {
+          "id": "espacos_continuos",
+          "tipo": "simples",
+          "label": "I - Espaços artísticos-culturais independentes",
+          "descricao": "I - Espaços artísticos-culturais independentes, situados no território nacional, com atuação contínua e estruturada em ações de pesquisa, criação, acesso, difusão ou formação artística-cultural, dentre outras, configuradas como arenas, ateliês, bibliotecas comunitárias, casas de espetáculos, salas de cinema, centros de cultura, cineclubes, espaços de memória, casas de shows, conservatórios, galerias, galpões, livrarias de rua, lonas, museus, teatros ou similares, desde que possuam infraestrutura logística e técnica necessária à realização de cursos, oficinas, seminários, exibições, apresentações de espetáculos, shows, exposições artísticas, manutenção e difusão de acervos e congêneres;"
+         },
+         {
+          "id": "escolas_livres",
+          "tipo": "simples",
+          "label": "II - Escolas livres de formação em arte e cultura",
+          "descricao": "II - Escolas livres de formação em arte e cultura: organizações da sociedade civil, situadas no território nacional, com atuação contínua e estruturada em atividades voltadas a processos de formação continuada em arte e cultura"
+         },
+         {
+          "id": "grupos_coletivos",
+          "tipo": "simples",
+          "label": "III - Grupos e coletivos artísticos-culturais independentes",
+          "descricao": "III - Grupos e coletivos artísticos-culturais independentes, situados no território nacional, com atuação contínua e estruturada e com ações de pesquisa, difusão, articulação ou formação, dentre outras, para além da realização de apresentações e exibições públicas em si, configuradas como companhias teatrais e de dança, núcleos de criação, formação, ensino ou pesquisa, famílias circenses tradicionais, grupos e bandas musicais, coletivos literários e de artes visuais, orquestras ou similares"
+         },
+         {
+          "id": "festivais_mostras",
+          "tipo": "simples",
+          "label": "IV - Eventos artísticos-culturais continuados",
+          "descricao": "IV - Eventos artísticos-culturais continuados: iniciativas realizadas presencialmente, com proposta curatorial ou programação artística de abrangência local, interestadual ou internacional, com previsão de ações paralelas de difusão, articulação ou formação para além da realização de apresentações e exibições públicas em si, configuradas como bienais, circuitos, encontros, feiras, festivais, mostras, painéis, salões ou similares"
+         }
+        ]
+       },
+       "config": {
+        "textoPergunta": "Enquadramento no Art. 4º da Portaria MinC nº 216/2025"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1997,
+   "etapas": [
+    {
+     "id_etapa": 2786,
+     "nome": "Procedimentos Complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13976,
+       "id_questao": 2287,
+       "nome": "Número total de inscritos no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_inscritos_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de inscritos no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "Informe o número total de inscritos no edital.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13977,
+       "id_questao": 2288,
+       "nome": "Número total de contemplados no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_contemplados_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de contemplados no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": "Informe o número total de contemplados no edital.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13978,
+       "id_questao": 1783,
+       "nome": "Valor total repassado do edital",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "valor_total_repassado_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total repassado do edital"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": "R$ 0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1998,
+   "etapas": [
+    {
+     "id_etapa": 2787,
+     "nome": "Procedimentos Complementares 2/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13979,
+       "id_questao": 2290,
+       "nome": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "procedimentos_cotas_1_7",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "nenhum",
+          "tipo": "simples",
+          "label": "Não foram utilizados procedimentos complementares",
+          "exclusiva": true
+         },
+         {
+          "id": "heteroidentificacao",
+          "tipo": "simples",
+          "label": "Heteroidentificação para pessoas negras"
+         },
+         {
+          "id": "carta_pessoas_negras",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas negras"
+         },
+         {
+          "id": "carta_pessoas_indigenas",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas indígenas"
+         },
+         {
+          "id": "pertencimento_etnico",
+          "tipo": "simples",
+          "label": "Documento de pertencimento étnico para pessoas indígenas"
+         },
+         {
+          "id": "avaliacao_biopsicossocial",
+          "tipo": "simples",
+          "label": "Avaliação biopsicossocial para pessoas com deficiência"
+         },
+         {
+          "id": "outras_estrategias",
+          "tipo": "campoComplementar",
+          "label": "Outras estratégias (especificar)",
+          "campoComplementar": {
+           "nome": "Descreva a estratégia",
+           "placeholder": "Descreva a estratégia",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 300
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13980,
+       "id_questao": 2229,
+       "nome": "Dados de contemplados por categoria",
+       "descricao": null,
+       "tipo_questao": "tabela",
+       "tag": "tabela_categorias_resultado_1_7",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "tabela": {
+         "linhas": [],
+         "colunas": [
+          {
+           "id": "nome_categoria",
+           "nome": "Nome da Categoria",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": false,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": true
+          },
+          {
+           "id": "quantidade_contemplados",
+           "nome": "Número de vagas contempladas",
+           "tipo": "number",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "valor_individual",
+           "nome": "Valor por vaga",
+           "tipo": "currency",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          }
+         ],
+         "maxLinhas": null,
+         "minLinhas": 0,
+         "linhaModelo": null,
+         "acoesPermitidas": [
+          "adicionar",
+          "editar",
+          "excluir"
+         ],
+         "permitirNovasLinhas": true,
+         "textoBotaoAdicionar": "Adicionar linha",
+         "formaDePreenchimento": "direta",
+         "habilitarBuscaLinhas": false
+        },
+        "textoPergunta": "Dados de contemplados por categoria"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13981,
+       "id_questao": 1787,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "execucao_conforme_planejado_1_7",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13982,
+       "id_questao": 1788,
+       "nome": "Qual a data prevista de entrega final das informações de execução do edital?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "data_prevista_entrega_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data prevista de entrega final das informações de execução do edital?"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": "Selecione a data prevista de entrega final das informações.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13983,
+       "id_questao": 2439,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_1_7",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_sim_1_7",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13981
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": "Registre seus comentários e observações sobre a execução da atividade.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13984,
+       "id_questao": 1789,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_nao_1_7",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13981
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": "Registre seus comentários e observações sobre a execução da atividade.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1999,
+   "etapas": [
+    {
+     "id_etapa": 2788,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 13985,
+       "id_questao": 1792,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_diario_oficial_1_7",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13986,
+       "id_questao": 2440,
+       "nome": "Documentação comprobatória da implementação das ações afirmativas e medidas de acessibilidade, conforme Instrução Normativa MinC nº 10/2023.",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "comprovacao_acoes_afirmativas_resultado_1_7",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Documentação comprobatória da implementação das ações afirmativas e medidas de acessibilidade, conforme Instrução Normativa MinC nº 10/2023."
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13987,
+       "id_questao": 1793,
+       "nome": "Outros documentos",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_outros_docs_1_7",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13988,
+       "id_questao": 1790,
+       "nome": "Planilha de resultados",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_planilha_csv_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".csv",
+         ".xlsx"
+        ],
+        "multiplos": false,
+        "anexoModelo": {
+         "id": "f79b28683df544768418d3a24ab4d9ec",
+         "nome": "Planilha de resultados - 1.7 Apoio a Ações Continuadas.xlsx",
+         "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+         "tamanhoBytes": 60115
+        },
+        "tamanhoMaxMb": 10,
+        "textoPergunta": "Planilha de resultados",
+        "anexoModeloLocal": true
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13989,
+       "id_questao": 2441,
+       "nome": "Planilha/PDF de comissão avaliadora",
+       "descricao": null,
+       "tipo_questao": "tabela",
+       "tag": "informacao_comissao_avaliadora_resultado_1_7",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "tabela": {
+         "linhas": [],
+         "colunas": [
+          {
+           "id": "nome",
+           "nome": "Nome",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "Informe o nome completo do integrante.",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 120,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "cpf",
+           "nome": "CPF",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "000.000.000-00",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 14,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "vinculo",
+           "nome": "Vínculo",
+           "tipo": "escolha_unica",
+           "estilo": null,
+           "opcoes": [
+            "contratado",
+            "servidor público",
+            "voluntário",
+            "integrante de conselho de cultura"
+           ],
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "categoria_grupo",
+           "nome": "Categoria ou grupo de propostas avaliadas",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "Informe a categoria ou o grupo de propostas analisadas.",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 120,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          }
+         ],
+         "maxLinhas": null,
+         "minLinhas": 1,
+         "linhaModelo": {
+          "celulas": {
+           "cpf": {
+            "valor": null,
+            "fixado": false
+           },
+           "nome": {
+            "valor": null,
+            "fixado": false
+           },
+           "vinculo": {
+            "valor": null,
+            "fixado": false
+           },
+           "categoria_grupo": {
+            "valor": null,
+            "fixado": false
+           }
+          }
+         },
+         "acoesPermitidas": [
+          "adicionar",
+          "editar",
+          "excluir"
+         ],
+         "permitirNovasLinhas": true,
+         "textoBotaoAdicionar": "Adicionar integrante",
+         "formaDePreenchimento": "direta",
+         "habilitarBuscaLinhas": false
+        },
+        "buttonLabel": "Adicionar integrante",
+        "textoPergunta": "Planilha/PDF de comissão avaliadora"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13990,
+       "id_questao": 2231,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "declaracoes_ciencia_resultado_1_7",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_integral",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         },
+         {
+          "id": "declaracao_portaria_216",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, a submissão dos documentos comprobatórios de conformidade com as exigências dispostas na Portaria MinC nº 216/2025."
+         }
+        ],
+        "limiteMarcacoes": 2,
+        "limiteMinimoMarcacoes": 2
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
