@@ -4,17 +4,21 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Dtos\ParEditalId;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
+use MapasCulturais\i;
 
 /** Estrutura do formulário de resultado do PAR: resolve o tipo de ação do edital e busca com cache. */
 class FormularioResultadoService
 {
     public const ESTADO_SEM_FORMULARIO = 'sem-formulario';
+    public const ESTADO_ACAO_SEM_RESULTADO = 'acao-sem-resultado';
     public const ESTADO_AGUARDANDO_PUBLICACAO = 'aguardando-publicacao';
     public const ESTADO_PENDENTE = 'pendente';
     public const ESTADO_COMPLETO = 'completo';
@@ -22,6 +26,10 @@ class FormularioResultadoService
 
     private const CACHE_ESTRUTURA = 'aldirblanc:cultbr:formulario_resultado:tipo_acao:';
     private const CACHE_TIPO_ACAO = 'aldirblanc:cultbr:par_tipo_acao:oportunidade:';
+    private const CACHE_PERMITE_RESULTADO = 'aldirblanc:cultbr:permite_resultado:edital:';
+
+    /** Segundos até tentar de novo a leitura que falhou. */
+    private const CACHE_FALHA_TTL = 60;
 
     /** @var array<int, array<int, mixed>> memoização por request: o save e o estado reusam o mesmo cálculo */
     private array $automaticasPorRaiz = [];
@@ -73,6 +81,41 @@ class FormularioResultadoService
         return $idTipoAcao;
     }
 
+    /** A ação do edital não recebe resultado no CultBR? Sem id no PAR ou sem leitura, não dá para afirmar. */
+    public function isAcaoSemResultado(int $opportunityId): bool
+    {
+        $idParEdital = (new ResultadoService())->parEditalId($opportunityId);
+
+        return $idParEdital !== null && $this->resultadoPermitido($idParEdital) === false;
+    }
+
+    private function resultadoPermitido(int $idParEdital): ?bool
+    {
+        $provider = Plugin::getInstance()->integrationProvider();
+
+        if (!$provider instanceof FetchesResultadoPermitido) {
+            return null;
+        }
+
+        $chave = self::CACHE_PERMITE_RESULTADO . $idParEdital;
+        $ttl = $this->formularioCacheTtl();
+
+        try {
+            return $this->cached($chave, fn() => $provider->fetchResultadoPermitido(new ParEditalId($idParEdital)), $ttl);
+        } catch (IntegrationError $e) {
+            App::i()->log->warning("[CultBR] Não foi possível saber se o edital {$idParEdital} recebe resultado: " . $e->getMessage());
+            $this->warmCache($chave, null, self::CACHE_FALHA_TTL);
+
+            return null;
+        }
+    }
+
+    /** O que impede o preenchimento da ação que não recebe resultado. */
+    public static function motivoAcaoSemResultado(): string
+    {
+        return i::__('A ação deste edital não recebe resultado no CultBR.');
+    }
+
     private function tipoAcaoFromMeta(int $opportunityId): ?int
     {
         $bruto = App::i()->em->getConnection()->fetchOne(
@@ -106,6 +149,7 @@ class FormularioResultadoService
 
         return [
             'estado' => $estado,
+            'motivo' => $estado === self::ESTADO_ACAO_SEM_RESULTADO ? self::motivoAcaoSemResultado() : null,
             'estrutura' => $estrutura,
             // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
             'respostas' => (object) $respostas,
@@ -377,6 +421,10 @@ class FormularioResultadoService
     {
         if ($estrutura === null) {
             return self::ESTADO_SEM_FORMULARIO;
+        }
+
+        if ($this->isAcaoSemResultado((int) $raiz->id)) {
+            return self::ESTADO_ACAO_SEM_RESULTADO;
         }
 
         if (!$this->isFaseFinalPublicada($raiz)) {

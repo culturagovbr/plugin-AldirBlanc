@@ -13,6 +13,7 @@ use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\SendsResultado;
 
@@ -20,7 +21,7 @@ use AldirBlanc\Integration\SendsResultado;
  * Provedor resolvido por nome de classe em `provider`: o envio devolve (ou lança) o que o teste
  * mandar, sem client e sem recorder. O resolver instancia sem argumentos, daí o estado estático.
  */
-class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesFormularioResultado
+class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesFormularioResultado, FetchesResultadoPermitido
 {
     /** @var null|callable(int): ?array */
     public static $aoBuscarFormulario = null;
@@ -33,6 +34,12 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
 
     /** @var list<int> oportunidades cujo tipo de ação foi pedido, na ordem */
     public static array $tiposAcaoBuscados = [];
+
+    /** @var null|callable(int): ?bool sem ele, a origem não diz se a ação recebe resultado */
+    public static $aoBuscarPermissao = null;
+
+    /** @var list<int> editais cuja permissão foi pedida, na ordem */
+    public static array $permissoesBuscadas = [];
 
     /** @var null|callable(OpportunityId, OpportunityDto): SendOutcome */
     public static $aoEnviar = null;
@@ -56,6 +63,8 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$aoBuscarTipoAcao = null;
         self::$formulariosBuscados = [];
         self::$tiposAcaoBuscados = [];
+        self::$aoBuscarPermissao = null;
+        self::$permissoesBuscadas = [];
     }
 
     public function provider(): Provider
@@ -95,6 +104,13 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$formulariosBuscados[] = $idTipoAcao;
 
         return (self::$aoBuscarFormulario)($idTipoAcao);
+    }
+
+    public function fetchResultadoPermitido(ParEditalId $edital): ?bool
+    {
+        self::$permissoesBuscadas[] = $edital->id;
+
+        return self::$aoBuscarPermissao === null ? null : (self::$aoBuscarPermissao)($edital->id);
     }
 
     public function fetchParTipoAcao(OpportunityId $opportunity): ?int

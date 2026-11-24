@@ -3,12 +3,16 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\FormularioResultadoService;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Exceptions\Halt;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
@@ -145,6 +149,42 @@ class ControllerResultadoEnviarTest extends TestCase
             $this->assertSame(400, $this->app->response->getStatusCode());
             $this->assertCount(0, $this->jobsDeResultado());
         });
+    }
+
+    public function testAcaoQueNaoRecebeResultadoRecusaComOMotivo(): void
+    {
+        $this->comFormularioResultado(function () {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => false;
+            $raiz = $this->cenario('Subsite Enviar Acao Sem Resultado');
+
+            $payload = $this->enviar($raiz);
+
+            $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertSame(FormularioResultadoService::motivoAcaoSemResultado(), $payload['data']);
+            $this->assertCount(0, $this->jobsDeResultado());
+        });
+    }
+
+    #[DataProvider('permissoesQueNaoImpedem')]
+    public function testSemNegativaDaOrigemOEnvioSai(callable $permissao): void
+    {
+        $this->comFormularioResultado(function () use ($permissao) {
+            FakeIntegrationProvider::$aoBuscarPermissao = $permissao;
+            $raiz = $this->cenario('Subsite Enviar Permissao ' . uniqid());
+
+            $this->enviar($raiz);
+
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
+    public static function permissoesQueNaoImpedem(): array
+    {
+        return [
+            'permitido' => [fn() => true],
+            'desconhecido' => [fn() => null],
+            'leitura com falha' => [fn() => throw IntegrationError::transport('Connection timed out', 28)],
+        ];
     }
 
     function testFormularioIncompletoRecusa()

@@ -122,6 +122,71 @@ class ControllerResultadoFormularioTest extends TestCase
         }, semFormulario: true);
     }
 
+    /** Cenário com o edital já integrado, que é quando a permissão da ação é consultada. */
+    private function cenarioIntegrado(): Opportunity
+    {
+        [, $raiz] = $this->cenario();
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+
+        return $raiz;
+    }
+
+    public function testAcaoQueNaoRecebeResultadoTrazOMotivoERecusaOSave(): void
+    {
+        $this->comFormulario(function () {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => false;
+            $raiz = $this->cenarioIntegrado();
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_ACAO_SEM_RESULTADO, $payload['estado']);
+            $this->assertSame(FormularioResultadoService::motivoAcaoSemResultado(), $payload['motivo']);
+            $this->assertFalse($payload['envioHabilitado']);
+            $this->assertSame([53790], array_unique(FakeIntegrationProvider::$permissoesBuscadas));
+
+            $recusa = $this->postRespostas($raiz, [10 => 25]);
+
+            $this->assertEquals(400, $this->responseStatus());
+            $this->assertSame(FormularioResultadoService::motivoAcaoSemResultado(), $recusa['data']);
+            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id, self::ESTRUTURA));
+        });
+    }
+
+    #[DataProvider('permissoesQueNaoImpedem')]
+    public function testSemNegativaDaOrigemOFormularioAbreESalva(callable $permissao): void
+    {
+        $this->comFormulario(function () use ($permissao) {
+            FakeIntegrationProvider::$aoBuscarPermissao = $permissao;
+            $raiz = $this->cenarioIntegrado();
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado']);
+            $this->assertNull($payload['motivo']);
+            $this->assertSame([10 => 25], $this->postRespostas($raiz, [10 => 25])['respostas']);
+        });
+    }
+
+    public static function permissoesQueNaoImpedem(): array
+    {
+        return [
+            'permitido' => [fn() => true],
+            'desconhecido' => [fn() => null],
+            'leitura com falha' => [fn() => throw \AldirBlanc\Exceptions\IntegrationError::transport('Connection timed out', 28)],
+        ];
+    }
+
+    public function testEditalSemIdNoParNaoConsultaAPermissao(): void
+    {
+        $this->comFormulario(function () {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => false;
+            [, $raiz] = $this->cenario();
+
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $this->getFormulario($raiz)['estado']);
+            $this->assertSame([], FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
     /** Estrutura com as tags que o cálculo automático reconhece. */
     private const ESTRUTURA_AUTO = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
         ['id_questao' => 50, 'tipo_questao' => 'número', 'tag' => 'total_inscritos_edital_1_1', 'requerida' => true, 'opcao' => null, 'config' => [], 'valor_minimo' => null, 'valor_maximo' => null, 'somente_leitura' => false],

@@ -7,6 +7,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\FormularioResultadoService;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
@@ -201,5 +202,64 @@ class FormularioResultadoServiceTest extends TestCase
                 }
             }),
         );
+    }
+
+    private function editalNoPar(): int
+    {
+        $editalId = $this->novoEditalId();
+        $this->app->em->getConnection()->executeStatement(
+            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
+            ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, 'value' => (string) (900000 + $editalId)],
+        );
+
+        return $editalId;
+    }
+
+    public function testPermissaoDaAcaoEntraNoCacheDoFormulario(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => false;
+
+            $this->assertTrue($servico->isAcaoSemResultado($editalId));
+            $this->assertTrue($servico->isAcaoSemResultado($editalId));
+            $this->assertCount(1, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testLeituraQueFalhouNaoSeRepeteACadaSalvamento(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $this->assertFalse($servico->isAcaoSemResultado($editalId));
+            $this->assertFalse($servico->isAcaoSemResultado($editalId));
+            $this->assertCount(1, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testComCacheDesligadoAFalhaTambemNaoFicaGuardada(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $servico->isAcaoSemResultado($editalId);
+            $servico->isAcaoSemResultado($editalId);
+            $this->assertCount(2, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testProvedorSemAConsultaNaoImpedeNada(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comProviderConfigurado(InMemoryProvider::class, function () use ($editalId) {
+            $this->assertFalse((new FormularioResultadoService())->isAcaoSemResultado($editalId));
+        });
     }
 }

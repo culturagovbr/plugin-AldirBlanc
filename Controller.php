@@ -263,6 +263,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        if ($service->isAcaoSemResultado((int) $opportunity->id)) {
+            $this->errorJson(FormularioResultadoService::motivoAcaoSemResultado(), 400);
+            return;
+        }
+
         if (!$service->isFaseFinalPublicada($opportunity)) {
             $this->errorJson(i::__('Publique o resultado final do edital para preencher o formulário.'), 400);
             return;
@@ -317,6 +322,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         if (!$service->isEligibleForResultSync($faseFinal)) {
             $this->errorJson(i::__('Este edital ainda não está integrado ao CultBR.'), 400);
+            return;
+        }
+
+        if ((new FormularioResultadoService())->isAcaoSemResultado((int) $raiz->id)) {
+            $this->errorJson(FormularioResultadoService::motivoAcaoSemResultado(), 400);
             return;
         }
 
