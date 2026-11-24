@@ -66,6 +66,11 @@ class ResultadoDeParaServiceTest extends TestCase
         return ['modelo' => $modelo['modelo'], 'colunas' => $modelo['campos']];
     }
 
+    private function salvaFontes(Opportunity $edital, array $planilha, array $fontes): array
+    {
+        return $this->service()->salvar($edital, $planilha, $fontes)['fontes'];
+    }
+
     public function testEditalComecaSemFonteMesmoComOFormatoAntigoGravado(): void
     {
         $edital = $this->novoEdital();
@@ -78,7 +83,7 @@ class ResultadoDeParaServiceTest extends TestCase
 
         $this->assertSame([], $this->service()->fontes((int) $edital->id, 'pontos_de_cultura'));
 
-        $this->service()->salvarFontes($edital, $this->planilha('modelo-pontos-de-cultura'), ['cep_espaco_cultural' => "campo:{$cep}"]);
+        $this->salvaFontes($edital, $this->planilha('modelo-pontos-de-cultura'), ['cep_espaco_cultural' => "campo:{$cep}"]);
 
         $this->assertSame(
             [$antigo, $antigo],
@@ -95,7 +100,7 @@ class ResultadoDeParaServiceTest extends TestCase
         $cpf = $this->addCampo($edital, 'CPF', 'cpf', 2);
         $planilha = $this->planilha($resposta);
 
-        $gravadas = $this->service()->salvarFontes($edital, $planilha, [
+        $gravadas = $this->salvaFontes($edital, $planilha, [
             'raca_etnia' => "campo:{$raca}",
             'tipo_agente' => 'inscricao:tipo',
             'cota' => 'inscricao:faixa',
@@ -126,7 +131,7 @@ class ResultadoDeParaServiceTest extends TestCase
 
         $recebidas = json_decode(str_replace('ALHEIO', (string) $alheio, json_encode([$coluna => $fonte])), true);
 
-        $this->assertSame([], $this->service()->salvarFontes($edital, $this->planilha('modelo-pontos-de-cultura'), $recebidas));
+        $this->assertSame([], $this->salvaFontes($edital, $this->planilha('modelo-pontos-de-cultura'), $recebidas));
     }
 
     public static function fontesRecusadas(): array
@@ -149,7 +154,7 @@ class ResultadoDeParaServiceTest extends TestCase
         $edital = $this->novoEdital();
         $cnpj = $this->addCampo($edital, 'CNPJ', 'cnpj', 1);
 
-        $gravadas = $this->service()->salvarFontes($edital, $this->planilha('modelo-pontos-de-cultura'), [
+        $gravadas = $this->salvaFontes($edital, $this->planilha('modelo-pontos-de-cultura'), [
             'cnpj' => ['Pessoa Jurídica' => "campo:{$cnpj}", 'MEI' => 'campo:999999', 'Coletivo' => null, 'Cooperativa' => "campo:{$cnpj}"],
         ]);
 
@@ -160,7 +165,7 @@ class ResultadoDeParaServiceTest extends TestCase
     {
         $edital = $this->novoEdital();
         $copia = $this->novoEdital();
-        $this->service()->salvarFontes($edital, $this->planilha('modelo-pontos-de-cultura'), ['cota' => 'inscricao:faixa']);
+        $this->salvaFontes($edital, $this->planilha('modelo-pontos-de-cultura'), ['cota' => 'inscricao:faixa']);
 
         $this->assertSame([], $this->service()->fontes((int) $edital->id, 'premio_cultura_viva'));
         $this->assertSame([], $this->service()->fontes((int) $edital->id, null));
@@ -177,9 +182,98 @@ class ResultadoDeParaServiceTest extends TestCase
     {
         $edital = $this->novoEdital();
         $planilha = $this->planilha('modelo-pontos-de-cultura');
-        $this->service()->salvarFontes($edital, $planilha, ['cota' => 'inscricao:faixa']);
-        $this->service()->salvarFontes($edital, $planilha, ['tipo_agente' => 'inscricao:tipo']);
+        $this->salvaFontes($edital, $planilha, ['cota' => 'inscricao:faixa']);
+        $this->salvaFontes($edital, $planilha, ['tipo_agente' => 'inscricao:tipo']);
 
         $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $this->service()->fontes((int) $edital->id, 'pontos_de_cultura'));
+    }
+
+    /** Campo com opções, na forma em que a ficha as guarda. */
+    private function addCampoComOpcoes(Opportunity $edital, string $tipo, array $opcoes, array $config = []): int
+    {
+        $id = $this->addCampo($edital, 'Campo com opções', $tipo, 1);
+        $campo = $this->app->repo('RegistrationFieldConfiguration')->find($id);
+
+        $this->app->disableAccessControl();
+        $campo->fieldOptions = $opcoes;
+        $campo->config = $config;
+        $campo->save(true);
+        $this->app->enableAccessControl();
+
+        return $id;
+    }
+
+    #[DataProvider('camposComValores')]
+    public function testValoresSemOpcaoVemDaConfiguracaoDoCampo(string $tipo, array $opcoes, array $esperados, array $config = []): void
+    {
+        $edital = $this->novoEdital();
+        $campo = $this->addCampoComOpcoes($edital, $tipo, $opcoes, $config);
+
+        $semOpcao = $this->service()->valoresSemOpcao($edital, $this->planilha('modelo-pontos-de-cultura'), ['raca_etnia' => "campo:{$campo}"]);
+
+        $this->assertSame($esperados === [] ? [] : ['raca_etnia' => $esperados], $semOpcao);
+    }
+
+    public static function camposComValores(): array
+    {
+        return [
+            'seleção' => ['select', ['Parda', 'parda', 'Negra ', 'Negra', ':Não informado'], ['parda', 'Negra']],
+            'seleção com valor e rótulo' => ['select', ['pd:Parda', 'pt:Preta'], ['pd', 'pt']],
+            'campo do agente' => ['agent-owner-field', ['Branca', 'Não informada'], ['Não informada'], ['entityField' => 'raca']],
+            'campo do agente de vários valores' => ['agent-owner-field', ['Auditiva'], [], ['entityField' => 'pessoaDeficiente']],
+            'múltipla escolha' => ['checkboxes', ['Negra'], []],
+            'texto livre' => ['text', [], []],
+            'todas são opção' => ['select', ['Parda', 'Preta'], []],
+        ];
+    }
+
+    public function testValoresSemOpcaoDosDadosDaInscricao(): void
+    {
+        $edital = $this->novoEdital();
+        $edital->registrationRanges = [['label' => 'Zona rural', 'limit' => 1, 'value' => 10], ['label' => 'Reserva de vagas para pessoas negras', 'limit' => 1, 'value' => 10]];
+        $fontes = ['tipo_agente' => 'inscricao:tipo', 'cota' => 'inscricao:faixa', 'raca_etnia' => 'inscricao:valor', 'valor_total_subsidio' => 'inscricao:faixa', 'cpf' => ['MEI' => 'campo:1']];
+
+        $this->assertSame(
+            ['tipo_agente' => $this->service()->tiposDeProponente(), 'cota' => ['Zona rural']],
+            $this->service()->valoresSemOpcao($edital, $this->planilha('modelo-pontos-de-cultura'), $fontes),
+        );
+    }
+
+    public function testCampoApagadoNaoTemValores(): void
+    {
+        $this->assertSame([], $this->service()->valoresSemOpcao($this->novoEdital(), $this->planilha('modelo-pontos-de-cultura'), ['raca_etnia' => 'campo:999999999']));
+    }
+
+    public function testEquivalenciaSoValeParaValorDaFonteEOpcaoDoModelo(): void
+    {
+        $edital = $this->novoEdital();
+        $planilha = $this->planilha('modelo-pontos-de-cultura');
+        $fontes = ['tipo_agente' => 'inscricao:tipo', 'cota' => 'inscricao:faixa'];
+
+        $gravado = $this->service()->salvar($edital, $planilha, $fontes, [
+            'tipo_agente' => [
+                'Pessoa Física' => 'Pessoa física',
+                'MEI' => 'Opção que o modelo não tem',
+                'Cooperativa' => 'Pessoa física',
+                'Coletivo' => '',
+            ],
+            'cota' => ['Zona rural' => 'Reserva de vagas para outros grupos'],
+            'raca_etnia' => ['Negra' => 'Preta'],
+            'coluna_inventada' => ['x' => 'y'],
+        ]);
+
+        $this->assertSame(['tipo_agente' => ['Pessoa Física' => 'Pessoa física']], $gravado['equivalencias']);
+        $this->assertSame($gravado['equivalencias'], $this->service()->equivalencias((int) $edital->id, 'pontos_de_cultura'));
+        $this->assertSame([], $this->service()->equivalencias((int) $edital->id, 'premio_cultura_viva'));
+    }
+
+    public function testTrocarAFonteDescartaAEquivalenciaDela(): void
+    {
+        $edital = $this->novoEdital();
+        $planilha = $this->planilha('modelo-pontos-de-cultura');
+        $equivalencias = ['tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI']];
+        $this->service()->salvar($edital, $planilha, ['tipo_agente' => 'inscricao:tipo'], $equivalencias);
+
+        $this->assertSame([], $this->service()->salvar($edital, $planilha, ['tipo_agente' => 'inscricao:faixa'], $equivalencias)['equivalencias']);
     }
 }

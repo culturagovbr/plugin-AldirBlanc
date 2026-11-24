@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Controller;
 use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\LinhasBeneficiariosService;
+use AldirBlanc\Services\ResultadoDeParaService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -98,6 +99,20 @@ class BeneficiariosServiceTest extends TestCase
         $this->assertSame('MEI', $this->celula($linha, 'tipo_agente'));
         $this->assertSame('Faixa rural', $this->celula($linha, 'cota'));
         $this->assertSame(['tipo_agente', 'cota'], array_slice(array_keys(array_intersect_key($linha['pendencias'], ['tipo_agente' => 1, 'cota' => 1])), 0), 'nenhum dos dois é opção do modelo');
+    }
+
+    public function testEquivalenciaGravadaResolveALinha(): void
+    {
+        [$raiz, $fase] = $this->editalComCategorias();
+        (new ResultadoDeParaService())->salvar($raiz, $this->planilha(), ['tipo_agente' => 'inscricao:tipo'], [
+            'tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI'],
+        ]);
+        $this->contemplada($raiz, $fase, [], 'MEI');
+
+        $linha = $this->service()->pagina($raiz, 0, 20)['linhas'][0];
+
+        $this->assertSame('Microempreendedor individual - MEI', $this->celula($linha, 'tipo_agente'));
+        $this->assertArrayNotHasKey('tipo_agente', $linha['pendencias']);
     }
 
     public function testDocumentoDeQuatorzeCaracteresServeSoAoCnpj(): void

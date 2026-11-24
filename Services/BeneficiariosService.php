@@ -106,6 +106,7 @@ class BeneficiariosService
     {
         $fontes = $this->dePara->fontes((int) $raiz->id, $this->planilha['modelo']);
         $campos = $this->camposDasFontes($fontes);
+        $equivalencias = $this->dePara->equivalencias((int) $raiz->id, $this->planilha['modelo']);
         $faixas = new FaixasDoEdital($raiz->registrationRanges);
         $inscricoes = $this->inscricoesPorNumero($raiz, $campos, $contempladas);
 
@@ -119,7 +120,7 @@ class BeneficiariosService
                 $daFonte[$coluna['coluna']] = $this->semDocumentoDeOutroTipo($coluna['tipo'], $valor);
             }
 
-            $linhas[] = $this->linha($contemplada, $this->ancora($raiz, $contemplada, $porFase), $daFonte);
+            $linhas[] = $this->linha($contemplada, $this->ancora($raiz, $contemplada, $porFase), $daFonte, $equivalencias);
         }
 
         return $linhas;
@@ -166,9 +167,9 @@ class BeneficiariosService
         return $inscricoesPorFase[(int) $raiz->id] ?? $contemplada;
     }
 
-    private function linha(Registration $contemplada, Registration $ancora, array $daFonte): array
+    private function linha(Registration $contemplada, Registration $ancora, array $daFonte, array $equivalencias): array
     {
-        $mesclada = $this->linhas->mesclar($daFonte, $this->override($ancora));
+        $mesclada = $this->linhas->mesclar($daFonte, $this->override($ancora), $equivalencias);
 
         return [
             'registrationId' => (int) $contemplada->id,

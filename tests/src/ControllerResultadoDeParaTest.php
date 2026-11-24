@@ -65,10 +65,10 @@ class ControllerResultadoDeParaTest extends TestCase
         return $this->callJson(fn() => $controller->GET_resultadoDePara());
     }
 
-    private function postDePara(Opportunity $raiz, array $mapeamento): array
+    private function postDePara(Opportunity $raiz, array $mapeamento, mixed $equivalencias = []): array
     {
         $controller = new TestableController();
-        $controller->data = ['opportunityId' => $raiz->id, 'mapeamento' => $mapeamento];
+        $controller->data = ['opportunityId' => $raiz->id, 'mapeamento' => $mapeamento, 'equivalencias' => $equivalencias];
 
         return $this->callJson(fn() => $controller->POST_resultadoDePara());
     }
@@ -121,7 +121,7 @@ class ControllerResultadoDeParaTest extends TestCase
             $this->assertSame(['inscricao:tipo', 'inscricao:faixa', 'inscricao:valor'], array_column($payload['dadosDaInscricao'], 'fonte'));
             $this->assertContains('Pessoa Física', $payload['tiposDeProponente']);
             $this->assertSame([], $payload['mapeamento']);
-            $this->assertStringContainsString('"mapeamento":{}', (string) $this->app->response->getBody(), 'vazio como [] viraria lista no cliente');
+            $this->assertStringContainsString('"mapeamento":{},"equivalencias":{},"valoresSemOpcao":{}', (string) $this->app->response->getBody(), 'vazio como [] viraria lista no cliente');
         });
     }
 
@@ -138,12 +138,39 @@ class ControllerResultadoDeParaTest extends TestCase
         });
     }
 
+    public function testEquivalenciaDeValorDaFonteEGravadaEDevolvida(): void
+    {
+        $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {
+            $raiz = $this->edital();
+            $equivalencias = ['tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI']];
+
+            $salvo = $this->postDePara($raiz, ['tipo_agente' => 'inscricao:tipo'], $equivalencias + ['cota' => ['a' => 'b']]);
+
+            $this->assertSame($equivalencias, $salvo['equivalencias']);
+            $this->assertSame(['tipo_agente'], array_keys($salvo['valoresSemOpcao']));
+            $this->assertContains('MEI', $salvo['valoresSemOpcao']['tipo_agente'], 'o valor resolvido segue na lista, para poder ser mudado');
+
+            $lido = $this->getDePara($raiz);
+            $this->assertSame([$salvo['equivalencias'], $salvo['valoresSemOpcao']], [$lido['equivalencias'], $lido['valoresSemOpcao']]);
+        });
+    }
+
+    public function testEquivalenciasQueNaoSaoListaNaoDerrubamOMapeamento(): void
+    {
+        $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {
+            $salvo = $this->postDePara($this->edital(), ['tipo_agente' => 'inscricao:tipo'], 'texto');
+
+            $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $salvo['mapeamento']);
+            $this->assertSame([], $salvo['equivalencias']);
+        });
+    }
+
     public function testPostVazioDevolveObjeto(): void
     {
         $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {
             $this->postDePara($this->edital(), ['cota' => null]);
 
-            $this->assertStringContainsString('"mapeamento":{}', (string) $this->app->response->getBody());
+            $this->assertStringContainsString('"mapeamento":{},"equivalencias":{},"valoresSemOpcao":{}', (string) $this->app->response->getBody());
         });
     }
 

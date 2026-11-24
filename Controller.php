@@ -376,7 +376,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $service = new ResultadoDeParaService();
         $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $opportunity->id);
-        $mapeamento = $service->fontes((int) $opportunity->id, $planilha['modelo'] ?? null);
+        $modelo = $planilha['modelo'] ?? null;
 
         $this->json([
             'planilha' => $planilha === null ? null : array_diff_key($planilha, ['colunas' => true]),
@@ -387,15 +387,17 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             'campos' => $service->camposDaFicha($opportunity),
             'dadosDaInscricao' => $service->dadosDaInscricao(),
             'tiposDeProponente' => $service->tiposDeProponente(),
-            // (object): vazio precisa serializar como {} — como [] o cliente trataria o de/para como lista.
-            'mapeamento' => (object) $mapeamento,
-        ]);
+        ] + $this->deParaParaATela($opportunity, $planilha ?? ['colunas' => []], [
+            'fontes' => $service->fontes((int) $opportunity->id, $modelo),
+            'equivalencias' => $service->equivalencias((int) $opportunity->id, $modelo),
+        ]));
     }
 
     /**
      * Salva o de/para das colunas da planilha de resultado.
      *
-     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: fonte ou {tipo: fonte}}
+     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: fonte ou {tipo: fonte}},
+     * equivalencias {coluna: {valor da fonte: opção}}
      */
     public function POST_resultadoDePara(): void
     {
@@ -415,7 +417,20 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $this->json(['mapeamento' => (object) (new ResultadoDeParaService())->salvarFontes($opportunity, $planilha, $mapeamento)]);
+        $equivalencias = $this->data['equivalencias'] ?? [];
+        $gravado = (new ResultadoDeParaService())->salvar($opportunity, $planilha, $mapeamento, is_array($equivalencias) ? $equivalencias : []);
+
+        $this->json($this->deParaParaATela($opportunity, $planilha, $gravado));
+    }
+
+    /** (object): vazio precisa serializar como {} — como [] o cliente trataria o de/para como lista. */
+    private function deParaParaATela(Opportunity $opportunity, array $planilha, array $gravado): array
+    {
+        return [
+            'mapeamento' => (object) $gravado['fontes'],
+            'equivalencias' => (object) array_map(fn(array $porValor) => (object) $porValor, $gravado['equivalencias']),
+            'valoresSemOpcao' => (object) (new ResultadoDeParaService())->valoresSemOpcao($opportunity, $planilha, $gravado['fontes']),
+        ];
     }
 
     /** Modelo de planilha do edital, ou null com o motivo já respondido. */
