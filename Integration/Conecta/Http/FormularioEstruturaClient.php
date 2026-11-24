@@ -16,6 +16,8 @@ class FormularioEstruturaClient extends AbstractClient
 
     private const SEM_FORMULARIO_PUBLICADO = 404;
 
+    private const ROTA_INEXISTENTE = 'Not Found';
+
     protected string $document;
 
     public function __construct(int $idTipoAcao, ?Transport $transport = null)
@@ -38,11 +40,23 @@ class FormularioEstruturaClient extends AbstractClient
         try {
             return (array) $this->get();
         } catch (IntegrationError $e) {
-            if ($e->httpStatus() === self::SEM_FORMULARIO_PUBLICADO) {
+            if ($this->isSemFormularioPublicado($e)) {
                 return null;
             }
 
             throw $e;
         }
+    }
+
+    /** Endereço errado também responde 404, e some com a aba de todo edital. */
+    private function isSemFormularioPublicado(IntegrationError $erro): bool
+    {
+        if ($erro->httpStatus() !== self::SEM_FORMULARIO_PUBLICADO) {
+            return false;
+        }
+
+        $detalhe = json_decode((string) $erro->rawBody(), true)['detail'] ?? null;
+
+        return is_string($detalhe) && trim($detalhe) !== '' && $detalhe !== self::ROTA_INEXISTENTE;
     }
 }

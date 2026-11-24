@@ -7,14 +7,17 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\Conecta\ConectaProvider;
 use AldirBlanc\Integration\FetchesFormularioResultado;
 use AldirBlanc\Integration\Gestao\GestaoProvider;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeTransport;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 
 /** Estrutura do formulário de resultado e tipo de ação do edital, lidos da Conecta. */
 class FormularioEstruturaClientTest extends TestCase
 {
     use ConfiguresPlugin;
+    use LoadsConectaResponses;
 
     private const HOST = 'http://cultbr.invalid';
 
@@ -67,6 +70,37 @@ class FormularioEstruturaClientTest extends TestCase
 
             $this->assertNull((new ConectaProvider($transporte))->fetchFormularioResultado(2));
         });
+    }
+
+    public function testTipoDeAcaoSemFormularioDaRespostaRealDevolveNull(): void
+    {
+        $this->comConecta(function () {
+            $transporte = new FakeTransport(status: 404, body: $this->corpoDaConecta('estrutura-sem-formulario'));
+
+            $this->assertNull((new ConectaProvider($transporte))->fetchFormularioResultado(7));
+        });
+    }
+
+    #[DataProvider('falhasQueNaoDizemSemFormulario')]
+    public function testOutraFalhaNaoSomeComAAba(int $status, string $corpo): void
+    {
+        $this->comConecta(function () use ($status, $corpo) {
+            $this->expectException(IntegrationError::class);
+
+            (new ConectaProvider(new FakeTransport(status: $status, body: $corpo)))->fetchFormularioResultado(1);
+        });
+    }
+
+    public static function falhasQueNaoDizemSemFormulario(): array
+    {
+        return [
+            'endereço errado' => [404, '{"detail": "Not Found"}'],
+            '404 sem detalhe' => [404, '{}'],
+            '404 com detalhe vazio' => [404, '{"detail": " "}'],
+            '404 com detalhe em lista' => [404, '{"detail": ["x"]}'],
+            '404 que não é JSON' => [404, '<html></html>'],
+            'mais de um formulário ativo' => [409, '{"detail": "Mais de um formulário ativo"}'],
+        ];
     }
 
     function testErroQueNaoE404Relanca()
