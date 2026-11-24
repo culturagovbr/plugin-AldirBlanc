@@ -159,6 +159,16 @@ class TestableController extends Controller
         $this->POST_resultadoFormulario();
     }
 
+    public function callPostResultadoAnexo(): void
+    {
+        $this->POST_resultadoAnexo();
+    }
+
+    public function callPostResultadoAnexoRetirar(): void
+    {
+        $this->POST_resultadoAnexoRetirar();
+    }
+
     public function callPostResultadoEnviar(): void
     {
         $this->POST_resultadoEnviar();

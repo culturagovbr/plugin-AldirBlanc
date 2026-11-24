@@ -29,11 +29,15 @@ use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\BeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\ParSituationService;
+use AldirBlanc\Services\ResultadoAnexosService;
 use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Entities\File;
+use MapasCulturais\Exceptions\FileUploadError;
 use MapasCulturais\Exceptions\Halt;
+use MapasCulturais\Exceptions\SaveFileError;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -298,6 +302,91 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         return $estrutura;
+    }
+
+    /**
+     * Guarda o arquivo na questão de documento e devolve o estado novo.
+     *
+     * POST /aldirblanc/resultadoAnexo?opportunityId={id} — multipart: id_formulario_versao, id_questao, arquivo
+     */
+    public function POST_resultadoAnexo(): void
+    {
+        $this->alteraAnexos(function (ResultadoAnexosService $anexos, int $idQuestao): ?string {
+            $arquivo = $this->arquivoEnviado();
+
+            try {
+                return is_string($arquivo) ? $arquivo : $anexos->anexar($idQuestao, $arquivo);
+            } catch (SaveFileError $e) {
+                return $e->getMessage();
+            }
+        });
+    }
+
+    /**
+     * Retira da questão o arquivo, que é apagado, e devolve o estado novo.
+     *
+     * POST /aldirblanc/resultadoAnexoRetirar — body: opportunityId, id_formulario_versao, id_questao, id_arquivo
+     */
+    public function POST_resultadoAnexoRetirar(): void
+    {
+        $this->alteraAnexos(
+            fn(ResultadoAnexosService $anexos, int $idQuestao): ?string => $anexos->retirar($idQuestao, (int) ($this->data['id_arquivo'] ?? 0))
+                ? null
+                : i::__('Arquivo não encontrado nesta questão.'),
+        );
+    }
+
+    /** @param callable(ResultadoAnexosService, int): ?string $alteracao devolve o motivo da recusa */
+    private function alteraAnexos(callable $alteracao): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        $estrutura = $opportunity === null ? null : $this->estruturaParaPreencher($opportunity);
+
+        if ($estrutura === null) {
+            return;
+        }
+
+        $service = new FormularioResultadoService();
+
+        if ($this->isRespostaDeOutraVersao($estrutura)) {
+            $this->json(['versaoAlterada' => true] + $service->formStateForOpportunity($opportunity));
+            return;
+        }
+
+        $motivo = $alteracao(new ResultadoAnexosService($opportunity, $estrutura), (int) ($this->data['id_questao'] ?? 0));
+
+        if ($motivo !== null) {
+            $this->errorJson($motivo, 400);
+            return;
+        }
+
+        $this->json($service->formStateForOpportunity($opportunity));
+    }
+
+    /** O arquivo recebido, ou o motivo de não haver um. */
+    private function arquivoEnviado(): File|string
+    {
+        $campo = 'arquivo';
+
+        if (!is_string($_FILES[$campo]['name'] ?? null)) {
+            return $this->isCorpoAcimaDoLimite() ? i::__('O arquivo enviado é maior do que o permitido.') : i::__('Selecione um arquivo.');
+        }
+
+        // O mesmo nome que o upload do core grava.
+        $nome = pathinfo($_FILES[$campo]['name']);
+        $_FILES[$campo]['name'] = App::i()->slugify($nome['filename']) . '.' . ($nome['extension'] ?? '');
+
+        try {
+            return App::i()->handleUpload($campo, Opportunity::getFileClassName());
+        } catch (FileUploadError $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /** Acima do limite, o PHP descarta o corpo inteiro e só o tamanho declarado denuncia o motivo. */
+    private function isCorpoAcimaDoLimite(): bool
+    {
+        return (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > App::i()->getMaxUploadSize(false) * 1024;
     }
 
     /** A aba aberta antes da troca de versão responde a questões que podem ter mudado de sentido. */

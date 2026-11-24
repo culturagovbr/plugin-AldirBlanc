@@ -173,6 +173,7 @@ class FormularioResultadoService
     public function formStateForOpportunity(Opportunity $raiz): array
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+        $anexos = $estrutura === null ? null : new ResultadoAnexosService($raiz, $estrutura);
         $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
         $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id);
@@ -184,7 +185,8 @@ class FormularioResultadoService
             'motivo' => $estado === self::ESTADO_ACAO_SEM_RESULTADO ? self::motivoAcaoSemResultado() : null,
             'estrutura' => $estrutura,
             // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
-            'respostas' => (object) $respostas,
+            'respostas' => (object) array_diff_key($respostas, $anexos?->documentos() ?? []),
+            'anexos' => (object) ($anexos?->paraATela() ?? []),
             'respostasAutomaticas' => (object) $automaticas,
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             ...$impedimentos,
