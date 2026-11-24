@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc\Traits;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Services\BeneficiariosService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use MapasCulturais\Entities\RegistrationFieldConfiguration;
@@ -12,6 +13,17 @@ use MapasCulturais\Entities\RegistrationStep;
 trait BuildsContempladas
 {
     use LoadsConectaResponses;
+
+    /** O que o modelo cobra além do documento, que vem da ficha. */
+    protected const CELULAS_COMPLETAS = [
+        'tipo_agente' => 'Pessoa física',
+        'cota' => 'Proposta selecionada em ampla concorrência',
+        'raca_etnia' => 'Parda',
+        'pessoa_com_deficiencia' => 'Não',
+        'valor_total_subsidio' => '15000.00',
+        'tipo_espaco_cultural' => 'Atelier',
+        'cep_espaco_cultural' => '70070-000',
+    ];
 
     protected function editalComCategorias(array $categorias = []): array
     {
@@ -149,6 +161,15 @@ trait BuildsContempladas
         $fontes = array_map(fn(int $id) => "campo:{$id}", $porTipo);
 
         $this->mapeia($raiz, ['cpf' => $fontes, 'cnpj' => $fontes]);
+    }
+
+    /** Contemplada sem pendência na planilha. */
+    protected function contempladaCompleta(Opportunity $raiz, Opportunity $fase, string $cpf = '529.982.247-25'): Registration
+    {
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, $cpf);
+        (new BeneficiariosService($this->planilha()))->salvarCelulas($raiz, (int) $contemplada->id, self::CELULAS_COMPLETAS);
+
+        return $contemplada;
     }
 
     /** Campo de documento na fase indicada, já apontado pelo de/para dos tipos informados. */
