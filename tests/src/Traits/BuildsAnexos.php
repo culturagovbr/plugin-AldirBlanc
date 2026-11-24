@@ -2,7 +2,9 @@
 
 namespace Tests\AldirBlanc\Traits;
 
+use AldirBlanc\Services\ResultadoAnexosService;
 use MapasCulturais\Entities\File;
+use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\OpportunityFile;
 
 /** Arquivos de upload e questões de documento do formulário de resultado. */
@@ -34,6 +36,20 @@ trait BuildsAnexos
     protected function arquivo(string $nome, string $conteudo = self::PDF, ?int $tamanho = null): OpportunityFile
     {
         return new OpportunityFile($this->upload($nome, $conteudo, $tamanho));
+    }
+
+    /** Documento já guardado no edital, sem passar pela conferência. */
+    protected function anexado(Opportunity $raiz, string $nome = 'ata.pdf', string $conteudo = self::PDF): OpportunityFile
+    {
+        $arquivo = $this->arquivo($nome, $conteudo);
+        $arquivo->owner = $raiz;
+        $arquivo->group = ResultadoAnexosService::GRUPO;
+
+        $this->app->disableAccessControl();
+        $arquivo->save(true);
+        $this->app->enableAccessControl();
+
+        return $this->apagaNoFim($arquivo);
     }
 
     protected function apagaNoFim(File $arquivo): File

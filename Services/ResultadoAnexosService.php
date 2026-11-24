@@ -93,6 +93,24 @@ final class ResultadoAnexosService
         );
     }
 
+    /** Documento da questão como o envio o leva. @return array{nome: string, caminho: string, tipo: string, descricao: string, hash: string} */
+    public static function paraOEnvio(OpportunityFile $arquivo, array $questao): array
+    {
+        $caminho = $arquivo->getPath();
+
+        if (!is_file($caminho)) {
+            throw new \RuntimeException("Documento {$arquivo->id} não está no disco");
+        }
+
+        return [
+            'nome' => $arquivo->name,
+            'caminho' => $caminho,
+            'tipo' => $arquivo->mimeType,
+            'descricao' => (string) ($questao['nome'] ?? ''),
+            'hash' => hash_file('sha256', $caminho),
+        ];
+    }
+
     private function recusaDaQuestao(int $idQuestao): ?string
     {
         $respostas = $this->formulario->respostasVigentes($this->raiz, $this->estrutura);

@@ -283,7 +283,9 @@ class ResultadoCultJob extends JobType
 	/** Hash do conteúdo: a ordem das respostas, das linhas e das marcações não faz um envio diferente. */
 	private function contentHash(array $conteudo): string
 	{
-		$ordenado = [$this->emOrdem($conteudo['respostas'] ?? []), $this->emOrdem($conteudo['linhas'] ?? [])];
+		// Sem arquivo, o hash é o mesmo de antes de haver arquivos.
+		$arquivos = empty($conteudo['arquivos']) ? [] : [array_column($conteudo['arquivos'], 'hash', 'nome')];
+		$ordenado = [$this->emOrdem($conteudo['respostas'] ?? []), $this->emOrdem($conteudo['linhas'] ?? []), ...$this->emOrdem($arquivos)];
 
 		return hash('sha256', (string) json_encode($ordenado, JSON_UNESCAPED_UNICODE));
 	}

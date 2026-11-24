@@ -16,6 +16,7 @@ use MapasCulturais\Entities\Opportunity;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Traits\BuildsAnexos;
 use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\IsolatesJobQueue;
@@ -30,6 +31,7 @@ class ResultadoCultJobTest extends TestCase
     use IsolatesJobQueue;
     use LoadsConectaResponses;
     use SendsOpportunityThroughJob;
+    use BuildsAnexos;
     use BuildsContempladas;
     use BuildsPublishedFinalPhase;
 
@@ -784,13 +786,13 @@ class ResultadoCultJobTest extends TestCase
         $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados);
     }
 
-    private function hash(array $respostas, ?array $linhas = null): string
+    private function hash(array $respostas, ?array $linhas = null, array $arquivos = []): string
     {
         $metodo = new \ReflectionMethod(ResultadoCultJob::class, 'contentHash');
 
         return $metodo->invoke(
             $this->app->getRegisteredJobType(ResultadoCultJob::SLUG),
-            ['respostas' => $respostas, 'linhas' => $linhas],
+            ['respostas' => $respostas, 'linhas' => $linhas, 'arquivos' => $arquivos],
         );
     }
 
@@ -804,6 +806,58 @@ class ResultadoCultJobTest extends TestCase
         );
         $this->assertSame($this->hash([], [['x' => 1], ['x' => 2]]), $this->hash([], [['x' => 2], ['x' => 1]]));
         $this->assertNotSame($this->hash([], [['x' => 1]]), $this->hash([], [['x' => 2]]), 'a planilha faz parte do conteúdo');
+    }
+
+    public function testHashIncluiOConteudoDosArquivosSemDependerDaOrdem(): void
+    {
+        $arquivo = fn(string $nome, string $hash) => ['nome' => $nome, 'caminho' => "/{$nome}", 'tipo' => 'x', 'descricao' => 'd', 'hash' => $hash];
+        $com = fn(array ...$arquivos) => $this->hash([], [], $arquivos);
+
+        $this->assertSame($com($arquivo('a', '1'), $arquivo('b', '2')), $com($arquivo('b', '2'), $arquivo('a', '1')));
+        $this->assertNotSame($com($arquivo('a', '1')), $com($arquivo('a', '2')), 'o mesmo nome com outro conteúdo é outro envio');
+        $this->assertNotSame($com($arquivo('a', '1'), $arquivo('b', '2')), $com($arquivo('a', '2'), $arquivo('b', '1')));
+        $this->assertNotSame($com(), $com($arquivo('a', '1')));
+        $this->assertSame(hash('sha256', '[[],[]]'), $com(), 'sem arquivo, o hash já gravado continua valendo');
+    }
+
+    private function estruturaComDocumento(): array
+    {
+        return ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [$this->questaoDeDocumento(30)]]]]]];
+    }
+
+    /** Edital com um documento anexado; devolve a raiz. */
+    private function editalComDocumento(): Opportunity
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Documento ' . uniqid());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, '{}');
+        $this->atualizaRespostasSalvas((int) $raiz->id, [30 => [$this->anexado($raiz)->id]]);
+
+        return $raiz;
+    }
+
+    public function testDocumentoVaiNoEnvioEOMesmoNaoEReenviado(): void
+    {
+        $raiz = $this->editalComDocumento();
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $this->estruturaComDocumento());
+
+        $payload = FakeIntegrationProvider::$resultadosEnviados[0]['payload'];
+        $this->assertSame(['ata.pdf'], array_column($payload->arquivos, 'nome'));
+        $this->assertSame([['id_par_questao' => 10030, 'resposta' => ['resposta' => 'ata.pdf']]], $payload->respostas);
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $this->estruturaComDocumento());
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame('nada-mudou', $this->ultimoEnvio($raiz)['situacao']);
+    }
+
+    public function testDocumentoQueSumiuDoDiscoNaoEnvia(): void
+    {
+        $raiz = $this->editalComDocumento();
+        unlink($this->app->repo('OpportunityFile')->findOneBy(['owner' => $raiz])->getPath());
+
+        $this->processaComResposta($raiz, '{}', $this->estruturaComDocumento());
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame(['nao-enviado', 'Não foi possível montar o envio do resultado.'], [$this->ultimoEnvio($raiz)['situacao'], $this->ultimoEnvio($raiz)['mensagem']]);
     }
 
     public function testRespostaDiferenteReenvia(): void

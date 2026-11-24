@@ -65,19 +65,19 @@ class ResultadoService
 
     /**
      * O que o resultado diz, seja ele final ou retificado.
-     * @return array{respostas: ?array, linhas: list<array>, inscricoes: list<string>, colunas: array<string, string>, totalPendentes: int, pendentes: list<array>}
+     * @return array{respostas: ?array, arquivos: list<array>, linhas: list<array>, inscricoes: list<string>, colunas: array<string, string>, totalPendentes: int, pendentes: list<array>}
      */
     public function conteudo(Opportunity $raiz): array
     {
         $planilha = (new ModeloPlanilhaService())->doEnvio((int) $this->parEditalId((int) $raiz->id));
 
-        return ['respostas' => (new FormularioResultadoService())->respostasParaEnvio($raiz)]
+        return (new FormularioResultadoService())->conteudoParaEnvio($raiz)
             + ($planilha['possui'] ? (new LinhasDoResultadoService($planilha))->montar($raiz) : LinhasDoResultadoService::SEM_PLANILHA);
     }
 
     /**
      * Corpo do envio: final enquanto o CultBR não tem publicado, retificado depois — publicado é imutável.
-     * @param array{respostas: ?array, linhas: list<array>} $conteudo
+     * @param array{respostas: ?array, arquivos: list<array>, linhas: list<array>} $conteudo
      */
     public function buildResultado(Opportunity $faseFinal, array $conteudo, ?int $idPublicado): Resultado
     {
@@ -89,6 +89,7 @@ class ResultadoService
             data_publicacao: $this->dataPublicacao($faseFinal, $retificacao),
             respostas: $conteudo['respostas'],
             linhas: $conteudo['linhas'],
+            arquivos: $conteudo['arquivos'],
         );
     }
 

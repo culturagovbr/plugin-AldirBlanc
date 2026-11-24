@@ -11,6 +11,7 @@ use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\OpportunityFile;
 use MapasCulturais\Entities\Registration;
 use MapasCulturais\i;
 
@@ -565,24 +566,27 @@ class FormularioResultadoService
     }
 
     /**
-     * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, só as visíveis e válidas.
-     * @return list<array{id_par_questao: int, resposta: array{resposta: mixed}}>|null null sem formulário
+     * O que o formulário leva no envio: automáticas, salvas e sugeridas, só as visíveis e válidas, e os documentos.
+     * @return array{respostas: ?list<array{id_par_questao: int, resposta: array{resposta: mixed}}>, arquivos: list<array>} respostas nulas sem formulário
      */
-    public function respostasParaEnvio(Opportunity $raiz): ?array
+    public function conteudoParaEnvio(Opportunity $raiz): array
     {
         $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
         if ($estrutura === null) {
-            return null;
+            return ['respostas' => null, 'arquivos' => []];
         }
 
         $leitura = new FormularioEstrutura($estrutura);
+        $validator = new FormularioRespostasValidator($estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
         $valores = $this->respostasVigentes($raiz, $estrutura);
+        $anexados = array_intersect_key($valores, $validator->documentosVisiveis($valores));
 
-        $enviaveis = $automaticas + (new FormularioRespostasValidator($estrutura))->enviaveis($valores);
+        $enviaveis = $automaticas + $validator->enviaveis($valores) + array_map($this->nomesDosArquivos(...), $anexados);
         $regras = new FormularioRegras($leitura);
         $respostas = [];
+        $arquivos = [];
 
         foreach (array_intersect_key($leitura->questoes(), $enviaveis) as $id => $questao) {
             // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
@@ -590,10 +594,22 @@ class FormularioResultadoService
 
             if ($idEnvio !== 0 && $regras->isVisivel($questao, $valores)) {
                 $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $enviaveis[$id])]];
+                $arquivos = [...$arquivos, ...array_map(
+                    fn(OpportunityFile $arquivo) => ResultadoAnexosService::paraOEnvio($arquivo, $questao),
+                    array_values($anexados[$id] ?? []),
+                )];
             }
         }
 
-        return $respostas;
+        return ['respostas' => $respostas, 'arquivos' => $arquivos];
+    }
+
+    /** A questão de documento é respondida pelo nome do arquivo, ou pela lista deles. */
+    private function nomesDosArquivos(array $arquivos): string|array
+    {
+        $nomes = array_map(fn(OpportunityFile $arquivo) => $arquivo->name, array_values($arquivos));
+
+        return count($nomes) === 1 ? $nomes[0] : $nomes;
     }
 
     /** Ajusta o valor ao que o CultBR aceita por tipo de questão; os demais tipos viajam como estão. */

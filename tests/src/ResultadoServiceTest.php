@@ -11,6 +11,7 @@ use MapasCulturais\Entities\Opportunity;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Traits\BuildsAnexos;
 use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
@@ -22,6 +23,7 @@ class ResultadoServiceTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
+    use BuildsAnexos;
     use BuildsContempladas;
     use ConfiguresPlugin;
     use LoadsConectaResponses;
@@ -297,6 +299,81 @@ class ResultadoServiceTest extends TestCase
         $this->assertSame(15000.5, $this->corpoDa11([1840 => '15000.50'])[13920]);
         $this->assertSame(15000, $this->corpoDa11([1840 => '15000.00'])[13920]);
         $this->assertSame(15000, $this->corpoDa11([1840 => 15000.0])[13920]);
+    }
+
+    /** Edital com as respostas que o exercício grava depois de guardar os documentos. */
+    private function comDocumentos(array $documentos, callable $respostas, callable $exercicio): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Documentos ' . uniqid());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'respostas' => $respostas($raiz),
+        ]));
+
+        $this->comFormularioResultado(
+            fn() => $exercicio($raiz, $fase),
+            ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => $documentos]]]]],
+        );
+    }
+
+    public function testDocumentoERespondidoPeloNomeEOArquivoAcompanha(): void
+    {
+        $arquivos = [];
+        $documentos = [$this->questaoDeDocumento(30, [], ['nome' => 'Publicação']), $this->questaoDeDocumento(31), $this->questaoDeDocumento(32)];
+
+        $this->comDocumentos($documentos, function (Opportunity $raiz) use (&$arquivos) {
+            $arquivos = [$this->anexado($raiz, 'parecer.pdf'), $this->anexado($raiz, 'ata.pdf', 'texto'), $this->anexado($raiz, 'lista.csv', "a;b\n1;2\n")];
+
+            return [31 => [$arquivos[1]->id, $arquivos[2]->id], 30 => [$arquivos[0]->id]];
+        }, function (Opportunity $raiz, Opportunity $fase) use (&$arquivos) {
+            $payload = $this->corpo($fase);
+
+            $this->assertSame([
+                ['id_par_questao' => 10030, 'resposta' => ['resposta' => 'parecer.pdf']],
+                ['id_par_questao' => 10031, 'resposta' => ['resposta' => ['ata.pdf', 'lista.csv']]],
+            ], $payload->respostas);
+            $this->assertSame([
+                ['nome' => 'parecer.pdf', 'caminho' => $arquivos[0]->getPath(), 'tipo' => 'application/pdf', 'descricao' => 'Publicação', 'hash' => hash('sha256', self::PDF)],
+                ['nome' => 'ata.pdf', 'caminho' => $arquivos[1]->getPath(), 'tipo' => 'text/plain', 'descricao' => 'Documento 31', 'hash' => hash('sha256', 'texto')],
+            ], array_slice($payload->arquivos, 0, 2));
+            $this->assertSame('lista.csv', $payload->arquivos[2]['nome']);
+        });
+    }
+
+    #[DataProvider('documentosQueFicamFora')]
+    public function testDocumentoQueNaoServeFicaForaDoEnvio(array $extras, bool $isDoEdital = true): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30, [], $extras)], function (Opportunity $raiz) use ($isDoEdital) {
+            return [30 => [$isDoEdital ? $this->anexado($raiz)->id : 999999]];
+        }, function (Opportunity $raiz, Opportunity $fase) {
+            $payload = $this->corpo($fase);
+
+            $this->assertSame([[], []], [$payload->respostas, $payload->arquivos]);
+        });
+    }
+
+    public static function documentosQueFicamFora(): array
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 10030]];
+
+        return [
+            'questão escondida' => [['config' => ['regras' => ['itens' => [$regra]]]]],
+            'questão somente leitura' => [['somente_leitura' => true]],
+            'questão sem id de envio' => [['id_questao_etapa' => null]],
+            'arquivo que não é do edital' => [[], false],
+        ];
+    }
+
+    public function testDocumentoQueSumiuDoDiscoNaoDeixaMontar(): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30)], function (Opportunity $raiz) {
+            $arquivo = $this->anexado($raiz);
+            unlink($arquivo->getPath());
+
+            return [30 => [$arquivo->id]];
+        }, function (Opportunity $raiz) {
+            $this->expectExceptionMessage('não está no disco');
+            $this->service()->conteudo($raiz);
+        });
     }
 
     #[DataProvider('respostasQueFicamFora')]

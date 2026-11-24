@@ -315,7 +315,7 @@ class FormularioResultadoServiceTest extends TestCase
             FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
             $servico->formStructureForOpportunity((int) $edital->id);
 
-            $servico->respostasParaEnvio($edital);
+            $servico->conteudoParaEnvio($edital);
 
             $this->assertCount(2, FakeIntegrationProvider::$formulariosBuscados);
         });
