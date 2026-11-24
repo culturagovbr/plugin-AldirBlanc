@@ -25,9 +25,10 @@ class LinhasBeneficiariosService
     /**
      * Célula a célula, o que o gestor digitou vence a fonte do de/para.
      *
+     * @param array<string, array<string, string>> $equivalencias por coluna, a opção de cada valor da fonte
      * @return array<string, array{valor: mixed, fonte: string}> valor final e de onde ele veio, por coluna
      */
-    public function mesclar(array $daFonte, array $override): array
+    public function mesclar(array $daFonte, array $override, array $equivalencias = []): array
     {
         $linha = [];
 
@@ -36,8 +37,14 @@ class LinhasBeneficiariosService
             // Célula que o gestor apagou fica apagada: a fonte não volta a preencher o que ele tirou.
             $isDoGestor = array_key_exists($chave, $override);
 
+            $valor = $this->valor($coluna['tipo'], $isDoGestor ? $override[$chave] : $daFonte[$chave] ?? null);
+
+            if (!$isDoGestor && is_string($valor)) {
+                $valor = $equivalencias[$chave][$valor] ?? $valor;
+            }
+
             $linha[$chave] = [
-                'valor' => $this->valor($coluna['tipo'], $isDoGestor ? $override[$chave] : $daFonte[$chave] ?? null),
+                'valor' => $valor,
                 'fonte' => $isDoGestor ? self::FONTE_GESTOR : self::FONTE_FICHA,
             ];
         }

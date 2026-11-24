@@ -99,6 +99,22 @@ class LinhasBeneficiariosServiceTest extends TestCase
         $this->assertSame(['raca_etnia' => 'Preenchimento obrigatório.'], $this->service()->pendencias($linha));
     }
 
+    public function testEquivalenciaTrocaSoOValorDaFonte(): void
+    {
+        $equivalencias = ['raca_etnia' => ['Negra' => 'Preta'], 'tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI']];
+        $service = $this->service();
+
+        $comFonte = $service->mesclar(['raca_etnia' => ' Negra '] + self::ACEITA, [], $equivalencias);
+        $doGestor = $service->mesclar(self::ACEITA, ['raca_etnia' => 'Negra'], $equivalencias);
+        $semEquivalencia = $service->mesclar(['raca_etnia' => 'negra'] + self::ACEITA, [], $equivalencias);
+
+        $this->assertSame('Preta', $comFonte['raca_etnia']['valor']);
+        $this->assertSame([], $service->pendencias($comFonte));
+        $this->assertSame('Negra', $doGestor['raca_etnia']['valor'], 'a célula do gestor não passa pela equivalência');
+        $this->assertSame(['raca_etnia'], array_keys($service->pendencias($semEquivalencia)), 'maiúscula diferente é outro valor');
+        $this->assertSame(['Negra'], $service->mesclar(['raca_etnia' => ['Negra']], [], $equivalencias)['raca_etnia']['valor'], 'vários valores não têm equivalência');
+    }
+
     public function testListaDiferenciaMaiusculas(): void
     {
         $linha = $this->linha(['tipo_agente' => 'pessoa física', 'raca_etnia' => 'parda']);
