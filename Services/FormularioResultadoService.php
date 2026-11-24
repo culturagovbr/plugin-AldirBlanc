@@ -488,6 +488,7 @@ class FormularioResultadoService
         $respostas = $this->respostasVigentes($raiz, $estrutura);
         $validator = new FormularioRespostasValidator($estrutura);
         $documentos = $validator->documentosRequeridos($respostas);
+        $anexados = array_intersect_key($respostas, $validator->documentosVisiveis($respostas));
 
         // A sem fonte nem aparece na tela: não pode travar o envio invisivelmente.
         $foraDoGestor = $automaticas + array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas));
@@ -501,19 +502,20 @@ class FormularioResultadoService
         return [
             'pendencias' => $this->comNomes($pendencias, $estrutura),
             'bloqueios' => [
-                ...$this->bloqueioDaPlanilha($planilha, $documentos),
+                ...$this->bloqueioDaPlanilha($planilha, $documentos, $anexados),
                 ...$this->comNomes(array_diff_key($validator->bloqueios($respostas), $foraDoGestor), $estrutura),
             ],
         ];
     }
 
     /** @return list<array{id_questao: null, nome: string, motivo: string}> */
-    private function bloqueioDaPlanilha(?array $planilha, array $documentosRequeridos): array
+    private function bloqueioDaPlanilha(?array $planilha, array $documentosRequeridos, array $anexados): array
     {
         $motivo = match (true) {
             $planilha === null, $planilha['possui'] === false => null,
             $planilha['possui'] === null => $planilha['motivo'],
             self::isDependenteDoCultBr($planilha, $documentosRequeridos) => self::motivoPlanilhaComDocumentos(),
+            $anexados !== [] => self::motivoPlanilhaComAnexos(),
             default => null,
         };
 
@@ -524,6 +526,11 @@ class FormularioResultadoService
     public static function isDependenteDoCultBr(?array $planilha, array $documentosRequeridos): bool
     {
         return ($planilha['possui'] ?? null) === true && $documentosRequeridos !== [];
+    }
+
+    public static function motivoPlanilhaComAnexos(): string
+    {
+        return i::__('O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.');
     }
 
     public static function motivoPlanilhaComDocumentos(): string

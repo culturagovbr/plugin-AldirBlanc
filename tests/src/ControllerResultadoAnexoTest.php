@@ -298,4 +298,47 @@ class ControllerResultadoAnexoTest extends TestCase
             $this->assertFalse($this->retira($raiz, 32, $payload['anexos'][32][0]['id'])['envioHabilitado']);
         }, documentos: [$this->questaoDeDocumento(32, [], ['requerida' => true])]);
     }
+
+    public function testPlanilhaComArquivoAnexadoBloqueiaAteOArquivoSair(): void
+    {
+        $this->noEdital(function (Opportunity $raiz) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            $this->assertTrue($this->salva($raiz, [10 => 'texto'])['envioHabilitado']);
+
+            $payload = $this->anexa($raiz, 30, $this->upload('ata.pdf'));
+            $this->assertSame(
+                [['id_questao' => null, 'nome' => '', 'motivo' => FormularioResultadoService::motivoPlanilhaComAnexos()]],
+                $payload['bloqueios'],
+            );
+            $this->assertFalse($payload['envioHabilitado']);
+
+            $recusa = $this->chama('callPostResultadoEnviar', ['opportunityId' => $raiz->id]);
+            $this->assertSame([400, $payload['bloqueios']], [$this->codigo(), $recusa['data']['bloqueios']]);
+
+            $this->assertTrue($this->retira($raiz, 30, $payload['anexos'][30][0]['id'])['envioHabilitado']);
+        });
+    }
+
+    public function testSemPlanilhaOArquivoNaoBloqueia(): void
+    {
+        $this->noEdital(function (Opportunity $raiz) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => false];
+            $this->salva($raiz, [10 => 'texto']);
+
+            $this->assertTrue($this->anexa($raiz, 30, $this->upload('ata.pdf'))['envioHabilitado']);
+        });
+    }
+
+    public function testArquivoDeQuestaoEscondidaNaoBloqueiaNemCompleta(): void
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => 'sim', 'fonteIdQuestaoEtapa' => 900]];
+
+        $this->noEdital(function (Opportunity $raiz) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            $this->salva($raiz, [10 => 'sim']);
+            $this->assertFalse($this->anexa($raiz, 33, $this->upload('ata.pdf'))['envioHabilitado']);
+
+            $this->assertTrue($this->salva($raiz, [10 => 'não'])['envioHabilitado']);
+        }, documentos: [$this->questaoDeDocumento(33, ['regras' => ['itens' => [$regra]]])]);
+    }
 }

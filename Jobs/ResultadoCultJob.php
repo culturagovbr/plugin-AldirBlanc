@@ -71,6 +71,13 @@ class ResultadoCultJob extends JobType
 			$isAdotado = false;
 		}
 
+		if ($falha === null && is_array($conteudo) && $conteudo['impedimento'] !== null) {
+			$app->log->info("ResultadoCultJob: edital {$raizId} - {$conteudo['impedimento']} - nada enviado");
+			$service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, ['mensagem' => $conteudo['impedimento']]);
+
+			return true;
+		}
+
 		if ($falha === null && is_array($conteudo) && $conteudo['totalPendentes'] > 0) {
 			$app->log->info("ResultadoCultJob: edital {$raizId} - contemplados com pendência na planilha - nada enviado");
 			$service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, [

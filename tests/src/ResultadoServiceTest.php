@@ -376,6 +376,34 @@ class ResultadoServiceTest extends TestCase
         });
     }
 
+    #[DataProvider('planilhaEDocumento')]
+    public function testPlanilhaComDocumentoEImpedimentoESoMontaLinhasSemEle(bool $possui, bool $temDocumento, ?string $motivo, bool $montaLinhas): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30)], function (Opportunity $raiz) use ($temDocumento) {
+            return $temDocumento ? [30 => [$this->anexado($raiz)->id]] : [];
+        }, function (Opportunity $raiz, Opportunity $fase) use ($possui, $motivo, $montaLinhas) {
+            $this->contempladaCompleta($raiz, $fase);
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $possui ? $this->respostaDaConecta('modelo-pontos-de-cultura') : ['possui_planilha' => false];
+
+            $conteudo = $this->service()->conteudo($raiz);
+
+            $this->assertSame($motivo, $conteudo['impedimento']);
+            $this->assertCount((int) $montaLinhas, $conteudo['linhas']);
+        });
+    }
+
+    public static function planilhaEDocumento(): array
+    {
+        $motivo = 'O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.';
+
+        return [
+            'com os dois' => [true, true, $motivo, false],
+            'só planilha' => [true, false, null, true],
+            'só documento' => [false, true, null, false],
+            'nenhum' => [false, false, null, false],
+        ];
+    }
+
     #[DataProvider('respostasQueFicamFora')]
     public function testRespostaQueNaoServeFicaForaDoCorpo(array $trocas, int $idEnvio): void
     {

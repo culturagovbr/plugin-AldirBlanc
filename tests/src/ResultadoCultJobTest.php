@@ -849,6 +849,33 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame('nada-mudou', $this->ultimoEnvio($raiz)['situacao']);
     }
 
+    public function testEditalComModeloEDocumentoNaoEnvia(): void
+    {
+        $raiz = $this->editalComDocumento();
+
+        $this->processaComResposta($raiz, '{}', $this->estruturaComDocumento(), function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+        });
+
+        $this->assertSame(['nao-enviado', FormularioResultadoService::motivoPlanilhaComAnexos()], [$this->ultimoEnvio($raiz)['situacao'], $this->ultimoEnvio($raiz)['mensagem']]);
+        $this->assertSame([], FakeIntegrationProvider::$passos);
+        $this->assertSame([], $this->statusNoHistorico($raiz));
+    }
+
+    public function testDocumentoComPlanilhaSoEncerraDepoisDeConferirOEnvioSemResposta(): void
+    {
+        $raiz = $this->editalComDocumento();
+        $this->deixaEnvioAConferir($raiz, 3600, [], 'x');
+
+        $this->processaComResposta($raiz, '{}', $this->estruturaComDocumento(), function () {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+            FakeIntegrationProvider::$aoListarPublicados = fn() => throw IntegrationError::transport('Connection timed out', 28);
+        });
+
+        $this->assertNotSame(FormularioResultadoService::motivoPlanilhaComAnexos(), $this->ultimoEnvio($raiz)['mensagem']);
+        $this->assertNotNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
     public function testDocumentoQueSumiuDoDiscoNaoEnvia(): void
     {
         $raiz = $this->editalComDocumento();

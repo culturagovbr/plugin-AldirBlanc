@@ -65,14 +65,17 @@ class ResultadoService
 
     /**
      * O que o resultado diz, seja ele final ou retificado.
-     * @return array{respostas: ?array, arquivos: list<array>, linhas: list<array>, inscricoes: list<string>, colunas: array<string, string>, totalPendentes: int, pendentes: list<array>}
+     * @return array{respostas: ?array, arquivos: list<array>, impedimento: ?string, linhas: list<array>, inscricoes: list<string>, colunas: array<string, string>, totalPendentes: int, pendentes: list<array>}
      */
     public function conteudo(Opportunity $raiz): array
     {
         $planilha = (new ModeloPlanilhaService())->doEnvio((int) $this->parEditalId((int) $raiz->id));
+        $formulario = (new FormularioResultadoService())->conteudoParaEnvio($raiz);
+        $isPlanilhaComAnexos = $planilha['possui'] && $formulario['arquivos'] !== [];
 
-        return (new FormularioResultadoService())->conteudoParaEnvio($raiz)
-            + ($planilha['possui'] ? (new LinhasDoResultadoService($planilha))->montar($raiz) : LinhasDoResultadoService::SEM_PLANILHA);
+        return $formulario
+            + ['impedimento' => $isPlanilhaComAnexos ? FormularioResultadoService::motivoPlanilhaComAnexos() : null]
+            + ($planilha['possui'] && !$isPlanilhaComAnexos ? (new LinhasDoResultadoService($planilha))->montar($raiz) : LinhasDoResultadoService::SEM_PLANILHA);
     }
 
     /**
