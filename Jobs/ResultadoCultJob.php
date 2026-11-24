@@ -15,6 +15,7 @@ use AldirBlanc\Integration\SendRunner;
 use AldirBlanc\Integration\SendsResultado;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\ModeloPlanilhaService;
 use AldirBlanc\Services\ResultadoService;
 
 class ResultadoCultJob extends JobType
@@ -114,7 +115,13 @@ class ResultadoCultJob extends JobType
 			throw IntegrationError::configuration('client.provider', 'o provedor configurado não envia resultado');
 		}
 
-		return $provider->sendResultado(new ParEditalId((int) $service->parEditalId($raizId)), $payload);
+		$idParEdital = (int) $service->parEditalId($raizId);
+
+		if ((new ModeloPlanilhaService())->doEnvio($idParEdital)['possui']) {
+			throw IntegrationError::contract('o edital tem modelo de planilha, e o envio da planilha de contemplados ainda não está disponível');
+		}
+
+		return $provider->sendResultado(new ParEditalId($idParEdital), $payload);
 	}
 
 	/** Hash do conteúdo: a ordem das respostas, das linhas e das marcações não faz um envio diferente. */

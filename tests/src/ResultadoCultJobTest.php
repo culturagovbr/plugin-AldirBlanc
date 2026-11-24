@@ -343,6 +343,58 @@ class ResultadoCultJobTest extends TestCase
         $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
     }
 
+    private function processaComModelo(Opportunity $raiz, callable $modelo): void
+    {
+        $this->semCacheDoFormulario(fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz, $modelo) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
+            FakeIntegrationProvider::$aoBuscarModelo = $modelo;
+            FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['response' => '{"id_par_edital_resultado": 777}']);
+            $this->enfileira($raiz);
+            $this->processJobs(number_of_jobs: 1);
+        }));
+    }
+
+    private function statusNoHistorico(Opportunity $raiz): array
+    {
+        return $this->app->em->getConnection()->fetchFirstColumn(
+            'SELECT status FROM cultbr_request_log WHERE opportunity_id = :id',
+            ['id' => (int) $raiz->id]
+        );
+    }
+
+    public function testEditalComModeloDePlanilhaNaoEnviaEFechaOHistoricoEmErro(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComModelo($raiz, fn() => ['possui_planilha' => true]);
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame(['error'], $this->statusNoHistorico($raiz));
+        $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'repetir não muda o modelo do edital');
+    }
+
+    public function testFalhaAoLerOModeloNaoEnviaEReenfileira(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComModelo($raiz, fn() => throw IntegrationError::transport('Connection timed out', 28));
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertCount(1, $this->app->repo(Job::class)->findBy(['type' => ResultadoCultJob::SLUG]), 'a origem pode voltar');
+        $this->assertCount(1, $this->statusNoHistorico($raiz), 'a tentativa aparece no histórico');
+    }
+
+    public function testEditalSemModeloDePlanilhaEnvia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComModelo($raiz, fn() => ['possui_planilha' => false]);
+
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertSame([53790], FakeIntegrationProvider::$modelosBuscados);
+    }
+
     public function testEstruturaQueMudaEntreOSalvamentoEOEnvioNaoEnvia(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
