@@ -175,7 +175,7 @@ class FormularioResultadoService
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
         $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $planilha = $this->planilha($raiz);
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id);
         $impedimentos = $this->impedimentos($raiz, $estrutura, $planilha);
         $estado = $this->estado($raiz, $estrutura, $impedimentos === self::SEM_IMPEDIMENTOS);
 
@@ -188,7 +188,7 @@ class FormularioResultadoService
             'respostasAutomaticas' => (object) $automaticas,
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             ...$impedimentos,
-            'planilha' => $planilha,
+            'planilha' => $planilha === null ? null : array_diff_key($planilha, ['colunas' => true]),
             'ultimoEnvio' => (new ResultadoService())->ultimoEnvio((int) $raiz->id),
             'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
@@ -471,34 +471,8 @@ class FormularioResultadoService
         return $this->impedimentos(
             $raiz,
             $this->formStructureForEnvio((int) $raiz->id),
-            $this->planilhaDoEnvio($raiz),
+            (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id, isEnvio: true),
         );
-    }
-
-    private function planilhaDoEnvio(Opportunity $raiz): ?array
-    {
-        return $this->planilha($raiz, (new ModeloPlanilhaService())->doEnvio(...));
-    }
-
-    /**
-     * Situação da planilha de contemplados, ou null no edital que ainda não está no PAR.
-     * @param ?callable(int): array $leitura como ler o modelo; por padrão, o guardado
-     */
-    private function planilha(Opportunity $raiz, ?callable $leitura = null): ?array
-    {
-        $idParEdital = (new ResultadoService())->parEditalId((int) $raiz->id);
-
-        if ($idParEdital === null) {
-            return null;
-        }
-
-        try {
-            $modelo = ($leitura ?? (new ModeloPlanilhaService())->doEdital(...))($idParEdital);
-        } catch (IntegrationError) {
-            $modelo = null;
-        }
-
-        return $modelo ?? ['possui' => null, 'motivo' => i::__('Não foi possível consultar o modelo de planilha no CultBR. Tente novamente em instantes.'), 'modelo' => null, 'nomeModelo' => null];
     }
 
     private function impedimentos(Opportunity $raiz, ?array $estrutura, ?array $planilha): array
@@ -562,8 +536,13 @@ class FormularioResultadoService
     {
         $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
-        return $estrutura !== null
-            && $this->impedimentos($raiz, $estrutura, $this->planilhaDoEnvio($raiz)) === self::SEM_IMPEDIMENTOS;
+        if ($estrutura === null) {
+            return false;
+        }
+
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id, isEnvio: true);
+
+        return $this->impedimentos($raiz, $estrutura, $planilha) === self::SEM_IMPEDIMENTOS;
     }
 
     /** Falta alguma resposta? Não olha a planilha, que o envio confere por conta própria. */

@@ -8,11 +8,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\InMemoryProvider;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 
 /** Leitura e cache do modelo de planilha do edital. */
 class ModeloPlanilhaServiceTest extends TestCase
 {
+    use LoadsConectaResponses;
     use SendsOpportunityThroughJob;
 
     private static int $edital = 800000;
@@ -34,12 +36,32 @@ class ModeloPlanilhaServiceTest extends TestCase
     public function testModeloDoEditalFicaGuardado(): void
     {
         $this->comServico(300, function (ModeloPlanilhaService $servico, int $edital) {
-            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true, 'modelo' => 'tec', 'nome_modelo' => 'TEC'];
-            $esperado = ['possui' => true, 'motivo' => null, 'modelo' => 'tec', 'nomeModelo' => 'TEC'];
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => [
+                'possui_planilha' => true, 'modelo' => 'tec', 'nome_modelo' => 'TEC', 'campos' => [['coluna' => 'cpf', 'tipo' => 'cpf']],
+            ];
+            $esperado = ['possui' => true, 'motivo' => null, 'modelo' => 'tec', 'nomeModelo' => 'TEC', 'colunas' => [
+                ['coluna' => 'cpf', 'nome' => 'cpf', 'tipo' => 'cpf', 'obrigatoriedade' => '', 'condicao' => null, 'opcoes' => null, 'observacao' => null],
+            ]];
 
             $this->assertSame($esperado, $servico->doEdital($edital));
             $this->assertSame($esperado, $servico->doEdital($edital));
             $this->assertSame([$edital], FakeIntegrationProvider::$modelosBuscados);
+        });
+    }
+
+    public function testColunasVemDoModeloNaOrdemDele(): void
+    {
+        $this->comServico(0, function (ModeloPlanilhaService $servico, int $edital) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+
+            $colunas = $servico->doEdital($edital)['colunas'];
+
+            $this->assertCount(10, $colunas);
+            $this->assertSame([
+                'coluna' => 'cnpj', 'nome' => 'CNPJ', 'tipo' => 'cnpj', 'obrigatoriedade' => 'condicional',
+                'condicao' => 'Em caso de pessoa jurídica ou MEI', 'opcoes' => null, 'observacao' => 'Validar CNPJ',
+            ], $colunas[1]);
+            $this->assertSame(['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena'], $colunas[4]['opcoes']);
         });
     }
 

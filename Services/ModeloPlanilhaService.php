@@ -7,6 +7,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\FetchesModeloPlanilha;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
+use MapasCulturais\i;
 
 /** Modelo de planilha que o CultBR define para o resultado de cada edital. */
 class ModeloPlanilhaService
@@ -17,8 +18,36 @@ class ModeloPlanilhaService
     private const CACHE_FALHA_TTL = 60;
 
     /**
+     * Situação da planilha na oportunidade: null fora do PAR, `possui` nulo quando a origem não responde.
+     * @param bool $isEnvio relê da origem em vez de usar o guardado
+     * @return array{possui: ?bool, motivo: ?string, modelo: ?string, nomeModelo: ?string, colunas: list<array>}|null
+     */
+    public function daOportunidade(int $opportunityId, bool $isEnvio = false): ?array
+    {
+        $idParEdital = (new ResultadoService())->parEditalId($opportunityId);
+
+        if ($idParEdital === null) {
+            return null;
+        }
+
+        try {
+            $modelo = $isEnvio ? $this->doEnvio($idParEdital) : $this->doEdital($idParEdital);
+        } catch (IntegrationError) {
+            $modelo = null;
+        }
+
+        return $modelo ?? [
+            'possui' => null,
+            'motivo' => i::__('Não foi possível consultar o modelo de planilha no CultBR. Tente novamente em instantes.'),
+            'modelo' => null,
+            'nomeModelo' => null,
+            'colunas' => [],
+        ];
+    }
+
+    /**
      * Modelo do edital, guardado pelo tempo do formulário, ou null quando a origem não responde.
-     * @return array{possui: bool, motivo: ?string, modelo: ?string, nomeModelo: ?string}|null
+     * @return array{possui: bool, motivo: ?string, modelo: ?string, nomeModelo: ?string, colunas: list<array>}|null
      */
     public function doEdital(int $idParEdital): ?array
     {
@@ -41,7 +70,7 @@ class ModeloPlanilhaService
 
     /**
      * Modelo relido da origem, que também regrava o guardado; a falha segue como erro.
-     * @return array{possui: bool, motivo: ?string, modelo: ?string, nomeModelo: ?string}
+     * @return array{possui: bool, motivo: ?string, modelo: ?string, nomeModelo: ?string, colunas: list<array>}
      */
     public function doEnvio(int $idParEdital): array
     {
@@ -56,6 +85,7 @@ class ModeloPlanilhaService
             'motivo' => $resposta['motivo'] ?? null,
             'modelo' => $resposta['modelo'] ?? null,
             'nomeModelo' => $resposta['nome_modelo'] ?? null,
+            'colunas' => array_map($this->coluna(...), $resposta['campos'] ?? []),
         ];
 
         if ($this->ttl() > 0) {
@@ -63,6 +93,20 @@ class ModeloPlanilhaService
         }
 
         return $modelo;
+    }
+
+    /** Coluna como a origem a declara; o que ela não traz fica nulo. */
+    private function coluna(array $campo): array
+    {
+        return [
+            'coluna' => (string) ($campo['coluna'] ?? ''),
+            'nome' => (string) ($campo['nome'] ?? $campo['coluna'] ?? ''),
+            'tipo' => (string) ($campo['tipo'] ?? ''),
+            'obrigatoriedade' => (string) ($campo['obrigatoriedade'] ?? ''),
+            'condicao' => $campo['condicao'] ?? null,
+            'opcoes' => $campo['opcoes'] ?? null,
+            'observacao' => $campo['observacao'] ?? null,
+        ];
     }
 
     private function provider(): FetchesModeloPlanilha

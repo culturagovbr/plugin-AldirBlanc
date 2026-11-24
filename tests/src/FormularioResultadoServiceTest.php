@@ -329,10 +329,12 @@ class FormularioResultadoServiceTest extends TestCase
             FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9104;
             FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
             $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui']);
+            $this->assertTrue($servico->isEnvioLiberado($edital));
 
             FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
 
             $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui'], 'a tela segue com o guardado');
+            $this->assertFalse($servico->isEnvioLiberado($edital));
             $this->assertCount(1, $servico->impedimentosDoEnvio($edital)['bloqueios']);
         });
     }
