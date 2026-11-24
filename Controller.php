@@ -77,6 +77,9 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Hash do conteúdo do último resultado enviado; dispensa o reenvio quando a alteração não muda o payload. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH = 'cultBrResultadoLastPayloadHash';
 
+    /** Situação do último envio do resultado, para o gestor e para o próximo envio. */
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO = 'cultBrResultadoUltimoEnvio';
+
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_FORM = 'cultBrResultadoFormData';
 
     /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */

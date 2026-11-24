@@ -4,6 +4,7 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Enum\ResultadoStatus;
 use AldirBlanc\Enum\ResultadoTipo;
 use AldirBlanc\Exceptions\IntegrationError;
@@ -17,6 +18,9 @@ use MapasCulturais\Entities\Opportunity;
  */
 class ResultadoService
 {
+    /** Segundos, contados do POST, em que o CultBR ainda pode concluir um envio sem resposta. */
+    public const PRAZO_DO_ENVIO_EM_ANDAMENTO = 900;
+
     private OpportunityService $opportunityService;
 
     public function __construct()
@@ -105,6 +109,9 @@ class ResultadoService
             return;
         }
 
+        // Antes de enfileirar: com execução imediata, o job roda dentro da própria chamada.
+        $this->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => $this->agora()]);
+
         $delay ??= Plugin::getInstance()->config['integration']['delayJob'];
         $start = (new \DateTime())->modify($delay)->format('Y-m-d H:i:s');
 
@@ -125,6 +132,90 @@ class ResultadoService
     public function persistResultadoLastPayloadHash(int $raizId, string $hash): void
     {
         $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH, $hash);
+    }
+
+    /**
+     * Situação do último envio, ou null se nunca houve; o que passou do prazo em andamento vem sem confirmação.
+     * @return array{situacao: string, em: string, tipo: ?int, id: ?int, mensagem: ?string, recusas: array, novoPedidoEm: ?string}|null
+     */
+    public function ultimoEnvio(int $raizId): ?array
+    {
+        $gravado = $this->ultimoEnvioGravado($raizId);
+
+        if ($gravado === null) {
+            return null;
+        }
+
+        $situacao = EnvioSituacao::from($gravado['situacao']);
+        $isNoPrazo = $this->isNoPrazo($gravado['contadoDe']);
+
+        return [
+            'situacao' => ($situacao->isEmAndamento() && !$isNoPrazo ? EnvioSituacao::SemConfirmacao : $situacao)->value,
+            'em' => $gravado['em'],
+            'tipo' => $gravado['tipo'],
+            'id' => $gravado['id'],
+            'mensagem' => $gravado['mensagem'],
+            'recusas' => $gravado['recusas'],
+            'novoPedidoEm' => $situacao->isSemDesfecho() && $isNoPrazo ? $this->fimDoPrazo($gravado['contadoDe'])->format(\DateTime::ATOM) : null,
+        ];
+    }
+
+    /**
+     * Envio que saiu e ficou sem desfecho, a conferir na origem antes de qualquer outro.
+     * @return array{idsAntes: list<int>, hash: string, tipo: int, em: string}|null
+     */
+    public function envioAConferir(int $raizId): ?array
+    {
+        return $this->ultimoEnvioGravado($raizId)['aConferir'] ?? null;
+    }
+
+    /** O CultBR ainda pode estar processando um envio sem resposta? */
+    public function isEnvioAConferirNoPrazo(int $raizId): bool
+    {
+        $aConferir = $this->envioAConferir($raizId);
+
+        return $aConferir !== null && $this->isNoPrazo($aConferir['em']);
+    }
+
+    /** Grava a situação; o envio a conferir e o início do prazo seguem os mesmos até que `$dados` os mude. */
+    public function persistUltimoEnvio(int $raizId, EnvioSituacao $situacao, array $dados = []): void
+    {
+        $anterior = $this->ultimoEnvioGravado($raizId);
+
+        $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, (string) json_encode($dados + [
+            'oportunidade' => $raizId,
+            'situacao' => $situacao->value,
+            'em' => $this->agora(),
+            'contadoDe' => $anterior['contadoDe'] ?? $this->agora(),
+            'aConferir' => $anterior['aConferir'] ?? null,
+            'tipo' => null,
+            'id' => null,
+            'mensagem' => null,
+            'recusas' => [],
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    /** Duplicar ou gerar edital copia o metadado: o de outra oportunidade não vale. */
+    private function ultimoEnvioGravado(int $raizId): ?array
+    {
+        $gravado = json_decode((string) $this->meta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO), true);
+
+        return is_array($gravado) && ($gravado['oportunidade'] ?? null) === $raizId ? $gravado : null;
+    }
+
+    private function agora(): string
+    {
+        return (new \DateTime())->format(\DateTime::ATOM);
+    }
+
+    private function fimDoPrazo(string $contadoDe): \DateTime
+    {
+        return (new \DateTime($contadoDe))->modify('+' . self::PRAZO_DO_ENVIO_EM_ANDAMENTO . ' seconds');
+    }
+
+    private function isNoPrazo(string $contadoDe): bool
+    {
+        return new \DateTime() < $this->fimDoPrazo($contadoDe);
     }
 
     private function upsertMeta(int $raizId, string $key, string $value): void

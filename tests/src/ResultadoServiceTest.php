@@ -4,6 +4,7 @@ namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Opportunity;
@@ -107,6 +108,20 @@ class ResultadoServiceTest extends TestCase
             $this->assertSame(3, $payload['id_status']);
             $this->assertStringStartsWith('2026-10-10T12:00:00', $payload['data_publicacao'], 'o final carrega a data da publicação no Mapas');
         });
+    }
+
+    public function testGravarASituacaoDeNovoNaoRenovaOPrazo(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $inicio = (new \DateTime('-5 minutes'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Enviando, ['contadoDe' => $inicio]);
+
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::SemConfirmacao);
+
+        $this->assertSame(
+            (new \DateTime($inicio))->modify('+' . ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO . ' seconds')->format(\DateTime::ATOM),
+            $this->service()->ultimoEnvio((int) $raiz->id)['novoPedidoEm'],
+        );
     }
 
     private function contempladaCompleta(Opportunity $raiz, Opportunity $fase): void

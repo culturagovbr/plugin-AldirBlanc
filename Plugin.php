@@ -263,6 +263,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, [
+            'label' => i::__('Último envio do resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, [
             'label' => i::__('Respostas do formulário de resultado (CultBR)'),
             'type' => 'json',
