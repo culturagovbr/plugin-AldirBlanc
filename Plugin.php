@@ -160,6 +160,13 @@ class Plugin extends \MapasCulturais\Plugin
             $this->render('resultado-beneficiarios', ['entity' => $opportunity]);
         });
 
+        // A consulta pública do edital traz o nome até do arquivo privado.
+        $app->hook('ApiQuery(<<*>>Opportunity).findResult', function (array &$editais) {
+            foreach ($editais as &$edital) {
+                unset($edital['files'][ResultadoAnexosService::GRUPO], $edital['@files:' . ResultadoAnexosService::GRUPO]);
+            }
+        });
+
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
         // ownerEntity inexistente cause null dereference no core.

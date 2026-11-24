@@ -5,6 +5,7 @@ namespace Tests\AldirBlanc;
 use AldirBlanc\Controller;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\ResultadoAnexosService;
+use MapasCulturais\ApiQuery;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\OpportunityFile;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -331,5 +332,38 @@ class ResultadoAnexosServiceTest extends TestCase
             $this->assertSame([$arquivo, $solto], $this->doEdital($raiz));
             $this->assertSame([30 => [$arquivo->id], 10 => true], $this->respostas($raiz, $estrutura));
         });
+    }
+
+    #[DataProvider('consultasPublicas')]
+    public function testConsultaPublicaDoEditalNaoTrazODocumento(array $consulta, bool $isPelaFase = false): void
+    {
+        $this->noEdital(function (ResultadoAnexosService $anexos, Opportunity $raiz) use ($consulta, $isPelaFase) {
+            $this->anexa($anexos, 30, 'nome-reservado.pdf');
+            $regulamento = $this->arquivo('regulamento.pdf');
+            $regulamento->owner = $raiz;
+            $regulamento->group = 'rules';
+            $regulamento->save(true);
+            $this->apagaNoFim($regulamento);
+            $id = $isPelaFase ? $raiz->lastPhase->id : $raiz->id;
+            $this->logout();
+
+            $retorno = json_encode((new ApiQuery(Opportunity::class, ['id' => "EQ({$id})"] + $consulta))->findOne());
+
+            $this->assertStringContainsString('regulamento', $retorno);
+            $this->assertStringNotContainsString('nome-reservado', $retorno);
+        });
+    }
+
+    public static function consultasPublicas(): array
+    {
+        $grupo = ResultadoAnexosService::GRUPO;
+
+        return [
+            'tudo' => [['@select' => '*']],
+            'arquivos' => [['@select' => 'id,files']],
+            'grupo' => [['@select' => "id,files.rules,files.{$grupo}"]],
+            'pela fase' => [['@select' => 'id,parent.{id,files}', 'status' => 'EQ(-1)'], true],
+            'formato antigo' => [['@select' => 'id', '@files' => "(rules,{$grupo}):name,url"]],
+        ];
     }
 }
