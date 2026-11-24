@@ -26,6 +26,7 @@ trait SendsOpportunityThroughJob
         'parAcoesEndpoint' => 'par/acoes',
         'oportunidadeEndpoint' => 'oportunidades/{id}',
         'listarOportunidadesEndpoint' => 'oportunidades',
+        'resultadoPublicadoEndpoint' => 'editais/{id_edital}/resultado/publicado',
         'modeloPlanilhaEndpoint' => 'editais/{id_edital}/resultado/modelo-planilha',
         'criarResultadoEndpoint' => 'editais/{id_edital}/resultado',
         'formularioEstruturaEndpoint' => 'par/formularios/estrutura',
