@@ -3,11 +3,13 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -179,6 +181,8 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
         $this->assertSame(['error'], $this->statusNoHistorico($raiz));
         $this->assertFalse($this->resultadoId((int) $raiz->id));
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertStringContainsString('consultar o CultBR', $this->ultimoEnvio($raiz)['mensagem']);
     }
 
     public static function leiturasIndeterminadas(): array
@@ -255,28 +259,293 @@ class ResultadoCultJobTest extends TestCase
         $this->assertCount(0, $this->app->repo(Job::class)->findAll());
     }
 
-    function testFalhaDeServidorReenfileira()
+    /** Roda o envio com o POST falhando depois de sair. */
+    private function processaComFalha(Opportunity $raiz, \Throwable $falha): void
+    {
+        $this->processaComResposta($raiz, null, null, function () use ($falha) {
+            FakeIntegrationProvider::$aoEnviarResultado = fn() => throw $falha;
+        });
+    }
+
+    private function falhaDoPost(IntegrationError $causa): SendFailed
+    {
+        return new SendFailed($this->desfecho(['result' => SendResult::Error, 'httpStatus' => $causa->httpStatus()]), $causa);
+    }
+
+    private function ultimoEnvio(Opportunity $raiz): array
+    {
+        return (new ResultadoService())->ultimoEnvio((int) $raiz->id);
+    }
+
+    #[DataProvider('falhasSemConfirmacao')]
+    public function testFalhaDepoisDoPostFicaSemConfirmacaoESemNovoJob(IntegrationError $causa): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
-        $this->comProvedorDuble(
-            fn() => $this->desfecho(),
-            function () use ($raiz) {
-                FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 1;
-                FakeIntegrationProvider::$aoBuscarFormulario = fn() => self::ESTRUTURA_SEM_OBRIGATORIAS;
-                FakeIntegrationProvider::$aoEnviarResultado = function () {
-                    throw new SendFailed(
-                        $this->desfecho(['result' => SendResult::Error, 'httpStatus' => 500]),
-                        IntegrationError::http('erro interno', 500)
-                    );
-                };
-                $this->enfileira($raiz);
-                $this->processJobs(number_of_jobs: 1);
-            }
+        $this->processaComFalha($raiz, $this->falhaDoPost($causa));
+
+        $this->assertSame('sem-confirmacao', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertNotNull($this->ultimoEnvio($raiz)['novoPedidoEm'], 'o CultBR ainda pode estar processando');
+        $this->assertNotNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+        $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'o POST nunca se repete sozinho');
+        $tentativa = $this->logs((int) $raiz->id)[0]['attempts'][0];
+        $this->assertSame([1, 1], [$tentativa['attempt'], $tentativa['maxAttempts']]);
+    }
+
+    public static function falhasSemConfirmacao(): array
+    {
+        return [
+            'erro do servidor' => [IntegrationError::http('erro interno', 500)],
+            'redirecionamento' => [IntegrationError::http('redirecionado', 302)],
+            'aceite vazio' => [IntegrationError::parse('API não retornou resposta', 201)],
+            'aceite ilegível' => [IntegrationError::parse('Resposta da API não é um JSON válido', 201, '<html>')],
+            'tempo esgotado' => [IntegrationError::transport('Operation timed out', 28)],
+        ];
+    }
+
+    #[DataProvider('recusas')]
+    public function testQuatrocentosERecusaENaoDeixaEnvioAConferir(int $status): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComFalha($raiz, $this->falhaDoPost(IntegrationError::http('recusado', $status)));
+
+        $this->assertSame('recusado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertNull($this->ultimoEnvio($raiz)['novoPedidoEm']);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+        $this->assertFalse($this->hashGravado($raiz));
+    }
+
+    public static function recusas(): array
+    {
+        return ['400' => [400], '422' => [422], '499' => [499]];
+    }
+
+    public function testFalhaQueOProvedorNaoLancouFicaSemConfirmacao(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, null, null, function () {
+            FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->desfecho(['result' => SendResult::Error]);
+        });
+
+        $this->assertSame('sem-confirmacao', $this->ultimoEnvio($raiz)['situacao']);
+    }
+
+    public function testFaltaDeConfiguracaoDescobertaNoPostNaoFicaSemConfirmacao(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComFalha($raiz, IntegrationError::configuration('PNAB_CULTBR_HOST', 'sem valor'));
+
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
+    private function hashGravado(Opportunity $raiz): string|false
+    {
+        return $this->metaGravado($raiz, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH);
+    }
+
+    private function metaGravado(Opportunity $raiz, string $chave): string|false
+    {
+        $row = $this->app->em->getConnection()->fetchAssociative(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => (int) $raiz->id, 'key' => $chave]
         );
 
-        $jobs = $this->app->repo(Job::class)->findBy(['type' => ResultadoCultJob::SLUG]);
-        $this->assertCount(1, $jobs, 'falha de servidor merece retentativa');
+        return $row === false ? false : (string) $row['value'];
+    }
+
+    public function testSituacaoEnviandoEGravadaAntesDoPost(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $durante = null;
+
+        $this->processaComResposta($raiz, null, null, function () use ($raiz, &$durante) {
+            FakeIntegrationProvider::$aoListarPublicados = fn() => [20010];
+            FakeIntegrationProvider::$aoEnviarResultado = function () use ($raiz, &$durante) {
+                $service = new ResultadoService();
+                $durante = [$service->ultimoEnvio((int) $raiz->id)['situacao'], $service->envioAConferir((int) $raiz->id)['idsAntes']];
+
+                return $this->desfecho(['response' => '{"id_par_edital_resultado": 777}']);
+            };
+        });
+
+        $this->assertSame(['enviando', [20010]], $durante);
+        $depois = $this->ultimoEnvio($raiz);
+        $this->assertSame(['publicado', 777, 2, null], [$depois['situacao'], $depois['id'], $depois['tipo'], $depois['novoPedidoEm']]);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
+    /** Envio anterior que saiu e ficou sem resposta, com o POST há tantos segundos. */
+    private function deixaEnvioAConferir(Opportunity $raiz, int $segundos, array $idsAntes, string $hash, EnvioSituacao $situacao = EnvioSituacao::SemConfirmacao): string
+    {
+        $em = (new \DateTime("-{$segundos} seconds"))->format(\DateTime::ATOM);
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, $situacao, [
+            'contadoDe' => $em,
+            'tipo' => 2,
+            'aConferir' => ['idsAntes' => $idsAntes, 'hash' => $hash, 'tipo' => 2, 'em' => $em],
+        ]);
+
+        return $em;
+    }
+
+    private const VENCIDO = ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1;
+
+    #[DataProvider('situacoesSemDesfecho')]
+    public function testEnvioSemDesfechoDentroDoPrazoEncerraSemLerESemPost(EnvioSituacao $situacao): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO - 60, [], 'x', $situacao);
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+
+        $this->assertSame([], FakeIntegrationProvider::$passos);
+        $this->assertSame($situacao->value, $this->ultimoEnvio($raiz)['situacao'], 'a situação não muda');
+    }
+
+    public static function situacoesSemDesfecho(): array
+    {
+        return ['enviando' => [EnvioSituacao::Enviando], 'sem confirmação' => [EnvioSituacao::SemConfirmacao]];
+    }
+
+    /** Hash que o conteúdo do edital tem agora, com a estrutura sem obrigatórias. */
+    private function hashDeAgora(): string
+    {
+        return $this->hash([]);
+    }
+
+    #[DataProvider('situacoesSemDesfecho')]
+    public function testEnvioQueChegouComOMesmoConteudoEAdotadoSemPost(EnvioSituacao $situacao): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], $this->hashDeAgora(), $situacao);
+
+        // No edital 53809 o retificado tem data anterior, e o publicado continua apontando o final.
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20010;
+            FakeIntegrationProvider::$aoListarPublicados = fn() => [20010, 20011];
+        });
+
+        $this->assertSame(['lista'], FakeIntegrationProvider::$passos);
+        $this->assertSame('20011', $this->resultadoId((int) $raiz->id));
+        $this->assertSame($this->hashDeAgora(), $this->hashGravado($raiz));
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame(['publicado', 20011, 2], [$ultimo['situacao'], $ultimo['id'], $ultimo['tipo']]);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
+    public function testEnvioQueChegouComOutroConteudoEAdotadoESaiORetificado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [], 'conteudo-anterior');
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20010;
+            FakeIntegrationProvider::$aoListarPublicados = fn() => [20010];
+        });
+
+        $this->assertSame(['lista', 'publicado', 'lista', 'envio'], FakeIntegrationProvider::$passos);
+        $this->assertSame(3, FakeIntegrationProvider::$resultadosEnviados[0]['payload']->id_tipo);
+        $this->assertSame('777', $this->resultadoId((int) $raiz->id));
+        $this->assertSame($this->hashDeAgora(), $this->hashGravado($raiz));
+    }
+
+    public function testEnvioQueNaoChegouSegueComUmUnicoPost(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], $this->hashDeAgora());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20010;
+            FakeIntegrationProvider::$aoListarPublicados = fn() => [20010];
+        });
+
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados, 'o hash de um envio não entregue não dispensa o reenvio');
+        $this->assertSame('publicado', $this->ultimoEnvio($raiz)['situacao']);
+    }
+
+    public function testEnvioQueNaoChegouDeixaDeSerConferidoMesmoSemNovoPost(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], 'outro');
+        (new ResultadoService())->persistResultadoLastPayloadHash((int) $raiz->id, $this->hashDeAgora());
+
+        $this->processaComResposta($raiz, null, null, fn() => FakeIntegrationProvider::$aoListarPublicados = fn() => [20010]);
+
+        $this->assertSame('nada-mudou', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
+    }
+
+    public function testPrazoContaDoPostENaoDoPedido(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, [
+            'contadoDe' => (new \DateTime('-10 minutes'))->format(\DateTime::ATOM),
+        ]);
+
+        $this->processaComFalha($raiz, $this->falhaDoPost(IntegrationError::transport('Operation timed out', 28)));
+
+        $this->assertGreaterThan(new \DateTime('+10 minutes'), new \DateTime($this->ultimoEnvio($raiz)['novoPedidoEm']));
+    }
+
+    public function testConciliacaoIndeterminadaNaoEnviaENaoRenovaOPrazo(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], $this->hashDeAgora());
+        // O novo pedido reinicia a contagem só do pedido, não do POST anterior.
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => (new \DateTime())->format(\DateTime::ATOM)]);
+
+        $this->processaComResposta($raiz, null, null, function () {
+            FakeIntegrationProvider::$aoListarPublicados = fn() => throw IntegrationError::transport('Connection timed out', 28);
+        });
+
+        $this->assertSame(['lista'], FakeIntegrationProvider::$passos);
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame('sem-confirmacao', $ultimo['situacao']);
+        $this->assertStringContainsString('consultar o CultBR', $ultimo['mensagem']);
+        $this->assertNull($ultimo['novoPedidoEm'], 'o gestor pode pedir de novo');
+        $this->assertSame([20010], (new ResultadoService())->envioAConferir((int) $raiz->id)['idsAntes'], 'o envio segue a conferir');
+        $this->assertSame(['error'], $this->statusNoHistorico($raiz));
+    }
+
+    public function testConciliacaoIndeterminadaNaoDispensaPeloHash(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        (new ResultadoService())->persistResultadoLastPayloadHash((int) $raiz->id, $this->hashDeAgora());
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], 'outro');
+
+        $this->processaComResposta($raiz, null, null, function () {
+            FakeIntegrationProvider::$aoListarPublicados = fn() => throw IntegrationError::transport('Connection timed out', 28);
+        });
+
+        $this->assertSame('sem-confirmacao', $this->ultimoEnvio($raiz)['situacao']);
+    }
+
+    public function testPedidoVencidoQueNaoChegouAoPostNaoConcilia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, [
+            'contadoDe' => (new \DateTime('-' . self::VENCIDO . ' seconds'))->format(\DateTime::ATOM),
+        ]);
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+
+        $this->assertSame(['publicado', 'lista', 'envio'], FakeIntegrationProvider::$passos);
+    }
+
+    public function testImpedimentoNaHoraDeExecutarMantemOEnvioAConferir(): void
+    {
+        $owner = $this->userDirector->createUser();
+        $raiz = $this->raizElegivel($owner, $this->integrationSubsite($owner, 'Subsite Conferir Despublicado'));
+        $this->faseFinal($raiz, publicada: false);
+        $this->deixaEnvioAConferir($raiz, self::VENCIDO, [20010], 'x');
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertSame([20010], (new ResultadoService())->envioAConferir((int) $raiz->id)['idsAntes']);
     }
 
     function testIneligivelNaExecucaoNaoEnviaNada()
@@ -301,6 +570,8 @@ class ResultadoCultJobTest extends TestCase
             ['id' => (int) $raiz->id]
         );
         $this->assertSame([], $logs, 'sem envio não há nem registro de tentativa');
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertStringContainsString('não está publicado', $this->ultimoEnvio($raiz)['mensagem']);
     }
 
     function testFormularioIncompletoNaExecucaoNaoEnvia()
@@ -314,6 +585,7 @@ class ResultadoCultJobTest extends TestCase
         $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $estruturaComObrigatoria);
 
         $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados, 'sem formulário completo o envio tomaria 422 do validador');
+        $this->assertStringContainsString('incompleto', $this->ultimoEnvio($raiz)['mensagem']);
     }
 
     function testEnvioSimuladoFechaOLogComoSimuladoESemMetadado()
@@ -335,6 +607,8 @@ class ResultadoCultJobTest extends TestCase
         );
         $this->assertSame(['simulated'], $status, 'simulado não pode se passar por envio aceito pela API');
         $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'simulado conclui sem retry');
+        $this->assertSame('simulado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
     }
 
     function testReenvioComConteudoIdenticoNaoViraRetificado()
@@ -349,6 +623,7 @@ class ResultadoCultJobTest extends TestCase
 
         $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados, 'payload idêntico ao último não vira retificado novo');
         $this->assertSame('777', $this->resultadoId((int) $raiz->id), 'sem reenvio, o id vigente permanece o do primeiro');
+        $this->assertSame('nada-mudou', $this->ultimoEnvio($raiz)['situacao']);
     }
 
     function testAlteracaoRealDeConteudoReenvia()
@@ -486,17 +761,36 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
         $this->assertSame(['error'], $this->statusNoHistorico($raiz));
         $this->assertCount(0, $this->app->repo(Job::class)->findAll(), 'repetir não muda o modelo do edital');
+        $this->assertStringContainsString('planilha de contemplados', $this->ultimoEnvio($raiz)['mensagem']);
     }
 
-    public function testFalhaAoLerOModeloNaoEnviaEReenfileira(): void
+    public function testFalhaAoLerOModeloNaoEnviaEApareceNoHistorico(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->processaComModelo($raiz, fn() => throw IntegrationError::transport('Connection timed out', 28));
 
         $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
-        $this->assertCount(1, $this->app->repo(Job::class)->findBy(['type' => ResultadoCultJob::SLUG]), 'a origem pode voltar');
-        $this->assertCount(1, $this->statusNoHistorico($raiz), 'a tentativa aparece no histórico');
+        $this->assertCount(0, $this->app->repo(Job::class)->findAll());
+        $this->assertSame(['error'], $this->statusNoHistorico($raiz));
+        $this->assertStringContainsString('consultar o CultBR', $this->ultimoEnvio($raiz)['mensagem']);
+    }
+
+    public function testConteudoQueNaoSeMontaNaoEnvia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () {
+            $leituras = 0;
+            // A primeira leitura é a da completude; as seguintes, as da montagem.
+            FakeIntegrationProvider::$aoBuscarFormulario = function () use (&$leituras) {
+                return ++$leituras === 1 ? self::ESTRUTURA_SEM_OBRIGATORIAS : throw new \RuntimeException('montagem');
+            };
+        });
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+        $this->assertStringContainsString('montar o envio', $this->ultimoEnvio($raiz)['mensagem']);
+        $this->assertNull((new ResultadoService())->envioAConferir((int) $raiz->id));
     }
 
     public function testEditalSemModeloDePlanilhaEnvia(): void
@@ -566,5 +860,7 @@ class ResultadoCultJobTest extends TestCase
             ['id' => (int) $raiz->id]
         );
         $this->assertSame(['error'], $resultados, 'o envio frustrado fica visível na aba de logs');
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertStringContainsString('não está configurado', $this->ultimoEnvio($raiz)['mensagem']);
     }
 }
