@@ -7,12 +7,15 @@ use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\i;
 
-/**
- * De/para por edital: liga cada coluna "prevista" da planilha acao_cultural_realizada a um campo
- * da ficha de inscrição, já que o título e a existência do campo variam de edital para edital.
- */
+/** De/para por edital: de onde vem cada coluna da planilha de contemplados que o CultBR define para ele. */
 class ResultadoDeParaService
 {
+    /** Prefixo da fonte que é um campo da ficha, seguido do id do campo. */
+    public const FONTE_CAMPO = 'campo:';
+    public const FONTE_TIPO_DE_PROPONENTE = 'inscricao:tipo';
+    public const FONTE_FAIXA = 'inscricao:faixa';
+    public const FONTE_VALOR_POR_CONTEMPLADO = 'inscricao:valor';
+
     /**
      * Colunas que vêm de campo da ficha. Ficam fora: automáticos (cpf, valor da categoria) e os de
      * pós-execução (datas efetivas, recebimento, cpfs remunerados), digitados direto na planilha.
@@ -115,18 +118,6 @@ class ResultadoDeParaService
         return $limpo;
     }
 
-    /** Pré-seleção por título normalizado + tipo do campo; é palpite, o gestor revisa e corrige. */
-    public function sugestao(array $campos): array
-    {
-        $sugestao = [];
-
-        foreach (self::COLUNAS as $chave => $def) {
-            $sugestao[$chave] = $this->melhorCampo($campos, $def);
-        }
-
-        return $sugestao;
-    }
-
     /** Validado contra os campos reais do edital e persistido na raiz; devolve o mapeamento gravado. */
     public function salvarMapeamento(Opportunity $raiz, array $mapeamento): array
     {
@@ -147,31 +138,77 @@ class ResultadoDeParaService
         return $limpo;
     }
 
-    private function melhorCampo(array $campos, array $def): ?int
+    /** Dados da própria inscrição que também servem de fonte. */
+    public function dadosDaInscricao(): array
     {
-        foreach ($campos as $campo) {
-            if (!in_array($campo['fieldType'], $def['tipos'], true)) {
-                continue;
-            }
+        return [
+            ['fonte' => self::FONTE_TIPO_DE_PROPONENTE, 'title' => i::__('Tipo de proponente')],
+            ['fonte' => self::FONTE_FAIXA, 'title' => i::__('Faixa')],
+            ['fonte' => self::FONTE_VALOR_POR_CONTEMPLADO, 'title' => i::__('Valor por contemplado (valor da faixa dividido pelas vagas)')],
+        ];
+    }
 
-            $titulo = $this->normalizar($campo['title']);
-            foreach ($def['termos'] as $termo) {
-                if (str_contains($titulo, $termo)) {
-                    return $campo['id'];
-                }
+    /** Documento tem um campo por tipo de proponente: quem responde o CPF não é quem responde o CNPJ. */
+    public static function isPorTipoDeProponente(array $coluna): bool
+    {
+        return in_array($coluna['tipo'], ['cpf', 'cnpj'], true);
+    }
+
+    /**
+     * De onde vem cada coluna do modelo; vazio enquanto o gestor não mapeou este modelo.
+     * @return array<string, string|array<string, string>> fonte por coluna, ou fonte por tipo de proponente
+     */
+    public function fontes(int $raizId, ?string $modelo): array
+    {
+        $gravado = $this->metaJson($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA);
+
+        // Duplicar ou gerar edital copia o metadado, e outro modelo tem outras colunas.
+        return ($gravado['oportunidade'] ?? null) === $raizId && ($gravado['modelo'] ?? null) === $modelo
+            ? $gravado['fontes'] ?? []
+            : [];
+    }
+
+    /** Guarda só o que aponta para coluna do modelo e fonte do edital; devolve o que ficou gravado. */
+    public function salvarFontes(Opportunity $raiz, array $planilha, array $recebidas): array
+    {
+        $validas = $this->fontesValidas($raiz);
+        $fontes = [];
+
+        foreach ($planilha['colunas'] as $coluna) {
+            $fonte = $this->fonteAceita($coluna, $recebidas[$coluna['coluna']] ?? null, $validas);
+
+            if ($fonte !== null && $fonte !== []) {
+                $fontes[$coluna['coluna']] = $fonte;
             }
         }
 
-        return null;
+        $this->upsertMeta(
+            (int) $raiz->id,
+            Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA,
+            json_encode(['oportunidade' => (int) $raiz->id, 'modelo' => $planilha['modelo'], 'fontes' => $fontes], JSON_UNESCAPED_UNICODE),
+        );
+
+        return $fontes;
     }
 
-    private function normalizar(string $titulo): string
+    private function fonteAceita(array $coluna, mixed $fonte, array $validas): string|array|null
     {
-        $t = mb_strtolower($titulo, 'UTF-8');
-        $t = preg_replace('/^\s*\d+[.)]\s*/', '', $t);
-        $t = strtr($t, ['á' => 'a', 'à' => 'a', 'ã' => 'a', 'â' => 'a', 'é' => 'e', 'ê' => 'e', 'í' => 'i', 'ó' => 'o', 'ô' => 'o', 'õ' => 'o', 'ú' => 'u', 'ç' => 'c']);
+        if (!self::isPorTipoDeProponente($coluna)) {
+            return in_array($fonte, $validas, true) ? $fonte : null;
+        }
 
-        return trim($t);
+        $porTipo = array_intersect_key((array) $fonte, array_flip($this->tiposDeProponente()));
+
+        return array_filter($porTipo, fn(mixed $campo) => in_array($campo, $validas, true) && str_starts_with($campo, self::FONTE_CAMPO));
+    }
+
+    /** @return list<string> */
+    private function fontesValidas(Opportunity $raiz): array
+    {
+        return [
+            ...array_map(fn(int $id) => self::FONTE_CAMPO . $id, array_column($this->camposDaFicha($raiz), 'id')),
+            ...array_column($this->dadosDaInscricao(), 'fonte'),
+        ];
     }
 
     private function metaJson(int $raizId, string $key): array

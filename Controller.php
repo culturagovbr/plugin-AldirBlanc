@@ -22,6 +22,7 @@ use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
 use AldirBlanc\Services\FormularioEstrutura;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\ModeloPlanilhaService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
@@ -82,7 +83,10 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_FORM = 'cultBrResultadoFormData';
 
-    /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */
+    /** De/para por edital: coluna do modelo de planilha => fonte que a alimenta. */
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA = 'cultBrResultadoPlanilhaDePara';
+
+    /** De/para do formato antigo de planilha. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO = 'cultBrResultadoDocumentoPorTipo';
 
@@ -364,7 +368,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     }
 
     /**
-     * Campos da ficha do edital, colunas mapeáveis e o de/para salvo (ou a sugestão, se ainda não há).
+     * Colunas do modelo de planilha do edital, fontes possíveis e o de/para gravado.
      *
      * GET /aldirblanc/resultadoDePara?opportunityId=
      */
@@ -376,23 +380,27 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $service = new ResultadoDeParaService();
-        $campos = $service->camposDaFicha($opportunity);
-        $salvo = $service->mapeamento((int) $opportunity->id);
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $opportunity->id);
+        $mapeamento = $service->fontes((int) $opportunity->id, $planilha['modelo'] ?? null);
 
         $this->json([
-            'campos' => $campos,
-            'colunas' => $service->colunas(),
-            'mapeamento' => $salvo !== [] ? $salvo : $service->sugestao($campos),
-            'temMapeamentoSalvo' => $salvo !== [],
+            'planilha' => $planilha === null ? null : array_diff_key($planilha, ['colunas' => true]),
+            'colunas' => array_map(
+                fn(array $coluna) => $coluna + ['porTipoDeProponente' => ResultadoDeParaService::isPorTipoDeProponente($coluna)],
+                $planilha['colunas'] ?? [],
+            ),
+            'campos' => $service->camposDaFicha($opportunity),
+            'dadosDaInscricao' => $service->dadosDaInscricao(),
             'tiposDeProponente' => $service->tiposDeProponente(),
-            'documentoPorTipo' => $service->documentoPorTipo((int) $opportunity->id),
+            // (object): vazio precisa serializar como {} — como [] o cliente trataria o de/para como lista.
+            'mapeamento' => (object) $mapeamento,
         ]);
     }
 
     /**
      * Salva o de/para das colunas da planilha de resultado.
      *
-     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: id}, documentoPorTipo {tipo: id}
+     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: fonte ou {tipo: fonte}}
      */
     public function POST_resultadoDePara(): void
     {
@@ -407,11 +415,27 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service = new ResultadoDeParaService();
-        $salvo = $service->salvarMapeamento($opportunity, $mapeamento);
-        $documentoPorTipo = $service->salvarDocumentoPorTipo($opportunity, (array) ($this->data['documentoPorTipo'] ?? []));
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
 
-        $this->json(['mapeamento' => $salvo, 'documentoPorTipo' => $documentoPorTipo]);
+        $this->json(['mapeamento' => (object) (new ResultadoDeParaService())->salvarFontes($opportunity, $planilha, $mapeamento)]);
+    }
+
+    /** Modelo de planilha do edital, ou null com o motivo já respondido. */
+    private function planilhaDoEdital(Opportunity $opportunity): ?array
+    {
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $opportunity->id);
+
+        if (($planilha['possui'] ?? null) === true) {
+            return $planilha;
+        }
+
+        $isIndisponivel = $planilha !== null && $planilha['possui'] === null;
+        $this->errorJson($planilha['motivo'] ?? i::__('Este edital ainda não está integrado ao CultBR.'), $isIndisponivel ? 502 : 400);
+
+        return null;
     }
 
     /**

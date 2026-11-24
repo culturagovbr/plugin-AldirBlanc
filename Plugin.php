@@ -275,6 +275,12 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA, [
+            'label' => i::__('De/para da planilha de contemplados (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA, [
             'label' => i::__('De/para das colunas da planilha de resultado (CultBR)'),
             'type' => 'json',
