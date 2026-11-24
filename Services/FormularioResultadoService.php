@@ -100,7 +100,7 @@ class FormularioResultadoService
     public function formStateForOpportunity(Opportunity $raiz): array
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
-        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+        $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
         $estado = $this->estado($raiz, $estrutura, $automaticas + $respostas);
 
@@ -113,6 +113,7 @@ class FormularioResultadoService
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
             'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
+            'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
         ];
     }
 
@@ -407,7 +408,7 @@ class FormularioResultadoService
             return false;
         }
 
-        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+        $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
 
         return $this->faltantes($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura) + $respostas) === [];
     }
@@ -426,7 +427,7 @@ class FormularioResultadoService
         }
 
         $valores = $this->respostasAutomaticas($raiz, $estrutura)
-            + $this->savedRespostas((int) $raiz->id)
+            + $this->savedRespostas((int) $raiz->id, $estrutura)
             + $this->respostasSugeridas($raiz, $estrutura);
 
         $respostas = [];
@@ -498,10 +499,31 @@ class FormularioResultadoService
         return (bool) ($faseFinal && $faseFinal->isLastPhase && $faseFinal->publishedRegistrations);
     }
 
-    /** @return array<int, mixed> respostas salvas do formulário, por id_questao */
-    public function savedRespostas(int $raizId): array
+    /**
+     * Respostas salvas na versão vigente do formulário; as de outra versão não valem.
+     * @return array<int, mixed> por id_questao
+     */
+    public function savedRespostas(int $raizId, ?array $estrutura): array
     {
-        $respostas = $this->savedFormData($raizId)['respostas'] ?? [];
+        $dados = $this->savedFormData($raizId);
+
+        return $this->isDeOutraVersao($dados, $estrutura) ? [] : $this->respostasGravadas($dados);
+    }
+
+    private function isDeOutraVersao(array $dados, ?array $estrutura): bool
+    {
+        if ($estrutura === null || $this->respostasGravadas($dados) === []) {
+            return false;
+        }
+
+        $versaoGravada = isset($dados['id_formulario_versao']) ? (int) $dados['id_formulario_versao'] : null;
+
+        return $versaoGravada !== (new FormularioEstrutura($estrutura))->versao();
+    }
+
+    private function respostasGravadas(array $dados): array
+    {
+        $respostas = $dados['respostas'] ?? [];
 
         return is_array($respostas) ? $respostas : [];
     }
@@ -519,8 +541,7 @@ class FormularioResultadoService
         $respostas = array_diff_key($respostas, $automaticas);
         $respostas = array_diff_key($respostas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
 
-
-        $salvas = $this->savedRespostas($raizId);
+        $salvas = $this->savedRespostas($raizId, $estrutura);
 
         foreach ($respostas as $idQuestao => $valor) {
             if ($valor === null) {

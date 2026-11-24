@@ -20,6 +20,7 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
+use AldirBlanc\Services\FormularioEstrutura;
 use AldirBlanc\Services\FormularioRespostasValidator;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Jobs\GestorCultJob;
@@ -240,7 +241,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /**
      * Salva respostas (inclusive parciais) do formulário de resultado e devolve o estado novo.
      *
-     * POST /aldirblanc/resultadoFormulario — body: opportunityId, respostas {id_questao: valor}
+     * POST /aldirblanc/resultadoFormulario — body: opportunityId, id_formulario_versao, respostas {id_questao: valor}
      */
     public function POST_resultadoFormulario(): void
     {
@@ -274,6 +275,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        if ($this->isRespostaDeOutraVersao($estrutura)) {
+            $this->json(['versaoAlterada' => true] + $service->formStateForOpportunity($opportunity));
+            return;
+        }
+
         $erros = (new FormularioRespostasValidator($estrutura))->validate($respostas);
         if ($erros !== []) {
             $this->errorJson(['message' => i::__('Há respostas inválidas.'), 'respostas' => $erros], 400);
@@ -282,9 +288,15 @@ class Controller extends \MapasCulturais\Controllers\EntityController
 
         $service->saveRespostas($opportunity, $respostas, $estrutura);
 
-        $formState = $service->formStateForOpportunity($opportunity);
+        $this->json($service->formStateForOpportunity($opportunity));
+    }
 
-        $this->json($formState);
+    /** A aba aberta antes da troca de versão responde a questões que podem ter mudado de sentido. */
+    private function isRespostaDeOutraVersao(array $estrutura): bool
+    {
+        $versao = $this->data['id_formulario_versao'] ?? null;
+
+        return $versao !== null && (int) $versao !== (new FormularioEstrutura($estrutura))->versao();
     }
 
     /**

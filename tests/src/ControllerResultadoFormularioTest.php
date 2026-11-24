@@ -8,6 +8,7 @@ use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\User;
 use MapasCulturais\Exceptions\Halt;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\TestableController;
@@ -415,7 +416,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $this->postRespostas($raiz, [10 => 5]);
             $this->assertEquals(400, $this->responseStatus());
-            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id), 'o gate do servidor não deixa salvar');
+            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id, self::ESTRUTURA), 'o gate do servidor não deixa salvar');
         });
     }
 
@@ -456,7 +457,7 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $this->assertEquals(400, $this->responseStatus());
             $this->assertArrayHasKey('10', $payload['data']['respostas']);
-            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id));
+            $this->assertSame([], (new FormularioResultadoService())->savedRespostas((int) $raiz->id, self::ESTRUTURA));
         });
     }
 
@@ -469,6 +470,117 @@ class ControllerResultadoFormularioTest extends TestCase
 
             $this->assertEquals(400, $this->responseStatus());
             $this->assertArrayHasKey('30', $payload['data']['respostas']);
+        });
+    }
+
+    private function gravaRespostasNaVersao(Opportunity $raiz, int|string $versao, array $respostas): void
+    {
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 109, 'id_formulario_versao' => $versao, 'versao' => 1, 'respostas' => $respostas,
+        ]));
+    }
+
+    public function testRespostasDeOutraVersaoNaoVoltamParaATela(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaRespostasNaVersao($raiz, 100, [10 => 25, 999 => 'questão que saiu do formulário']);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertTrue($payload['versaoAlterada']);
+            $this->assertSame([], $payload['respostas']);
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'o que foi respondido em outra versão não completa esta');
+        });
+    }
+
+    public function testSalvarDepoisDaTrocaDeVersaoComecaDoZero(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaRespostasNaVersao($raiz, 100, [10 => 25, 999 => 'questão que saiu do formulário']);
+
+            $payload = $this->postRespostas($raiz, [11 => 'Cronograma cumprido.']);
+
+            $this->assertSame([11 => 'Cronograma cumprido.'], $payload['respostas']);
+            $this->assertFalse($payload['versaoAlterada']);
+        });
+    }
+
+    #[DataProvider('formasDaVersaoVigente')]
+    public function testRespostasDaVersaoVigenteNaoAvisamTroca(int|string $versao): void
+    {
+        $this->comFormulario(function () use ($versao) {
+            [, $raiz] = $this->cenario();
+            $this->gravaRespostasNaVersao($raiz, $versao, [10 => 25]);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertFalse($payload['versaoAlterada']);
+            $this->assertSame([10 => 25], $payload['respostas']);
+        });
+    }
+
+    public static function formasDaVersaoVigente(): array
+    {
+        $vigente = self::ESTRUTURA['id_formulario_versao'];
+
+        return ['número' => [$vigente], 'texto' => [(string) $vigente]];
+    }
+
+    public function testEditalSemRespostaGravadaNaoAvisaTroca(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+
+            $this->assertFalse($this->getFormulario($raiz)['versaoAlterada']);
+        });
+    }
+
+    public function testEditalEnviadoEmOutraVersaoSegueEnviado(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaRespostasNaVersao($raiz, 100, [10 => 25]);
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '20010');
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_ENVIADO, $payload['estado']);
+            $this->assertTrue($payload['versaoAlterada']);
+        });
+    }
+
+    public function testAbaAbertaEmVersaoAnteriorNaoGrava(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $controller = new TestableController();
+            $controller->data = ['opportunityId' => $raiz->id, 'id_formulario_versao' => 100, 'respostas' => [10 => 25]];
+
+            $payload = $this->callJson(fn() => $controller->callPostResultadoFormulario());
+
+            $this->assertEquals(200, $this->responseStatus());
+            $this->assertTrue($payload['versaoAlterada']);
+            $this->assertSame([], $payload['respostas']);
+            $this->assertSame(self::ESTRUTURA['id_formulario_versao'], $payload['estrutura']['id_formulario_versao'], 'a tela recebe o formulário vigente');
+        });
+    }
+
+    public function testAbaNaVersaoVigenteGrava(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $controller = new TestableController();
+            $controller->data = [
+                'opportunityId' => $raiz->id,
+                'id_formulario_versao' => (string) self::ESTRUTURA['id_formulario_versao'],
+                'respostas' => [10 => 25],
+            ];
+
+            $payload = $this->callJson(fn() => $controller->callPostResultadoFormulario());
+
+            $this->assertSame([10 => 25], $payload['respostas']);
         });
     }
 
