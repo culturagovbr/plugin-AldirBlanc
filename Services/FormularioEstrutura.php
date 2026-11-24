@@ -5,6 +5,10 @@ namespace AldirBlanc\Services;
 /** Estrutura do formulário de resultado publicada pelo PAR, com as questões por id. */
 final class FormularioEstrutura
 {
+    private const TIPOS_DE_ANEXO = ['anexo', 'múltiplos anexos'];
+
+    private const NOME_DA_PLANILHA = 'Planilha de resultados';
+
     /** @var array<int, array> por id_questao, na ordem do formulário */
     private array $questoes = [];
 
@@ -50,6 +54,20 @@ final class FormularioEstrutura
         $versao = $this->estrutura['id_formulario_versao'] ?? null;
 
         return $versao === null ? null : (int) $versao;
+    }
+
+    /** Questão que pede a planilha de contemplados; ela é montada pelo sistema, nunca anexada. */
+    public static function isPlanilha(array $questao): bool
+    {
+        return in_array($questao['tipo_questao'] ?? '', self::TIPOS_DE_ANEXO, true)
+            && str_contains((string) ($questao['tag'] ?? ''), 'planilha')
+            && mb_stripos((string) ($questao['nome'] ?? ''), self::NOME_DA_PLANILHA) === 0;
+    }
+
+    /** Questão que pede um documento do gestor em arquivo. */
+    public static function isDocumento(array $questao): bool
+    {
+        return in_array($questao['tipo_questao'] ?? '', self::TIPOS_DE_ANEXO, true) && !self::isPlanilha($questao);
     }
 
     /** @return list<array> opções da questão; nem toda `opcao` é lista de itens */

@@ -52,6 +52,51 @@ class FormularioEstruturaTest extends TestCase
         $this->assertSame([], (new FormularioEstrutura(null))->questoes());
     }
 
+    public function testPlanilhaEReconhecidaPelaTagEPeloNome(): void
+    {
+        $planilhas = [];
+        $anexos = 0;
+
+        foreach ([1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15, 16, 17, 20] as $tipo) {
+            foreach ((new FormularioEstrutura($this->respostaDaConecta("estrutura-tipo-{$tipo}")))->questoes() as $id => $questao) {
+                $isPlanilha = FormularioEstrutura::isPlanilha($questao);
+                $isDocumento = FormularioEstrutura::isDocumento($questao);
+                $isAnexo = in_array($questao['tipo_questao'], ['anexo', 'múltiplos anexos'], true);
+
+                $this->assertSame($isAnexo, $isPlanilha xor $isDocumento, $questao['nome']);
+                $anexos += (int) $isAnexo;
+                $planilhas = $isPlanilha ? [...$planilhas, $id] : $planilhas;
+            }
+        }
+
+        $this->assertSame(52, $anexos);
+        $this->assertSame([2077, 2966, 2967, 1790, 1935, 2850, 1979, 2001, 2549, 2742, 2757, 1811, 2786], $planilhas);
+    }
+
+    public function testPlanilhaDaVersaoAntigaEntraEADaComissaoNao(): void
+    {
+        $questoes = (new FormularioEstrutura($this->respostaDaConecta('estrutura-tipo-1-versao-296')))->questoes();
+
+        $this->assertTrue(FormularioEstrutura::isPlanilha($questoes[2077]), 'o nome não diferencia maiúsculas');
+        $this->assertFalse(FormularioEstrutura::isPlanilha($questoes[2078]), 'planilha da comissão é documento');
+    }
+
+    public function testSoAnexoComONomeNoInicioEPlanilha(): void
+    {
+        $questao = ['tipo_questao' => 'anexo', 'tag' => 'planilha', 'nome' => 'Anexo da planilha de resultados'];
+
+        $this->assertTrue(FormularioEstrutura::isDocumento($questao));
+        $this->assertFalse(FormularioEstrutura::isPlanilha(['tipo_questao' => 'texto', 'tag' => 'planilha', 'nome' => 'Planilha de resultados']));
+    }
+
+    public function testNomeDePlanilhaSemATagEDocumento(): void
+    {
+        $questao = ['tipo_questao' => 'anexo', 'tag' => 'outros', 'nome' => 'Planilha de resultados'];
+
+        $this->assertFalse(FormularioEstrutura::isPlanilha($questao));
+        $this->assertTrue(FormularioEstrutura::isDocumento($questao));
+    }
+
     public function testItensSaoSoOsDeOpcaoEmLista(): void
     {
         $estrutura = new FormularioEstrutura($this->respostaDaConecta('estrutura-tipo-1'));
