@@ -50,6 +50,21 @@ class FormularioResultadoService
         return $idTipoAcao === null ? null : $this->formStructureForTipoAcao($idTipoAcao);
     }
 
+    /** A mesma estrutura, relida da origem: o que vai ao CultBR não pode sair de uma versão guardada. */
+    public function formStructureForEnvio(int $opportunityId): ?array
+    {
+        $idTipoAcao = $this->parTipoAcaoForOpportunity($opportunityId);
+
+        if ($idTipoAcao === null) {
+            return null;
+        }
+
+        $estrutura = $this->provider()->fetchFormularioResultado($idTipoAcao);
+        $this->warmCache(self::CACHE_ESTRUTURA . $idTipoAcao, $estrutura, $this->formularioCacheTtl());
+
+        return $estrutura;
+    }
+
     /** Estrutura do formulário do tipo de ação, ou null quando não há formulário publicado (404). */
     public function formStructureForTipoAcao(int $idTipoAcao): ?array
     {
@@ -443,7 +458,7 @@ class FormularioResultadoService
      */
     public function impedimentosDoEnvio(Opportunity $raiz): array
     {
-        return $this->impedimentos($raiz, $this->formStructureForOpportunity((int) $raiz->id));
+        return $this->impedimentos($raiz, $this->formStructureForEnvio((int) $raiz->id));
     }
 
     private function impedimentos(Opportunity $raiz, ?array $estrutura): array
@@ -482,7 +497,7 @@ class FormularioResultadoService
     /** Nada impede o envio do formulário? Independe de já haver envio — vale para retificações. */
     public function isFormularioCompleto(Opportunity $raiz): bool
     {
-        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
         return $estrutura !== null && $this->impedimentos($raiz, $estrutura) === self::SEM_IMPEDIMENTOS;
     }
@@ -493,7 +508,7 @@ class FormularioResultadoService
      */
     public function respostasParaEnvio(Opportunity $raiz): ?array
     {
-        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
         if ($estrutura === null) {
             return null;

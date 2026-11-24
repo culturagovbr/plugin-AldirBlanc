@@ -274,4 +274,49 @@ class FormularioResultadoServiceTest extends TestCase
             $this->assertFalse($servico->isFormularioCompleto($edital));
         });
     }
+
+    public function testEstruturaDoEnvioVemDaOrigemERegravaOCache(): void
+    {
+        $editalId = $this->novoEditalId();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9101;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $servico->formStructureForOpportunity($editalId);
+
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 2];
+
+            $this->assertSame(['id_formulario_versao' => 1], $servico->formStructureForOpportunity($editalId), 'a tela segue com a guardada');
+            $this->assertSame(['id_formulario_versao' => 2], $servico->formStructureForEnvio($editalId));
+            $this->assertSame(['id_formulario_versao' => 2], $servico->formStructureForOpportunity($editalId), 'o envio regravou a guardada');
+        });
+    }
+
+    public function testEstruturaDoEnvioSemTipoDeAcaoNaoBuscaFormulario(): void
+    {
+        $editalId = $this->novoEditalId();
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
+
+            $this->assertNull($servico->formStructureForEnvio($editalId));
+            $this->assertSame([], FakeIntegrationProvider::$formulariosBuscados);
+        });
+    }
+
+    public function testCorpoDoEnvioNaoSaiDaEstruturaGuardada(): void
+    {
+        $owner = $this->userDirector->createUser();
+        $edital = $this->createOpportunity($owner);
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9103;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $servico->formStructureForOpportunity((int) $edital->id);
+
+            $servico->respostasParaEnvio($edital);
+
+            $this->assertCount(2, FakeIntegrationProvider::$formulariosBuscados);
+        });
+    }
 }
