@@ -3,12 +3,15 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Enum\SendResult;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Exceptions\SendFailed;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\FormularioResultadoService;
 use MapasCulturais\Entities\Job;
 use MapasCulturais\Entities\Opportunity;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
@@ -253,6 +256,120 @@ class ResultadoCultJobTest extends TestCase
 
         $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados, 'conteúdo diferente gera novo envio');
         $this->assertSame('888', $this->resultadoId((int) $raiz->id));
+    }
+
+    private function estruturaComRegra(): array
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 961]];
+
+        return ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 60, 'id_questao_etapa' => 960, 'nome' => 'Cotas', 'tipo_questao' => 'checkbox', 'opcao' => ['itens' => [['id' => 'a', 'label' => 'A'], ['id' => 'b', 'label' => 'B']]]],
+            ['id_questao' => 61, 'id_questao_etapa' => 961, 'nome' => 'Houve?', 'tipo_questao' => 'booleano'],
+            ['id_questao' => 62, 'id_questao_etapa' => 962, 'nome' => 'Comentário', 'tipo_questao' => 'textarea', 'config' => ['regras' => ['itens' => [$regra]]]],
+            ['id_questao' => 63, 'id_questao_etapa' => 963, 'nome' => 'Valor', 'tipo_questao' => 'moeda'],
+        ]]]]]];
+    }
+
+    #[DataProvider('mesmoConteudo')]
+    public function testMesmoConteudoEmOutraFormaDispensaOReenvio(array $primeiras, array $segundas): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, '{}');
+
+        $this->atualizaRespostasSalvas((int) $raiz->id, $primeiras);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $this->estruturaComRegra());
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
+
+        $this->atualizaRespostasSalvas((int) $raiz->id, $segundas);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $this->estruturaComRegra());
+        $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados);
+    }
+
+    public static function mesmoConteudo(): array
+    {
+        return [
+            'marcações em outra ordem' => [[60 => ['a', 'b']], [60 => ['b', 'a']]],
+            'com e sem resposta em questão invisível' => [[60 => ['a'], 61 => false], [60 => ['a'], 61 => false, 62 => 'Guardado.']],
+            'número com e sem casa decimal' => [[63 => 15000.0], [63 => '15000']],
+        ];
+    }
+
+    public function testMesmasRespostasEmOutraOrdemDaEstruturaDispensamOReenvio(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, '{}');
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => ['a'], 61 => true]);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $this->estruturaComRegra());
+
+        $reordenada = $this->estruturaComRegra();
+        $reordenada['secoes'][0]['etapas'][0]['questoes'] = array_reverse($reordenada['secoes'][0]['etapas'][0]['questoes']);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $reordenada);
+
+        $this->assertCount(0, FakeIntegrationProvider::$resultadosEnviados);
+    }
+
+    private function hash(array $respostas, ?array $linhas = null): string
+    {
+        $metodo = new \ReflectionMethod(ResultadoCultJob::class, 'contentHash');
+
+        return $metodo->invoke(
+            $this->app->getRegisteredJobType(ResultadoCultJob::SLUG),
+            new Resultado(id_tipo: 2, id_status: 3, respostas: $respostas, linhas: $linhas),
+        );
+    }
+
+    public function testHashNaoDependeDaOrdemDasLinhasNemDasColunas(): void
+    {
+        $tabela = fn(array $linhas) => [['id_par_questao' => 1, 'resposta' => ['resposta' => $linhas]]];
+
+        $this->assertSame(
+            $this->hash($tabela([['a' => 1, 'b' => 2], ['a' => 3, 'b' => 4]])),
+            $this->hash($tabela([['b' => 4, 'a' => 3], ['b' => 2, 'a' => 1]])),
+        );
+        $this->assertSame($this->hash([], [['x' => 1], ['x' => 2]]), $this->hash([], [['x' => 2], ['x' => 1]]));
+        $this->assertNotSame($this->hash([], [['x' => 1]]), $this->hash([], [['x' => 2]]), 'a planilha faz parte do conteúdo');
+    }
+
+    public function testRespostaDiferenteReenvia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, '{}');
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => ['a']]);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', $this->estruturaComRegra());
+
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => ['b']]);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 888}', $this->estruturaComRegra());
+
+        $this->assertCount(1, FakeIntegrationProvider::$resultadosEnviados);
+    }
+
+    public function testEstruturaQueMudaEntreOSalvamentoEOEnvioNaoEnvia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $questoes = [['id_questao' => 60, 'id_questao_etapa' => 960, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true]];
+        $vigente = fn(int $versao) => ['id_formulario' => 110, 'id_formulario_versao' => $versao, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => $questoes]]]]];
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, '{}');
+        $this->atualizaRespostasSalvas((int) $raiz->id, [60 => 'Respondido na versão 1']);
+
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['formularioCacheTTL'] = 300;
+
+                return $config;
+            },
+            fn() => $this->comProvedorDuble(fn() => $this->desfecho(), function () use ($raiz, $vigente) {
+                FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9102;
+                FakeIntegrationProvider::$aoBuscarFormulario = fn() => $vigente(1);
+                FakeIntegrationProvider::$aoEnviarResultado = fn() => $this->fail('respostas de outra versão não podem sair');
+                (new FormularioResultadoService())->formStateForOpportunity($raiz);
+
+                FakeIntegrationProvider::$aoBuscarFormulario = fn() => $vigente(2);
+                $this->enfileira($raiz);
+                $this->processJobs(number_of_jobs: 1);
+
+                $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados);
+            }),
+        );
     }
 
     private function atualizaRespostasSalvas(int $raizId, array $respostas): void

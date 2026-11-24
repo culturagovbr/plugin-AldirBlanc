@@ -117,24 +117,27 @@ class ResultadoCultJob extends JobType
 		return $provider->sendResultado(new ParEditalId((int) $service->parEditalId($raizId)), $payload);
 	}
 
-	/** Hash do CONTEÚDO do envio (respostas/linhas/anexos), ignorando id_tipo/id_status/data_publicacao — voláteis entre final e retificado. */
+	/** Hash do conteúdo: a ordem das respostas, das linhas e das marcações não faz um envio diferente. */
 	private function contentHash(Resultado $payload): string
 	{
-		$data = $payload->toArray();
-		unset($data['id_tipo'], $data['id_status'], $data['data_publicacao']);
-		$this->ksortRecursivo($data);
+		$conteudo = [$this->emOrdem($payload->respostas ?? []), $this->emOrdem($payload->linhas ?? [])];
 
-		return hash('sha256', (string) json_encode($data, JSON_UNESCAPED_UNICODE));
+		return hash('sha256', (string) json_encode($conteudo, JSON_UNESCAPED_UNICODE));
 	}
 
-	private function ksortRecursivo(array &$data): void
+	private function emOrdem(array $dados): array
 	{
-		ksort($data);
-		foreach ($data as &$valor) {
-			if (is_array($valor)) {
-				$this->ksortRecursivo($valor);
-			}
+		$dados = array_map(fn(mixed $valor) => is_array($valor) ? $this->emOrdem($valor) : $valor, $dados);
+
+		if (!array_is_list($dados)) {
+			ksort($dados);
+
+			return $dados;
 		}
+
+		usort($dados, fn(mixed $a, mixed $b) => strcmp((string) json_encode($a), (string) json_encode($b)));
+
+		return $dados;
 	}
 
 	/** Resposta sem o id (ou não-JSON) não falha o envio: a captura se recupera num reenvio. */
