@@ -151,6 +151,20 @@ class ControllerResultadoEnviarTest extends TestCase
         });
     }
 
+    public function testOrigemForaDoArRecusaSemListaDoQueFalta(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Origem Fora');
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $payload = $this->enviar($raiz);
+
+            $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertSame(['message'], array_keys($payload['data']));
+            $this->assertCount(0, $this->jobsDeResultado());
+        });
+    }
+
     public function testAcaoQueNaoRecebeResultadoRecusaComOMotivo(): void
     {
         $this->comFormularioResultado(function () {
@@ -187,14 +201,20 @@ class ControllerResultadoEnviarTest extends TestCase
         ];
     }
 
-    function testFormularioIncompletoRecusa()
+    public function testFormularioIncompletoRecusaDizendoOQueFalta(): void
     {
         $this->comFormularioResultado(function () {
             $raiz = $this->cenario('Subsite Enviar Incompleto');
 
-            $this->enviar($raiz);
+            $payload = $this->enviar($raiz);
 
             $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertStringContainsString('Complete o formulário', $payload['data']['message']);
+            $this->assertSame(
+                [['id_questao' => 52, 'nome' => 'Comentários', 'motivo' => 'resposta obrigatória']],
+                $payload['data']['pendencias'],
+            );
+            $this->assertSame([], $payload['data']['bloqueios']);
             $this->assertCount(0, $this->jobsDeResultado(), 'sem formulário completo o envio tomaria 422 do validador');
         }, self::ESTRUTURA_INCOMPLETA);
     }

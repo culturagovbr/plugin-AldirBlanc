@@ -331,13 +331,26 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         if (!$service->isResultadoFormComplete($raiz)) {
-            $this->errorJson(i::__('Complete o formulário do resultado antes de enviar.'), 400);
+            $this->errorJson(
+                ['message' => i::__('Complete o formulário do resultado antes de enviar.')] + $this->impedimentosDoEnvio($raiz),
+                400,
+            );
             return;
         }
 
         $service->enqueueResultadoSync($raiz);
 
         $this->json(['enfileirado' => true]);
+    }
+
+    /** Com a origem fora do ar, a recusa sai sem a lista do que falta. */
+    private function impedimentosDoEnvio(Opportunity $raiz): array
+    {
+        try {
+            return (new FormularioResultadoService())->impedimentosDoEnvio($raiz);
+        } catch (IntegrationError) {
+            return [];
+        }
     }
 
     /**
