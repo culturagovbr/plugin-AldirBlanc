@@ -428,7 +428,8 @@ class FormularioRespostasValidatorTest extends TestCase
         ]);
 
         $this->assertSame([10, 21], array_keys($validator->pendencias([])));
-        $this->assertSame([21 => 'envio de documentos ainda não disponível'], $validator->pendencias([10 => 5]));
+        $this->assertSame([21 => 'anexe o documento'], $validator->pendencias([10 => 5]));
+        $this->assertSame([], $validator->pendencias([10 => 5, 21 => ['ata.pdf']]));
     }
 
     public function testPendenciasCobramOMinimoDeLinhasDaTabela(): void

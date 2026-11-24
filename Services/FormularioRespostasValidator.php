@@ -136,7 +136,7 @@ final class FormularioRespostasValidator
         $isRequerida = !empty($questao['requerida']);
 
         if (FormularioEstrutura::isDocumento($questao)) {
-            return $isRequerida ? 'envio de documentos ainda não disponível' : null;
+            return $isRequerida && $this->isVazio($valor) ? 'anexe o documento' : null;
         }
 
         return $this->veredito($questao, $valor)?->motivo

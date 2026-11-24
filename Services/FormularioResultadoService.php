@@ -652,11 +652,14 @@ class FormularioResultadoService
         return (bool) ($faseFinal && $faseFinal->isLastPhase && $faseFinal->publishedRegistrations);
     }
 
-    /** @return array<int, mixed> automáticas, salvas e sugeridas, por id_questao */
+    /** @return array<int, mixed> automáticas, salvas e sugeridas, por id_questao; a de documento são os arquivos dela */
     public function respostasVigentes(Opportunity $raiz, array $estrutura): array
     {
+        $anexos = new ResultadoAnexosService($raiz, $estrutura);
+
         return $this->respostasAutomaticas($raiz, $estrutura)
-            + $this->savedRespostas((int) $raiz->id, $estrutura)
+            + $anexos->porQuestao()
+            + array_diff_key($this->savedRespostas((int) $raiz->id, $estrutura), $anexos->documentos())
             + $this->respostasSugeridas($raiz, $estrutura);
     }
 

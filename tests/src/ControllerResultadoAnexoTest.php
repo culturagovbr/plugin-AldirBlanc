@@ -43,12 +43,11 @@ class ControllerResultadoAnexoTest extends TestCase
         $this->apagaAnexos();
     }
 
-    private function noEdital(callable $exercicio, bool $publicado = true): void
+    private function noEdital(callable $exercicio, bool $publicado = true, array $documentos = []): void
     {
         $estrutura = ['id_formulario' => 109, 'id_formulario_versao' => self::VERSAO, 'versao' => 5, 'secoes' => [['etapas' => [['questoes' => [
             ['id_questao' => 10, 'id_questao_etapa' => 900, 'nome' => 'Comentários', 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => true, 'config' => []],
-            $this->questaoDeDocumento(30, ['formatos' => ['.pdf']]),
-            $this->questaoDeDocumento(31, ['multiplos' => true]),
+            ...($documentos ?: [$this->questaoDeDocumento(30, ['formatos' => ['.pdf']]), $this->questaoDeDocumento(31, ['multiplos' => true])]),
         ]]]]]];
 
         $this->comFormularioResultado(function () use ($exercicio, $publicado) {
@@ -285,14 +284,18 @@ class ControllerResultadoAnexoTest extends TestCase
         });
     }
 
-    public function testDocumentoContinuaForaDoEnvioEDaPendencia(): void
+    public function testDocumentoRequeridoEPendenciaAteSerAnexado(): void
     {
         $this->noEdital(function (Opportunity $raiz) {
-            $this->salva($raiz, [10 => 'texto']);
-            $payload = $this->anexa($raiz, 30, $this->upload('ata.pdf'));
+            $this->assertSame([[32, 'anexe o documento']], array_map(
+                fn(array $pendencia) => [$pendencia['id_questao'], $pendencia['motivo']],
+                $this->salva($raiz, [10 => 'texto'])['pendencias'],
+            ));
 
-            $this->assertTrue($payload['envioHabilitado']);
-            $this->assertSame([900], array_column((new FormularioResultadoService())->respostasParaEnvio($raiz), 'id_par_questao'));
-        });
+            $payload = $this->anexa($raiz, 32, $this->upload('ata.pdf'));
+            $this->assertSame([[], true], [$payload['pendencias'], $payload['envioHabilitado']]);
+
+            $this->assertFalse($this->retira($raiz, 32, $payload['anexos'][32][0]['id'])['envioHabilitado']);
+        }, documentos: [$this->questaoDeDocumento(32, [], ['requerida' => true])]);
     }
 }

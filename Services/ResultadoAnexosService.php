@@ -78,7 +78,7 @@ final class ResultadoAnexosService
 
         $doEdital = $this->doEdital();
 
-        return array_filter(array_map(fn(array $ids) => array_intersect_key($doEdital, array_flip($ids)), $respostas));
+        return array_filter(array_map(fn(mixed $ids) => array_intersect_key($doEdital, array_flip(array_filter((array) $ids, is_int(...)))), $respostas));
     }
 
     /** @return array<int, list<array{id: int, nome: string, url: string}>> */
