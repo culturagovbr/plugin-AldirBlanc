@@ -43,6 +43,13 @@ class ResultadoCultJob extends JobType
 		$raizId = (int) $job->opportunity->id;
 		$service = new ResultadoService();
 
+		if ($service->isPedidoVencido($raizId)) {
+			$app->log->info("ResultadoCultJob: edital {$raizId} - pedido vencido na fila - nada enviado");
+			$service->persistUltimoEnvio($raizId, EnvioSituacao::NaoEnviado, ['mensagem' => ResultadoService::motivoPedidoVencido()]);
+
+			return true;
+		}
+
 		if ($service->isEnvioAConferirNoPrazo($raizId)) {
 			$app->log->info("ResultadoCultJob: edital {$raizId} tem envio sem resposta dentro do prazo - nada enviado");
 

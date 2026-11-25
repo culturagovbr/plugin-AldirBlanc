@@ -288,7 +288,8 @@ class ControllerResultadoEnviarTest extends TestCase
             $raiz = $this->cenario('Subsite Enviar Vencido ' . uniqid());
             $this->gravaUltimoEnvio($raiz, $situacao, ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1);
 
-            $this->assertSame('sem-confirmacao', (new ResultadoService())->ultimoEnvio((int) $raiz->id)['situacao']);
+            $esperada = $situacao === EnvioSituacao::Aguardando ? 'nao-enviado' : 'sem-confirmacao';
+            $this->assertSame($esperada, (new ResultadoService())->ultimoEnvio((int) $raiz->id)['situacao'], 'o pedido que não chegou ao POST foi cancelado; o que saiu fica sem confirmação');
 
             $this->enviar($raiz);
 

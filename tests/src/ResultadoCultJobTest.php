@@ -170,10 +170,14 @@ class ResultadoCultJobTest extends TestCase
     public function testLeituraVemAntesDoEnvio(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-
-        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () use ($raiz) {
+            (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, [
+                'contadoDe' => (new \DateTime('-10 minutes'))->format(\DateTime::ATOM),
+            ]);
+        });
 
         $this->assertSame(['publicado', 'lista', 'envio'], FakeIntegrationProvider::$passos);
+        $this->assertSame('publicado', $this->ultimoEnvio($raiz)['situacao']);
     }
 
     #[DataProvider('leiturasIndeterminadas')]
@@ -612,12 +616,24 @@ class ResultadoCultJobTest extends TestCase
         $this->assertSame('sem-confirmacao', $this->ultimoEnvio($raiz)['situacao']);
     }
 
-    public function testPedidoVencidoQueNaoChegouAoPostNaoConcilia(): void
+    public function testPedidoVencidoQueNaoChegouAoPostECanceladoSemEnviar(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
-        (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, [
-            'contadoDe' => (new \DateTime('-' . self::VENCIDO . ' seconds'))->format(\DateTime::ATOM),
-        ]);
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}', null, function () use ($raiz) {
+            (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, [
+                'contadoDe' => (new \DateTime('-' . self::VENCIDO . ' seconds'))->format(\DateTime::ATOM),
+            ]);
+        });
+
+        $this->assertSame([], FakeIntegrationProvider::$passos, 'o pedido vencido não lê, não concilia e não envia');
+        $ultimo = $this->ultimoEnvio($raiz);
+        $this->assertSame('nao-enviado', $ultimo['situacao']);
+        $this->assertSame(ResultadoService::motivoPedidoVencido(), $ultimo['mensagem']);
+    }
+
+    public function testPedidoNoPrazoSegueParaOEnvio(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
 

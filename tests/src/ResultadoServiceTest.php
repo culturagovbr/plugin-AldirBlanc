@@ -126,6 +126,42 @@ class ResultadoServiceTest extends TestCase
         );
     }
 
+    public function testPedidoQueVenceuNaFilaApareceCancelado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $vencido = (new \DateTime('-' . (ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1) . ' seconds'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => $vencido]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+
+        $this->assertSame('nao-enviado', $ultimo['situacao']);
+        $this->assertSame(ResultadoService::motivoPedidoVencido(), $ultimo['mensagem']);
+        $this->assertNull($ultimo['novoPedidoEm']);
+        $this->assertTrue($this->service()->isPedidoVencido((int) $raiz->id));
+    }
+
+    public function testPedidoNaFilaDentroDoPrazoNaoVenceu(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => (new \DateTime('-1 minute'))->format(\DateTime::ATOM)]);
+
+        $this->assertSame('aguardando', $this->service()->ultimoEnvio((int) $raiz->id)['situacao']);
+        $this->assertFalse($this->service()->isPedidoVencido((int) $raiz->id));
+    }
+
+    public function testEnvioQueSaiuEVenceuFicaSemConfirmacao(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $vencido = (new \DateTime('-' . (ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1) . ' seconds'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Enviando, ['contadoDe' => $vencido]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+
+        $this->assertSame('sem-confirmacao', $ultimo['situacao']);
+        $this->assertNull($ultimo['mensagem']);
+        $this->assertFalse($this->service()->isPedidoVencido((int) $raiz->id), 'o que chegou ao POST não é cancelado');
+    }
+
     public function testSituacaoGravadaAntesDeHaverContagemTrazZeroPendentes(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());

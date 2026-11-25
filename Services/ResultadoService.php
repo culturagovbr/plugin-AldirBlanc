@@ -11,6 +11,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
+use MapasCulturais\i;
 use MapasCulturais\Entities\Opportunity;
 
 /**
@@ -156,17 +157,43 @@ class ResultadoService
 
         $situacao = EnvioSituacao::from($gravado['situacao']);
         $isNoPrazo = $this->isNoPrazo($gravado['contadoDe']);
+        $isPedidoVencido = $situacao === EnvioSituacao::Aguardando && !$isNoPrazo;
 
         return [
-            'situacao' => ($situacao->isEmAndamento() && !$isNoPrazo ? EnvioSituacao::SemConfirmacao : $situacao)->value,
+            'situacao' => $this->situacaoVista($situacao, $isNoPrazo)->value,
             'em' => $gravado['em'],
             'tipo' => $gravado['tipo'],
             'id' => $gravado['id'],
-            'mensagem' => $gravado['mensagem'],
+            'mensagem' => $isPedidoVencido ? self::motivoPedidoVencido() : $gravado['mensagem'],
             'recusas' => $gravado['recusas'],
             'totalPendentes' => $gravado['totalPendentes'] ?? 0,
             'novoPedidoEm' => $situacao->isSemDesfecho() && $isNoPrazo ? $this->fimDoPrazo($gravado['contadoDe'])->format(\DateTime::ATOM) : null,
         ];
+    }
+
+    /** Fora do prazo, o pedido que não chegou ao POST foi cancelado, e o que saiu fica sem confirmação. */
+    private function situacaoVista(EnvioSituacao $situacao, bool $isNoPrazo): EnvioSituacao
+    {
+        return match (true) {
+            $isNoPrazo || !$situacao->isEmAndamento() => $situacao,
+            $situacao === EnvioSituacao::Aguardando => EnvioSituacao::NaoEnviado,
+            default => EnvioSituacao::SemConfirmacao,
+        };
+    }
+
+    /** O pedido ficou na fila além do prazo sem chegar ao POST: o job que o encontrar não envia. */
+    public function isPedidoVencido(int $raizId): bool
+    {
+        $gravado = $this->ultimoEnvioGravado($raizId);
+
+        return $gravado !== null
+            && EnvioSituacao::from($gravado['situacao']) === EnvioSituacao::Aguardando
+            && !$this->isNoPrazo($gravado['contadoDe']);
+    }
+
+    public static function motivoPedidoVencido(): string
+    {
+        return i::__('O último pedido de envio não saiu no prazo e foi cancelado. Nada foi enviado; peça o envio de novo.');
     }
 
     /**
