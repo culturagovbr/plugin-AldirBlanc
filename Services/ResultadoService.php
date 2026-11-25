@@ -3,11 +3,13 @@
 namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Dtos\ParEditalId;
 use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Enum\ResultadoStatus;
 use AldirBlanc\Enum\ResultadoTipo;
 use AldirBlanc\Exceptions\IntegrationError;
+use AldirBlanc\Integration\FetchesResultadosDoEdital;
 use AldirBlanc\Jobs\ResultadoCultJob;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
@@ -21,6 +23,10 @@ class ResultadoService
 {
     /** Segundos, contados do POST, em que o CultBR ainda pode concluir um envio sem resposta. */
     public const PRAZO_DO_ENVIO_EM_ANDAMENTO = 900;
+
+    private const CACHE_PUBLICADO = 'aldirblanc:cultbr:resultado_publicado:oportunidade:';
+
+    private const CACHE_PUBLICADO_TTL = 60;
 
     private OpportunityService $opportunityService;
 
@@ -57,6 +63,49 @@ class ResultadoService
     }
 
     /** Id do resultado vigente na Conecta, lido do banco pela mesma razão. */
+    /**
+     * O CultBR já tem resultado publicado deste edital? O id local basta; sem ele, vale o publicado,
+     * que enxerga o resultado criado por fora. Sem leitura conclusiva, fica o que foi aceito por aqui.
+     */
+    public function isPublicadoNoCultBr(int $raizId): bool
+    {
+        if ($this->parEditalResultadoId($raizId) !== null) {
+            return true;
+        }
+
+        $idParEdital = $this->parEditalId($raizId);
+        $provider = Plugin::getInstance()->integrationProvider();
+
+        if ($idParEdital === null || !$provider instanceof FetchesResultadosDoEdital) {
+            return false;
+        }
+
+        $cache = App::i()->cache;
+        $chave = self::CACHE_PUBLICADO . $raizId;
+
+        if ($cache->contains($chave)) {
+            return (bool) $cache->fetch($chave);
+        }
+
+        try {
+            $isPublicado = $provider->fetchIdPublicado(new ParEditalId($idParEdital)) !== null;
+        } catch (IntegrationError $e) {
+            App::i()->log->warning("[CultBR] Não foi possível ler o resultado publicado do edital {$idParEdital}: " . $e->getMessage());
+
+            return false;
+        }
+
+        $cache->save($chave, $isPublicado, self::CACHE_PUBLICADO_TTL);
+
+        return $isPublicado;
+    }
+
+    /** Depois de um envio aceito, a próxima leitura não pode vir do cache. */
+    public function esqueceOPublicado(int $raizId): void
+    {
+        App::i()->cache->delete(self::CACHE_PUBLICADO . $raizId);
+    }
+
     public function parEditalResultadoId(int $raizId): ?int
     {
         $valor = $this->meta($raizId, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID);

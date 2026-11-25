@@ -2,6 +2,7 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\Resultado;
 use AldirBlanc\Enum\EnvioSituacao;
@@ -124,6 +125,68 @@ class ResultadoServiceTest extends TestCase
             (new \DateTime($inicio))->modify('+' . ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO . ' seconds')->format(\DateTime::ATOM),
             $this->service()->ultimoEnvio((int) $raiz->id)['novoPedidoEm'],
         );
+    }
+
+    public function testIdLocalBastaParaOPublicadoSemLerOCultBr(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Local');
+        $this->service()->persistParEditalResultadoId((int) $raiz->id, 777);
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => $this->fail('com o id local não há leitura');
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testPublicadoCriadoPorForaContaComoPublicado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Por Fora');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20084;
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testSemPublicadoNoCultBrNaoContaComoPublicado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Sem Publicado');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => null;
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testLeituraDoPublicadoComFalhaFicaComOQueFoiAceitoAqui(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Falha');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testPublicadoLidoFicaEmCacheAteOEnvioSerAceito(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Cache');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => null;
+            $this->service()->isPublicadoNoCultBr((int) $raiz->id);
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20084;
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id), 'a segunda leitura vem do cache');
+
+            $this->service()->esqueceOPublicado((int) $raiz->id);
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
     }
 
     public function testPedidoQueVenceuNaFilaApareceCancelado(): void

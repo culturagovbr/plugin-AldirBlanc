@@ -480,7 +480,7 @@ class FormularioResultadoService
             return self::ESTADO_AGUARDANDO_PUBLICACAO;
         }
 
-        if ((new ResultadoService())->parEditalResultadoId((int) $raiz->id) !== null) {
+        if ((new ResultadoService())->isPublicadoNoCultBr((int) $raiz->id)) {
             return self::ESTADO_ENVIADO;
         }
 

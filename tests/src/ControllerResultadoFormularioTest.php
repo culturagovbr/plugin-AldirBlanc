@@ -605,6 +605,19 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    public function testResultadoPublicadoPorForaDeixaOEstadoEnviado(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20084;
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_ENVIADO, $payload['estado'], 'o botão vira Retificar pelo publicado no CultBR');
+        });
+    }
+
     public function testEditalArquivadoSegueComOFormulario(): void
     {
         $this->comFormulario(function () {

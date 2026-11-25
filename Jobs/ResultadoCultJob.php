@@ -181,6 +181,7 @@ class ResultadoCultJob extends JobType
 		}
 
 		$service->persistParEditalResultadoId($raizId, $id);
+		$service->esqueceOPublicado($raizId);
 		$service->persistResultadoLastPayloadHash($raizId, $aConferir['hash']);
 		$service->persistUltimoEnvio($raizId, EnvioSituacao::Publicado, ['aConferir' => null, 'id' => $id, 'tipo' => $aConferir['tipo']]);
 
@@ -328,6 +329,7 @@ class ResultadoCultJob extends JobType
 	{
 		$enviado = $service->envioAConferir($raizId);
 		$service->persistResultadoLastPayloadHash($raizId, $enviado['hash']);
+		$service->esqueceOPublicado($raizId);
 
 		if ($outcome->result === SendResult::Simulated) {
 			$service->persistUltimoEnvio($raizId, EnvioSituacao::Simulado, ['aConferir' => null, 'tipo' => $enviado['tipo']]);
