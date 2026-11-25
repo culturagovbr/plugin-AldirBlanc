@@ -138,6 +138,19 @@ class ControllerResultadoDeParaTest extends TestCase
         });
     }
 
+    public function testPostDevolveOCampoQueNaoServeAoDocumentoComOMotivo(): void
+    {
+        $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {
+            $raiz = $this->edital();
+            $selecao = $this->addCampo($raiz, 'Raça/etnia', 'select');
+
+            $salvo = $this->postDePara($raiz, ['cpf' => ['Pessoa Física' => "campo:{$selecao}"]]);
+
+            $this->assertSame(['cpf.Pessoa Física' => 'O tipo deste campo não serve a este documento.'], $salvo['recusas']);
+            $this->assertSame([], $salvo['mapeamento']);
+        });
+    }
+
     public function testEquivalenciaDeValorDaFonteEGravadaEDevolvida(): void
     {
         $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {

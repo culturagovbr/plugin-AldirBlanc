@@ -24,7 +24,7 @@ class ResultadoDeParaServiceTest extends TestCase
         return $this->createOpportunity($this->userDirector->createUser());
     }
 
-    private function addCampo(Opportunity $opp, string $title, string $type, int $order = 1): int
+    private function addCampo(Opportunity $opp, string $title, string $type, int $order = 1, array $config = []): int
     {
         $this->app->disableAccessControl();
         $campo = new RegistrationFieldConfiguration();
@@ -32,6 +32,7 @@ class ResultadoDeParaServiceTest extends TestCase
         $campo->title = $title;
         $campo->fieldType = $type;
         $campo->displayOrder = $order;
+        $campo->config = $config;
         $campo->save(true);
         $this->app->enableAccessControl();
 
@@ -159,6 +160,57 @@ class ResultadoDeParaServiceTest extends TestCase
         ]);
 
         $this->assertSame(['cnpj' => ['Pessoa Jurídica' => "campo:{$cnpj}"]], $gravadas);
+    }
+
+    public function testCampoDeAgenteValePeloDadoQueTraz(): void
+    {
+        $edital = $this->novoEdital();
+        $this->addCampo($edital, 'CPF do agente', 'agent-owner-field', 1, ['entityField' => 'cpf']);
+        $this->addCampo($edital, 'Endereço do agente', 'agent-owner-field', 2, ['entityField' => '@location']);
+        $this->addCampo($edital, 'Nome do agente', 'agent-owner-field', 3, ['entityField' => 'name']);
+        $this->addCampo($edital, 'Documento do agente', 'agent-owner-field', 4, ['entityField' => 'documento']);
+
+        $tipos = array_column($this->service()->camposDaFicha($edital), 'tipoDoDado', 'title');
+
+        $this->assertSame([
+            'CPF do agente' => 'cpf',
+            'Endereço do agente' => ResultadoDeParaService::TIPO_COMPOSTO,
+            'Nome do agente' => 'text',
+            'Documento do agente' => 'text',
+        ], $tipos, 'metadado registrado como texto vale como texto');
+    }
+
+    public function testDocumentoRecusaCampoQueNaoGuardaDocumentoComOMotivo(): void
+    {
+        $edital = $this->novoEdital();
+        $selecao = $this->addCampo($edital, 'Trata-se de pessoa com deficiência?', 'select', 1);
+        $endereco = $this->addCampo($edital, 'Endereço do agente', 'agent-owner-field', 2, ['entityField' => '@location']);
+        $cpfDoAgente = $this->addCampo($edital, 'CPF do agente', 'agent-owner-field', 3, ['entityField' => 'cpf']);
+        $texto = $this->addCampo($edital, 'Documento', 'text', 4);
+        $cpf = $this->addCampo($edital, 'CPF', 'cpf', 5);
+
+        $gravado = $this->service()->salvar($edital, $this->planilha('modelo-pontos-de-cultura'), [
+            'cpf' => ['Pessoa Física' => "campo:{$selecao}", 'MEI' => "campo:{$endereco}", 'Coletivo' => "campo:{$cpfDoAgente}", 'Pessoa Jurídica' => "campo:{$texto}"],
+            'cnpj' => ['Pessoa Jurídica' => "campo:{$cpf}"],
+        ]);
+
+        $this->assertSame(['cpf' => ['Coletivo' => "campo:{$cpfDoAgente}", 'Pessoa Jurídica' => "campo:{$texto}"]], $gravado['fontes']);
+        $motivo = 'O tipo deste campo não serve a este documento.';
+        $this->assertSame(['cnpj.Pessoa Jurídica' => $motivo, 'cpf.Pessoa Física' => $motivo, 'cpf.MEI' => $motivo], $gravado['recusas']);
+    }
+
+    public function testCampoRecusadoMantemOQueEstavaGravado(): void
+    {
+        $edital = $this->novoEdital();
+        $cpf = $this->addCampo($edital, 'CPF', 'cpf', 1);
+        $selecao = $this->addCampo($edital, 'Raça/etnia', 'select', 2);
+        $planilha = $this->planilha('modelo-pontos-de-cultura');
+        $this->salvaFontes($edital, $planilha, ['cpf' => ['Coletivo' => "campo:{$cpf}"]]);
+
+        $gravado = $this->service()->salvar($edital, $planilha, ['cpf' => ['Coletivo' => "campo:{$selecao}"]]);
+
+        $this->assertSame(['cpf' => ['Coletivo' => "campo:{$cpf}"]], $gravado['fontes'], 'a escolha recusada não apaga a anterior');
+        $this->assertArrayHasKey('cpf.Coletivo', $gravado['recusas']);
     }
 
     public function testFontesDeOutroModeloOuDeOutraOportunidadeSaoIgnoradas(): void

@@ -4,8 +4,11 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use MapasCulturais\App;
+use MapasCulturais\Entities\Agent;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
+use MapasCulturais\Entities\RegistrationFieldConfiguration;
+use MapasCulturais\Entities\Space;
 use MapasCulturais\i;
 
 /** De/para por edital: de onde vem cada coluna da planilha de contemplados que o CultBR define para ele. */
@@ -18,6 +21,19 @@ class ResultadoDeParaService
     public const FONTE_VALOR_POR_CONTEMPLADO = 'inscricao:valor';
 
     private const TIPOS_DE_VARIOS_VALORES = ['checklist', 'multiselect'];
+
+    /** Campo de agente ou espaço que traz endereço, arquivos ou outro conjunto de dados. */
+    public const TIPO_COMPOSTO = 'composto';
+
+    /** Classe e tipo da entidade de onde o campo de agente ou espaço tira o dado. */
+    private const CAMPOS_DE_ENTIDADE = [
+        'agent-owner-field' => [Agent::class, 1],
+        'agent-collective-field' => [Agent::class, 2],
+        'space-field' => [Space::class, null],
+    ];
+
+    /** O dado que cada documento aceita. */
+    private const TIPOS_DO_DOCUMENTO = ['cpf' => ['cpf', 'text'], 'cnpj' => ['cnpj', 'text']];
 
     /** Os campos da ficha de todas as fases do edital, que alimentam os seletores do de/para. */
     public function camposDaFicha(Opportunity $raiz): array
@@ -34,6 +50,7 @@ class ResultadoDeParaService
                     'id' => (int) $campo->id,
                     'title' => (string) $campo->title,
                     'fieldType' => (string) $campo->fieldType,
+                    'tipoDoDado' => $this->tipoDoDado($campo),
                     'fase' => (string) $fase->name,
                     'etapa' => (string) ($campo->step?->name ?? ''),
                 ];
@@ -41,6 +58,25 @@ class ResultadoDeParaService
         }
 
         return $campos;
+    }
+
+    /** O campo de agente ou espaço vale pelo dado que traz; o composto não cabe numa célula. */
+    private function tipoDoDado(RegistrationFieldConfiguration $campo): string
+    {
+        if (!isset(self::CAMPOS_DE_ENTIDADE[$campo->fieldType])) {
+            return (string) $campo->fieldType;
+        }
+
+        [$classe, $tipo] = self::CAMPOS_DE_ENTIDADE[$campo->fieldType];
+        $propriedade = (string) (((array) $campo->config)['entityField'] ?? '');
+
+        if ($propriedade === '' || str_starts_with($propriedade, '@')) {
+            return self::TIPO_COMPOSTO;
+        }
+
+        $dado = App::i()->getRegisteredMetadata($classe, $tipo)[$propriedade]?->type ?? 'text';
+
+        return in_array($dado, ['', 'string'], true) ? 'text' : (string) $dado;
     }
 
     /** Todos os tipos de proponente do sistema: a inscrição pode trazer tipo que o edital já não aceita mais. */
@@ -98,12 +134,14 @@ class ResultadoDeParaService
     }
 
     /**
-     * Guarda só o que aponta para coluna do modelo, fonte do edital e opção declarada; devolve o que ficou gravado.
-     * @return array{fontes: array, equivalencias: array}
+     * Guarda só o que aponta para coluna do modelo, fonte do edital e opção declarada; devolve o que ficou gravado
+     * e, por `coluna.tipo de proponente`, o motivo do campo que não serve ao documento.
+     * @return array{fontes: array, equivalencias: array, recusas: array<string, string>}
      */
     public function salvar(Opportunity $raiz, array $planilha, array $fontesRecebidas, array $equivalenciasRecebidas = []): array
     {
-        $fontes = $this->fontesAceitas($raiz, $planilha, $fontesRecebidas);
+        $anteriores = $this->fontes((int) $raiz->id, $planilha['modelo'] ?? null);
+        [$fontes, $recusas] = $this->fontesAceitas($raiz, $planilha, $fontesRecebidas, $anteriores);
         $gravado = [
             'fontes' => $fontes,
             'equivalencias' => $this->equivalenciasAceitas($raiz, $planilha, $fontes, $equivalenciasRecebidas),
@@ -115,7 +153,7 @@ class ResultadoDeParaService
             json_encode(['oportunidade' => (int) $raiz->id, 'modelo' => $planilha['modelo']] + $gravado, JSON_UNESCAPED_UNICODE),
         );
 
-        return $gravado;
+        return $gravado + ['recusas' => $recusas];
     }
 
     private function gravado(int $raizId, ?string $modelo): array
@@ -126,20 +164,57 @@ class ResultadoDeParaService
         return ($gravado['oportunidade'] ?? null) === $raizId && ($gravado['modelo'] ?? null) === $modelo ? $gravado : [];
     }
 
-    private function fontesAceitas(Opportunity $raiz, array $planilha, array $recebidas): array
+    /** @return array{0: array, 1: array<string, string>} as fontes aceitas e as recusas com motivo */
+    private function fontesAceitas(Opportunity $raiz, array $planilha, array $recebidas, array $anteriores = []): array
     {
-        $validas = $this->fontesValidas($raiz);
+        $campos = $this->camposDaFicha($raiz);
+        $validas = $this->fontesValidas($campos);
+        $tipoDoDado = array_column($campos, 'tipoDoDado', 'id');
         $fontes = [];
+        $recusas = [];
 
         foreach ($planilha['colunas'] as $coluna) {
             $fonte = $this->fonteAceita($coluna, $recebidas[$coluna['coluna']] ?? null, $validas);
+
+            if (is_array($fonte)) {
+                [$fonte, $recusadas] = $this->semCampoQueNaoServe($coluna, $fonte, $tipoDoDado, (array) ($anteriores[$coluna['coluna']] ?? []));
+                $recusas += $recusadas;
+            }
 
             if ($fonte !== null && $fonte !== []) {
                 $fontes[$coluna['coluna']] = $fonte;
             }
         }
 
-        return $fontes;
+        return [$fontes, $recusas];
+    }
+
+    /**
+     * O campo que não serve ao documento é recusado, e o tipo de proponente segue com o que já estava gravado.
+     * @return array{0: array<string, string>, 1: array<string, string>}
+     */
+    private function semCampoQueNaoServe(array $coluna, array $porTipo, array $tipoDoDado, array $anterior): array
+    {
+        $aceitos = self::TIPOS_DO_DOCUMENTO[$coluna['tipo']] ?? [];
+        $recusas = [];
+
+        foreach ($porTipo as $tipo => $fonte) {
+            $dado = $tipoDoDado[(int) substr($fonte, strlen(self::FONTE_CAMPO))] ?? null;
+
+            if (in_array($dado, $aceitos, true)) {
+                continue;
+            }
+
+            $recusas["{$coluna['coluna']}.{$tipo}"] = i::__('O tipo deste campo não serve a este documento.');
+
+            if (isset($anterior[$tipo])) {
+                $porTipo[$tipo] = $anterior[$tipo];
+            } else {
+                unset($porTipo[$tipo]);
+            }
+        }
+
+        return [$porTipo, $recusas];
     }
 
     private function equivalenciasAceitas(Opportunity $raiz, array $planilha, array $fontes, array $recebidas): array
@@ -194,10 +269,10 @@ class ResultadoDeParaService
     }
 
     /** @return list<string> */
-    private function fontesValidas(Opportunity $raiz): array
+    private function fontesValidas(array $campos): array
     {
         return [
-            ...array_map(fn(int $id) => self::FONTE_CAMPO . $id, array_column($this->camposDaFicha($raiz), 'id')),
+            ...array_map(fn(int $id) => self::FONTE_CAMPO . $id, array_column($campos, 'id')),
             ...array_column($this->dadosDaInscricao(), 'fonte'),
         ];
     }

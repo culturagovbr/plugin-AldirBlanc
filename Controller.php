@@ -523,7 +523,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $equivalencias = $this->data['equivalencias'] ?? [];
         $gravado = (new ResultadoDeParaService())->salvar($opportunity, $planilha, $mapeamento, is_array($equivalencias) ? $equivalencias : []);
 
-        $this->json($this->deParaParaATela($opportunity, $planilha, $gravado));
+        $this->json(['recusas' => (object) $gravado['recusas']] + $this->deParaParaATela($opportunity, $planilha, $gravado));
     }
 
     /** (object): vazio precisa serializar como {} — como [] o cliente trataria o de/para como lista. */
