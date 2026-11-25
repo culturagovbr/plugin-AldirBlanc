@@ -581,6 +581,44 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    public static function statusSemResultado(): array
+    {
+        return [
+            'rascunho' => [Opportunity::STATUS_DRAFT],
+            'lixeira' => [Opportunity::STATUS_TRASH],
+        ];
+    }
+
+    #[DataProvider('statusSemResultado')]
+    public function testEditalForaDePublicacaoFicaNoEstadoProprio(int $status): void
+    {
+        $this->comFormulario(function () use ($status) {
+            [, $raiz] = $this->cenario();
+            $raiz->status = $status;
+            $raiz->save(true);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_EDITAL_NAO_PUBLICADO, $payload['estado']);
+            $this->assertSame(FormularioResultadoService::motivoEditalNaoPublicado(), $payload['motivo']);
+            $this->assertFalse($payload['envioHabilitado']);
+        });
+    }
+
+    public function testEditalArquivadoSegueComOFormulario(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $raiz->status = Opportunity::STATUS_ARCHIVED;
+            $raiz->save(true);
+
+            $payload = $this->getFormulario($raiz);
+
+            $this->assertSame(FormularioResultadoService::ESTADO_PENDENTE, $payload['estado'], 'o edital arquivado continua enviando resultado');
+            $this->assertNull($payload['motivo']);
+        });
+    }
+
     function testSaveParcialSalvaEDevolvePendente()
     {
         $this->comFormulario(function () {

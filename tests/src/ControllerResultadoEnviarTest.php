@@ -143,6 +143,46 @@ class ControllerResultadoEnviarTest extends TestCase
         });
     }
 
+    public static function statusSemResultado(): array
+    {
+        return [
+            'rascunho' => [Opportunity::STATUS_DRAFT],
+            'lixeira' => [Opportunity::STATUS_TRASH],
+        ];
+    }
+
+    #[DataProvider('statusSemResultado')]
+    public function testEditalForaDePublicacaoRecusaComOMotivo(int $status): void
+    {
+        $this->comFormularioResultado(function () use ($status) {
+            $raiz = $this->cenario('Subsite Enviar Status ' . $status);
+            $raiz->status = $status;
+            $raiz->save(true);
+            $this->clearJobQueue();
+
+            $payload = $this->enviar($raiz);
+
+            $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertSame(FormularioResultadoService::motivoEditalNaoPublicado(), $payload['data']);
+            $this->assertCount(0, $this->jobsDeResultado());
+        });
+    }
+
+    public function testEditalArquivadoEnvia(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Arquivado');
+            $raiz->status = Opportunity::STATUS_ARCHIVED;
+            $raiz->save(true);
+            $this->clearJobQueue();
+
+            $this->enviar($raiz);
+
+            $this->assertSame(200, $this->app->response->getStatusCode());
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
     function testEditalSemIdDoParRecusa()
     {
         $this->comFormularioResultado(function () {

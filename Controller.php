@@ -413,6 +413,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $raiz = $opportunity->firstPhase ?: $opportunity;
         $faseFinal = $raiz->lastPhase;
 
+        if (!FormularioResultadoService::isStatusComResultado($raiz)) {
+            $this->errorJson(FormularioResultadoService::motivoEditalNaoPublicado(), 400);
+            return;
+        }
+
         if (!$faseFinal || !$faseFinal->publishedRegistrations) {
             $this->errorJson(i::__('Publique o resultado final do edital antes de enviar.'), 400);
             return;

@@ -119,6 +119,10 @@ class ResultadoCultJob extends JobType
 	/** O que impede o envio na hora de executar, ou null. */
 	private function impedimento(ResultadoService $service, ?Opportunity $raiz, ?Opportunity $faseFinal): ?string
 	{
+		if ($raiz && !FormularioResultadoService::isStatusComResultado($raiz)) {
+			return FormularioResultadoService::motivoEditalNaoPublicado();
+		}
+
 		if (!$faseFinal || !$service->isEligibleForResultSync($faseFinal)) {
 			return i::__('O resultado do edital não está publicado ou o edital não está integrado ao CultBR.');
 		}

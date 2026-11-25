@@ -20,12 +20,15 @@ class FormularioResultadoService
 {
     public const ESTADO_SEM_FORMULARIO = 'sem-formulario';
     public const ESTADO_ACAO_SEM_RESULTADO = 'acao-sem-resultado';
+    public const ESTADO_EDITAL_NAO_PUBLICADO = 'edital-nao-publicado';
     public const ESTADO_AGUARDANDO_PUBLICACAO = 'aguardando-publicacao';
     public const ESTADO_PENDENTE = 'pendente';
     public const ESTADO_COMPLETO = 'completo';
     public const ESTADO_ENVIADO = 'enviado';
 
     private const ESTADOS_DE_ENVIO = [self::ESTADO_COMPLETO, self::ESTADO_ENVIADO];
+
+    private const STATUS_COM_RESULTADO = [Opportunity::STATUS_ENABLED, Opportunity::STATUS_ARCHIVED];
 
     private const SEM_IMPEDIMENTOS = ['pendencias' => [], 'bloqueios' => []];
 
@@ -147,6 +150,17 @@ class FormularioResultadoService
         return i::__('A ação deste edital não recebe resultado no CultBR.');
     }
 
+    /** Rascunho e lixeira não enviam resultado; o edital arquivado continua enviando. */
+    public static function isStatusComResultado(Opportunity $raiz): bool
+    {
+        return in_array((int) $raiz->status, self::STATUS_COM_RESULTADO, true);
+    }
+
+    public static function motivoEditalNaoPublicado(): string
+    {
+        return i::__('O resultado só é enviado ao CultBR com o edital publicado.');
+    }
+
     private function tipoAcaoFromMeta(int $opportunityId): ?int
     {
         $bruto = App::i()->em->getConnection()->fetchOne(
@@ -183,7 +197,11 @@ class FormularioResultadoService
 
         return [
             'estado' => $estado,
-            'motivo' => $estado === self::ESTADO_ACAO_SEM_RESULTADO ? self::motivoAcaoSemResultado() : null,
+            'motivo' => match ($estado) {
+                self::ESTADO_ACAO_SEM_RESULTADO => self::motivoAcaoSemResultado(),
+                self::ESTADO_EDITAL_NAO_PUBLICADO => self::motivoEditalNaoPublicado(),
+                default => null,
+            },
             'estrutura' => $estrutura,
             // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
             'respostas' => (object) array_diff_key($respostas, $anexos?->documentos() ?? []),
@@ -452,6 +470,10 @@ class FormularioResultadoService
 
         if ($this->isAcaoSemResultado((int) $raiz->id)) {
             return self::ESTADO_ACAO_SEM_RESULTADO;
+        }
+
+        if (!self::isStatusComResultado($raiz)) {
+            return self::ESTADO_EDITAL_NAO_PUBLICADO;
         }
 
         if (!$this->isFaseFinalPublicada($raiz)) {

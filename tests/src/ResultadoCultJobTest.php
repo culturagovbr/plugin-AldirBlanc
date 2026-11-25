@@ -663,6 +663,19 @@ class ResultadoCultJobTest extends TestCase
         $this->assertStringContainsString('não está publicado', $this->ultimoEnvio($raiz)['mensagem']);
     }
 
+    public function testEditalEmRascunhoNaExecucaoNaoEnvia(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Rascunho Na Execucao');
+        $raiz->status = Opportunity::STATUS_DRAFT;
+        $raiz->save(true);
+
+        $this->processaComResposta($raiz, '{"id_par_edital_resultado": 777}');
+
+        $this->assertSame([], FakeIntegrationProvider::$resultadosEnviados, 'rascunho não envia resultado');
+        $this->assertSame('nao-enviado', $this->ultimoEnvio($raiz)['situacao']);
+        $this->assertSame(FormularioResultadoService::motivoEditalNaoPublicado(), $this->ultimoEnvio($raiz)['mensagem']);
+    }
+
     function testFormularioIncompletoNaExecucaoNaoEnvia()
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
