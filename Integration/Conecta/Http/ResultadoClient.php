@@ -135,4 +135,10 @@ class ResultadoClient extends AbstractClient implements ResultadoSender
     {
         return '';
     }
+
+    /** O CultBR cita entre aspas o nome do arquivo recusado, que pode trazer dado pessoal. */
+    protected function httpErrorMessageForLog(string $mensagem): string
+    {
+        return (string) preg_replace('/([\'"])[^\'"]*\1/u', '$1…$1', $mensagem);
+    }
 }

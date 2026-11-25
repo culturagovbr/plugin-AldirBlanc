@@ -395,7 +395,7 @@ abstract class AbstractClient
         // e um corpo ilegível não pode apagar o status que veio com ele.
         if ($httpCode >= self::HTTP_REDIRECT_MIN) {
             throw IntegrationError::http(
-                $this->httpErrorMessage($bodyIsUsable ? $decoded : null, $httpCode, $curlErrorMessage),
+                $this->httpErrorMessageForLog($this->httpErrorMessage($bodyIsUsable ? $decoded : null, $httpCode, $curlErrorMessage)),
                 $httpCode,
                 $rawBody,
             );
@@ -466,6 +466,12 @@ abstract class AbstractClient
         }
 
         return $this->firstFilled($curlErrorMessage, "Erro HTTP {$httpCode}");
+    }
+
+    /** A mensagem do erro vai para o log; a subclasse tira dela o que não pode ir. O corpo bruto segue intacto. */
+    protected function httpErrorMessageForLog(string $mensagem): string
+    {
+        return $mensagem;
     }
 
     /** Achata a lista de `{loc, msg}` do 422 do FastAPI em "campo: motivo". */

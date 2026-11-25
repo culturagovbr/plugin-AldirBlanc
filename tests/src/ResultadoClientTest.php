@@ -383,6 +383,29 @@ class ResultadoClientTest extends TestCase
         });
     }
 
+    public function testNomeDoArquivoRecusadoNaoVaiParaOLog(): void
+    {
+        $this->comConecta(function () {
+            $corpo = $this->corpoDaConecta('recusa-400-storage-pdf');
+            $erro = null;
+
+            $linhas = $this->capturandoLog(function () use ($corpo, &$erro) {
+                try {
+                    $this->envia(new FakeTransport(status: 400, body: $corpo));
+                } catch (SendFailed $e) {
+                    $erro = $e;
+                }
+            });
+            $texto = implode("\n", array_column($linhas->getRecords(), 'message'));
+
+            $this->assertNotNull($erro);
+            $this->assertStringNotContainsString('publicacao-resultado.pdf', $texto);
+            $this->assertStringNotContainsString('publicacao-resultado.pdf', $erro->getMessage());
+            $this->assertStringContainsString("Erro ao enviar anexo '…' para o storage", $erro->getMessage());
+            $this->assertSame($corpo, $erro->outcome()->response, 'a tela lê o texto do CultBR pelo corpo, que segue inteiro');
+        });
+    }
+
     public function testRegistroSimuladoTambemEReduzido(): void
     {
         $this->comConfigDoPlugin(
