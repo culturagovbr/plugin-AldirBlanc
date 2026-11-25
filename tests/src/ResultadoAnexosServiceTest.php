@@ -235,9 +235,10 @@ class ResultadoAnexosServiceTest extends TestCase
     public static function dependencias(): array
     {
         return [
-            'planilha e documento requerido' => [true, true, 'Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.'],
-            'planilha e documento opcional' => [true, false, null],
+            'planilha e documento requerido' => [true, true, 'Este edital envia a planilha de contemplados, e o CultBR ainda não recebe documentos junto com ela.'],
+            'planilha e documento opcional' => [true, false, 'Este edital envia a planilha de contemplados, e o CultBR ainda não recebe documentos junto com ela.'],
             'documento requerido sem planilha' => [false, true, null],
+            'documento opcional sem planilha' => [false, false, null],
         ];
     }
 

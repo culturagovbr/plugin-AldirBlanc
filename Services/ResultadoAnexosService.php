@@ -124,9 +124,7 @@ final class ResultadoAnexosService
 
         $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $this->raiz->id);
 
-        return FormularioResultadoService::isDependenteDoCultBr($planilha, $validator->documentosRequeridos($respostas))
-            ? FormularioResultadoService::motivoPlanilhaComDocumentos()
-            : null;
+        return ($planilha['possui'] ?? null) === true ? FormularioResultadoService::motivoDocumentoComPlanilha() : null;
     }
 
     private function recusaDoArquivo(array $questao, File $arquivo): ?string

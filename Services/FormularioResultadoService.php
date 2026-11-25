@@ -555,6 +555,12 @@ class FormularioResultadoService
         return i::__('O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.');
     }
 
+    /** Com planilha, o documento não recebe arquivo, obrigatório ou não. */
+    public static function motivoDocumentoComPlanilha(): string
+    {
+        return i::__('Este edital envia a planilha de contemplados, e o CultBR ainda não recebe documentos junto com ela.');
+    }
+
     public static function motivoPlanilhaComDocumentos(): string
     {
         return i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.');

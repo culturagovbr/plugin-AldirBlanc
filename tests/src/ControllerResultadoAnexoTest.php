@@ -302,10 +302,14 @@ class ControllerResultadoAnexoTest extends TestCase
     public function testPlanilhaComArquivoAnexadoBloqueiaAteOArquivoSair(): void
     {
         $this->noEdital(function (Opportunity $raiz) {
-            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
-            $this->assertTrue($this->salva($raiz, [10 => 'texto'])['envioHabilitado']);
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => false];
+            $anexado = $this->anexa($raiz, 30, $this->upload('ata.pdf'));
 
-            $payload = $this->anexa($raiz, 30, $this->upload('ata.pdf'));
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            $this->assertSame(FormularioResultadoService::motivoDocumentoComPlanilha(), $this->anexa($raiz, 30, $this->upload('outra.pdf'))['data'], 'com planilha, nenhum arquivo novo entra');
+
+            $payload = $this->salva($raiz, [10 => 'texto']);
+            $payload['anexos'] = $anexado['anexos'];
             $this->assertSame(
                 [['id_questao' => null, 'nome' => '', 'motivo' => FormularioResultadoService::motivoPlanilhaComAnexos()]],
                 $payload['bloqueios'],
@@ -334,10 +338,12 @@ class ControllerResultadoAnexoTest extends TestCase
         $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => 'sim', 'fonteIdQuestaoEtapa' => 900]];
 
         $this->noEdital(function (Opportunity $raiz) {
-            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => false];
             $this->salva($raiz, [10 => 'sim']);
-            $this->assertFalse($this->anexa($raiz, 33, $this->upload('ata.pdf'))['envioHabilitado']);
+            $this->anexa($raiz, 33, $this->upload('ata.pdf'));
 
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => ['possui_planilha' => true];
+            $this->assertFalse($this->salva($raiz, [10 => 'sim'])['envioHabilitado'], 'o arquivo da questão visível bloqueia com planilha');
             $this->assertTrue($this->salva($raiz, [10 => 'não'])['envioHabilitado']);
         }, documentos: [$this->questaoDeDocumento(33, ['regras' => ['itens' => [$regra]]])]);
     }
