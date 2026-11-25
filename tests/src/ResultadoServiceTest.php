@@ -189,6 +189,41 @@ class ResultadoServiceTest extends TestCase
         });
     }
 
+    private function gravaRecusa(Opportunity $raiz): void
+    {
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Recusado, [
+            'em' => '2026-11-20T10:00:00-03:00',
+            'recusas' => [
+                ['tipo' => 'questao', 'id_questao' => 10, 'nome' => 'Data', 'descricao' => 'anterior ao edital'],
+                ['tipo' => 'questao', 'id_questao' => 11, 'nome' => 'Valor', 'descricao' => 'obrigatório'],
+                ['tipo' => 'linha', 'indice' => 0, 'coluna' => 'cpf', 'descricao' => 'inválido'],
+            ],
+        ]);
+    }
+
+    public function testRecusaDaQuestaoAlteradaDeixaDeValerSoNela(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaRecusa($raiz);
+
+        $this->service()->marcaRecusasAlteradas((int) $raiz->id, [10]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+        $this->assertSame([true, false, false], array_map(fn($recusa) => !empty($recusa['alterada']), $ultimo['recusas']));
+        $this->assertSame('recusado', $ultimo['situacao']);
+        $this->assertSame('2026-11-20T10:00:00-03:00', $ultimo['em'], 'a data do envio recusado não muda');
+    }
+
+    public function testSemQuestaoAlteradaNadaEMarcado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaRecusa($raiz);
+
+        $this->service()->marcaRecusasAlteradas((int) $raiz->id, [99]);
+
+        $this->assertSame([false, false, false], array_map(fn($recusa) => !empty($recusa['alterada']), $this->service()->ultimoEnvio((int) $raiz->id)['recusas']));
+    }
+
     public function testPedidoQueVenceuNaFilaApareceCancelado(): void
     {
         [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());

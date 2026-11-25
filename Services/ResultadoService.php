@@ -281,6 +281,30 @@ class ResultadoService
         ], JSON_UNESCAPED_UNICODE));
     }
 
+    /**
+     * A recusa da questão deixa de valer quando a resposta muda; a data e a situação do envio ficam.
+     * @param list<int> $idsQuestao
+     */
+    public function marcaRecusasAlteradas(int $raizId, array $idsQuestao): void
+    {
+        $gravado = $this->ultimoEnvioGravado($raizId);
+
+        if ($gravado === null || $idsQuestao === [] || empty($gravado['recusas'])) {
+            return;
+        }
+
+        $recusas = array_map(
+            fn(array $recusa) => in_array($recusa['id_questao'] ?? null, $idsQuestao, true)
+                ? ['alterada' => true] + $recusa
+                : $recusa,
+            $gravado['recusas'],
+        );
+
+        if ($recusas !== $gravado['recusas']) {
+            $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, (string) json_encode(['recusas' => $recusas] + $gravado, JSON_UNESCAPED_UNICODE));
+        }
+    }
+
     /** Duplicar ou gerar edital copia o metadado: o de outra oportunidade não vale. */
     private function ultimoEnvioGravado(int $raizId): ?array
     {

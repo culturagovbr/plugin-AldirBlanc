@@ -40,6 +40,7 @@ final class ResultadoAnexosService
         $arquivo->save(true);
 
         $this->grava($idQuestao, [...$this->idsDa($idQuestao), $arquivo->id]);
+        (new ResultadoService())->marcaRecusasAlteradas((int) $this->raiz->id, [$idQuestao]);
 
         return null;
     }
@@ -55,6 +56,7 @@ final class ResultadoAnexosService
 
         $this->grava($idQuestao, array_values(array_diff($this->idsDa($idQuestao), [$idArquivo])));
         $arquivo->delete(true);
+        (new ResultadoService())->marcaRecusasAlteradas((int) $this->raiz->id, [$idQuestao]);
 
         return true;
     }

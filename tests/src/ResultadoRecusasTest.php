@@ -28,6 +28,7 @@ class ResultadoRecusasTest extends TestCase
         $this->assertSame('O CultBR recusou respostas do formulário.', $recusas->resumo);
         $this->assertSame([[
             'tipo' => 'questao',
+            'id_questao' => 2081,
             'nome' => 'Declaração de responsabilidade e veracidade',
             'descricao' => 'Esta questão é obrigatória.',
         ]], $recusas->itens, 'o nome antigo, que o servidor repete, não aparece');
@@ -44,7 +45,10 @@ class ResultadoRecusasTest extends TestCase
 
     public function testQuestaoQueAEstruturaNaoTemSaiPeloId(): void
     {
-        $this->assertSame('Questão 13934', $this->recusas(422, 'recusa-422-obrigatoria')->itens[0]['nome']);
+        $item = $this->recusas(422, 'recusa-422-obrigatoria')->itens[0];
+
+        $this->assertSame('Questão 13934', $item['nome']);
+        $this->assertNull($item['id_questao'], 'sem a estrutura, não há questão da tela a marcar');
     }
 
     #[DataProvider('detalhesEmTexto')]

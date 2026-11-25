@@ -2,6 +2,8 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Enum\EnvioSituacao;
+use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Controller;
 use AldirBlanc\Services\FormularioResultadoService;
 use AldirBlanc\Services\ResultadoAnexosService;
@@ -237,6 +239,25 @@ class ResultadoAnexosServiceTest extends TestCase
             'planilha e documento opcional' => [true, false, null],
             'documento requerido sem planilha' => [false, true, null],
         ];
+    }
+
+    public function testAnexarERetirarTiramAMarcaDaRecusaDaQuestao(): void
+    {
+        $this->noEdital(function (ResultadoAnexosService $anexos, Opportunity $raiz) {
+            $recusas = fn() => (new ResultadoService())->ultimoEnvio((int) $raiz->id)['recusas'];
+            $grava = fn() => (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Recusado, ['recusas' => [
+                ['tipo' => 'questao', 'id_questao' => 31, 'nome' => 'Ata', 'descricao' => 'storage'],
+                ['tipo' => 'questao', 'id_questao' => 30, 'nome' => 'Outra', 'descricao' => 'storage'],
+            ]]);
+
+            $grava();
+            $arquivo = $this->anexa($anexos, 31);
+            $this->assertSame([true, false], array_map(fn($recusa) => !empty($recusa['alterada']), $recusas()));
+
+            $grava();
+            $anexos->retirar(31, $arquivo->id);
+            $this->assertSame([true, false], array_map(fn($recusa) => !empty($recusa['alterada']), $recusas()));
+        });
     }
 
     public function testDocumentoRetiradoEApagado(): void

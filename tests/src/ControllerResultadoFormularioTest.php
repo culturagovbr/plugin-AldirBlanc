@@ -632,6 +632,22 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    public function testRespostaAlteradaTiraAMarcaDaRecusaEARepetidaNao(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $this->postRespostas($raiz, [10 => 5, 11 => 'texto']);
+            (new ResultadoService())->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Recusado, ['recusas' => [
+                ['tipo' => 'questao', 'id_questao' => 10, 'nome' => 'Média das notas', 'descricao' => 'fora da faixa'],
+                ['tipo' => 'questao', 'id_questao' => 11, 'nome' => 'Comentários', 'descricao' => 'curto'],
+            ]]);
+
+            $payload = $this->postRespostas($raiz, [10 => 6, 11 => 'texto']);
+
+            $this->assertSame([true, false], array_map(fn($recusa) => !empty($recusa['alterada']), $payload['ultimoEnvio']['recusas']), 'só a resposta que mudou deixa a marca');
+        });
+    }
+
     function testSaveParcialSalvaEDevolvePendente()
     {
         $this->comFormulario(function () {

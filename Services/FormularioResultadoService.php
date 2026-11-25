@@ -750,10 +750,23 @@ class FormularioResultadoService
         $validas = array_diff_key($doGestor, $erros);
 
         if ($validas !== []) {
+            $antes = $this->savedRespostas((int) $raiz->id, $estrutura);
             $this->gravaRespostas($raiz, $validas, $estrutura);
+            (new ResultadoService())->marcaRecusasAlteradas((int) $raiz->id, $this->alteradas($antes, $validas));
         }
 
         return $erros;
+    }
+
+    /** @return list<int> as questões cuja resposta gravada mudou */
+    private function alteradas(array $antes, array $recebidas): array
+    {
+        $alteradas = array_filter(
+            array_keys($recebidas),
+            fn(int|string $id) => json_encode($antes[$id] ?? null) !== json_encode($recebidas[$id]),
+        );
+
+        return array_values(array_map('intval', $alteradas));
     }
 
     /** Merge sobre as salvas na versão vigente (null limpa); na troca de versão, saem também os documentos. */

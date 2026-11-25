@@ -81,9 +81,12 @@ final class ResultadoRecusas
 
     private static function questao(int $idQuestaoEtapa, string $descricao, FormularioEstrutura $leitura): array
     {
+        $questao = $leitura->questaoPorEtapa($idQuestaoEtapa);
+
         return [
             'tipo' => 'questao',
-            'nome' => $leitura->questaoPorEtapa($idQuestaoEtapa)['nome'] ?? sprintf(i::__('Questão %d'), $idQuestaoEtapa),
+            'id_questao' => isset($questao['id_questao']) ? (int) $questao['id_questao'] : null,
+            'nome' => $questao['nome'] ?? sprintf(i::__('Questão %d'), $idQuestaoEtapa),
             'descricao' => $descricao,
         ];
     }

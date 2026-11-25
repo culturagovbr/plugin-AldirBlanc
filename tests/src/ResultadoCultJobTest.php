@@ -352,7 +352,7 @@ class ResultadoCultJobTest extends TestCase
 
         $ultimo = $this->ultimoEnvio($raiz);
         $this->assertSame('O CultBR recusou respostas do formulário.', $ultimo['mensagem']);
-        $this->assertSame([['tipo' => 'questao', 'nome' => 'Declaração', 'descricao' => 'Esta questão é obrigatória.']], $ultimo['recusas']);
+        $this->assertSame([['tipo' => 'questao', 'id_questao' => 60, 'nome' => 'Declaração', 'descricao' => 'Esta questão é obrigatória.']], $ultimo['recusas'], 'a recusa guarda a questão da tela, que a marca até ser alterada');
     }
 
     public function testRecusaEmDetalheGuardaOTextoDoCultBr(): void
