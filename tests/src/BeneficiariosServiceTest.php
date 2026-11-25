@@ -272,6 +272,32 @@ class BeneficiariosServiceTest extends TestCase
         $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $linha['celulas']['valor_total_subsidio']['fonte']);
     }
 
+    public function testCelulaNulaVoltaAoValorDaFicha(): void
+    {
+        [$raiz, $fase] = $this->editalComCategorias([['label' => 'faixa 1', 'limit' => 1, 'value' => 1000]]);
+        $this->mapeia($raiz, ['valor_total_subsidio' => 'inscricao:valor']);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'faixa 1');
+        $this->service()->salvarCelulas($raiz, (int) $contemplada->id, ['valor_total_subsidio' => '777.00', 'cota' => 'Outra']);
+
+        $linha = $this->service()->salvarCelulas($raiz, (int) $contemplada->id, ['valor_total_subsidio' => null]);
+
+        $this->assertSame('1000.00', $this->celula($linha, 'valor_total_subsidio'), 'apagar a célula devolve o valor da ficha');
+        $this->assertSame(LinhasBeneficiariosService::FONTE_FICHA, $linha['celulas']['valor_total_subsidio']['fonte']);
+        $this->assertSame('Outra', $this->celula($linha, 'cota'), 'as outras células do gestor ficam');
+    }
+
+    public function testCelulaComTextoVazioSegueEmBranco(): void
+    {
+        [$raiz, $fase] = $this->editalComCategorias([['label' => 'faixa 1', 'limit' => 1, 'value' => 1000]]);
+        $this->mapeia($raiz, ['valor_total_subsidio' => 'inscricao:valor']);
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', 'faixa 1');
+
+        $linha = $this->service()->salvarCelulas($raiz, (int) $contemplada->id, ['valor_total_subsidio' => '']);
+
+        $this->assertNull($this->celula($linha, 'valor_total_subsidio'));
+        $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $linha['celulas']['valor_total_subsidio']['fonte']);
+    }
+
     function testPaginaRespeitaORecorte()
     {
         [$raiz, $fase] = $this->editalComCategorias();

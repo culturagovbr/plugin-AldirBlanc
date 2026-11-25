@@ -259,13 +259,20 @@ class BeneficiariosService
         return $isDeOutroTipo ? null : $respondido;
     }
 
-    /** Só coluna do modelo entra no override; o vazio é gravado porque apagar é decisão do gestor. */
+    /** Só coluna do modelo entra no override; a célula nula sai dele e volta ao valor da ficha. */
     private function celulasAceitas(array $recebidas, array $override): array
     {
         foreach (array_column($this->planilha['colunas'], 'coluna') as $coluna) {
-            if (array_key_exists($coluna, $recebidas) && !is_array($recebidas[$coluna])) {
-                $override[$coluna] = (string) $recebidas[$coluna];
+            if (!array_key_exists($coluna, $recebidas) || is_array($recebidas[$coluna])) {
+                continue;
             }
+
+            if ($recebidas[$coluna] === null) {
+                unset($override[$coluna]);
+                continue;
+            }
+
+            $override[$coluna] = (string) $recebidas[$coluna];
         }
 
         return $override;
