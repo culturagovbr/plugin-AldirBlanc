@@ -728,6 +728,19 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    public function testEstadoTrazAMarcaDasRespostasGravadas(): void
+    {
+        $this->comFormulario(function () {
+            [, $raiz] = $this->cenario();
+            $antes = $this->getFormulario($raiz)['revisao'];
+
+            $depois = $this->postRespostas($raiz, [10 => 25])['revisao'];
+
+            $this->assertNotSame($antes, $depois, 'a resposta gravada muda a marca');
+            $this->assertSame((new FormularioResultadoService())->revisao($raiz), $depois);
+        });
+    }
+
     private function gravaRespostasNaVersao(Opportunity $raiz, int|string $versao, array $respostas): void
     {
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([

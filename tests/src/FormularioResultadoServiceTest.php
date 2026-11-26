@@ -338,4 +338,29 @@ class FormularioResultadoServiceTest extends TestCase
             $this->assertCount(1, $servico->impedimentosDoEnvio($edital)['bloqueios']);
         });
     }
+
+    private function gravaRespostas(int $editalId, string $respostas): void
+    {
+        $conexao = $this->app->em->getConnection();
+        $conexao->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM]);
+        $conexao->executeStatement(
+            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
+            ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, 'value' => '{"id_formulario_versao":1,"respostas":' . $respostas . '}'],
+        );
+    }
+
+    public function testMarcaDasRespostasNaoDependeDaOrdemEmQueForamGravadas(): void
+    {
+        $edital = $this->createOpportunity($this->userDirector->createUser());
+        $servico = new FormularioResultadoService();
+
+        $this->gravaRespostas((int) $edital->id, '{"11":"texto","10":25}');
+        $primeira = $servico->revisao($edital);
+        $this->gravaRespostas((int) $edital->id, '{"10":25,"11":"texto"}');
+        $mesmas = $servico->revisao($edital);
+        $this->gravaRespostas((int) $edital->id, '{"10":26,"11":"texto"}');
+
+        $this->assertSame($primeira, $mesmas);
+        $this->assertNotSame($primeira, $servico->revisao($edital));
+    }
 }

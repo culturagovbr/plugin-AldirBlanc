@@ -59,10 +59,10 @@ class ControllerResultadoEnviarTest extends TestCase
         return $raiz;
     }
 
-    private function enviar(Opportunity $raiz): array
+    private function enviar(Opportunity $raiz, ?string $revisao = null): array
     {
         $controller = new TestableController();
-        $controller->data = ['opportunityId' => $raiz->id];
+        $controller->data = ['opportunityId' => $raiz->id] + ($revisao === null ? [] : ['revisao' => $revisao]);
 
         $this->app->response = new Response();
 
@@ -432,5 +432,34 @@ class ControllerResultadoEnviarTest extends TestCase
             $this->assertSame([], $payload['data']['bloqueios']);
             $this->assertCount(0, $this->jobsDeResultado(), 'sem formulário completo o envio tomaria 422 do validador');
         }, self::ESTRUTURA_INCOMPLETA);
+    }
+
+    public function testMarcaDasRespostasDaTelaEnfileira(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Marca Atual');
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode(['id_formulario_versao' => 1, 'respostas' => ['52' => 'Tudo certo.']]));
+
+            $payload = $this->enviar($raiz, (new FormularioResultadoService())->revisao($raiz));
+
+            $this->assertSame(200, $this->app->response->getStatusCode());
+            $this->assertTrue($payload['enfileirado']);
+            $this->assertCount(1, $this->jobsDeResultado());
+        });
+    }
+
+    public function testMarcaDeRespostasQueMudaramRecusaSemEnfileirar(): void
+    {
+        $this->comFormularioResultado(function () {
+            $raiz = $this->cenario('Subsite Enviar Marca Antiga');
+            $marcaDaTela = (new FormularioResultadoService())->revisao($raiz);
+            $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode(['id_formulario_versao' => 1, 'respostas' => ['52' => 'Gravado em outra guia.']]));
+
+            $payload = $this->enviar($raiz, $marcaDaTela);
+
+            $this->assertSame(400, $this->app->response->getStatusCode());
+            $this->assertStringContainsString('outra guia', $payload['data']);
+            $this->assertCount(0, $this->jobsDeResultado(), 'a guia desatualizada publicaria o que não mostra');
+        });
     }
 }

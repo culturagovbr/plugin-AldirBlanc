@@ -442,6 +442,12 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        $revisao = $this->data['revisao'] ?? null;
+        if ($revisao !== null && (string) $revisao !== (new FormularioResultadoService())->revisao($raiz)) {
+            $this->errorJson(FormularioResultadoService::motivoRespostasDesatualizadas(), 400);
+            return;
+        }
+
         if (!$service->isResultadoFormComplete($raiz)) {
             $this->errorJson(
                 ['message' => i::__('Complete o formulário do resultado antes de enviar.')] + $this->impedimentosDoEnvio($raiz),

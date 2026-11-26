@@ -214,6 +214,7 @@ class FormularioResultadoService
             'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
             'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
+            'revisao' => $this->revisao($raiz),
         ];
     }
 
@@ -550,6 +551,11 @@ class FormularioResultadoService
         return ($planilha['possui'] ?? null) === true && $documentosRequeridos !== [];
     }
 
+    public static function motivoRespostasDesatualizadas(): string
+    {
+        return i::__('As respostas mudaram em outra guia ou por outra pessoa, e a tela foi atualizada. Confira e envie de novo.');
+    }
+
     public static function motivoPlanilhaComAnexos(): string
     {
         return i::__('O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.');
@@ -723,6 +729,15 @@ class FormularioResultadoService
         $dados = $this->savedFormData($raizId);
 
         return $this->isDeOutraVersao($dados, $estrutura) ? [] : $this->respostasGravadas($dados);
+    }
+
+    /** A marca das respostas gravadas, que o pedido de envio traz para provar que a tela as mostrava. */
+    public function revisao(Opportunity $raiz): string
+    {
+        $respostas = $this->respostasGravadas($this->savedFormData((int) $raiz->id));
+        ksort($respostas);
+
+        return md5(json_encode($respostas, JSON_UNESCAPED_UNICODE));
     }
 
     private function isDeOutraVersao(array $dados, ?array $estrutura): bool
