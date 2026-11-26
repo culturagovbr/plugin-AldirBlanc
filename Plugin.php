@@ -167,6 +167,13 @@ class Plugin extends \MapasCulturais\Plugin
             }
         });
 
+        // private só filtra a leitura: sem isto, quem edita o edital gravaria por fora o que só o plugin escreve
+        $retiraChavesDoPlugin = function (&$data) {
+            $data = array_diff_key((array) $data, array_flip(Controller::OPPORTUNITY_META_CULT_BR_GRAVADAS_PELO_PLUGIN));
+        };
+        $app->hook('PATCH(opportunity.single):data', $retiraChavesDoPlugin);
+        $app->hook('PUT(opportunity.single):data', $retiraChavesDoPlugin);
+
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
         // ownerEntity inexistente cause null dereference no core.
