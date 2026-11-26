@@ -230,14 +230,36 @@ class ResultadoDeParaServiceTest extends TestCase
         $this->assertSame([], $this->service()->fontes((int) $copia->id, 'pontos_de_cultura'), 'duplicar edital copia o metadado');
     }
 
-    public function testGravarDeNovoSubstituiOAnterior(): void
+    public function testGravarUmaColunaPreservaAsOutras(): void
     {
         $edital = $this->novoEdital();
         $planilha = $this->planilha('modelo-pontos-de-cultura');
         $this->salvaFontes($edital, $planilha, ['cota' => 'inscricao:faixa']);
         $this->salvaFontes($edital, $planilha, ['tipo_agente' => 'inscricao:tipo']);
 
-        $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $this->service()->fontes((int) $edital->id, 'pontos_de_cultura'));
+        $fontes = $this->service()->fontes((int) $edital->id, 'pontos_de_cultura');
+        ksort($fontes);
+
+        $this->assertSame(['cota' => 'inscricao:faixa', 'tipo_agente' => 'inscricao:tipo'], $fontes, 'a outra guia grava só a coluna que mudou');
+    }
+
+    public function testColunaNulaRetiraAFonte(): void
+    {
+        $edital = $this->novoEdital();
+        $planilha = $this->planilha('modelo-pontos-de-cultura');
+        $this->salvaFontes($edital, $planilha, ['cota' => 'inscricao:faixa', 'tipo_agente' => 'inscricao:tipo']);
+
+        $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $this->salvaFontes($edital, $planilha, ['cota' => null]));
+    }
+
+    public function testEquivalenciaGravadaFicaQuandoOutraColunaMuda(): void
+    {
+        $edital = $this->novoEdital();
+        $planilha = $this->planilha('modelo-pontos-de-cultura');
+        $equivalencias = ['tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI']];
+        $this->service()->salvar($edital, $planilha, ['tipo_agente' => 'inscricao:tipo'], $equivalencias);
+
+        $this->assertSame($equivalencias, $this->service()->salvar($edital, $planilha, ['cota' => 'inscricao:faixa'])['equivalencias']);
     }
 
     /** Campo com opções, na forma em que a ficha as guarda. */

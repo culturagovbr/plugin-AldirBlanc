@@ -215,17 +215,34 @@ class ControllerResultadoDeParaTest extends TestCase
         ];
     }
 
-    function testPostSemMapeamentoResponde400()
+    function testPostComMapeamentoQueNaoEListaResponde400()
     {
         $owner = $this->userDirector->createUser();
         $raiz = $this->createOpportunity($owner);
         $this->login($owner);
 
         $controller = new TestableController();
-        $controller->data = ['opportunityId' => $raiz->id];
-        $this->callJson(fn() => $controller->POST_resultadoDePara());
+        $controller->data = ['opportunityId' => $raiz->id, 'mapeamento' => 'texto'];
+        $payload = $this->callJson(fn() => $controller->POST_resultadoDePara());
 
         $this->assertSame(400, $this->responseStatus());
+        $this->assertSame('Informe o de/para.', $payload['data']);
+    }
+
+    public function testPostSoComEquivalenciaMantemOMapeamento(): void
+    {
+        $this->comModelo(fn() => $this->respostaDaConecta('modelo-pontos-de-cultura'), function () {
+            $raiz = $this->edital();
+            $this->postDePara($raiz, ['tipo_agente' => 'inscricao:tipo']);
+            $equivalencias = ['tipo_agente' => ['MEI' => 'Microempreendedor individual - MEI']];
+
+            $controller = new TestableController();
+            $controller->data = ['opportunityId' => $raiz->id, 'equivalencias' => $equivalencias];
+            $salvo = $this->callJson(fn() => $controller->POST_resultadoDePara());
+
+            $this->assertSame(['tipo_agente' => 'inscricao:tipo'], $salvo['mapeamento']);
+            $this->assertSame($equivalencias, $salvo['equivalencias']);
+        });
     }
 
     function testSemControleResponde403()

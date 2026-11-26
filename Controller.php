@@ -515,7 +515,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $mapeamento = $this->data['mapeamento'] ?? null;
+        $mapeamento = $this->data['mapeamento'] ?? [];
         if (!is_array($mapeamento)) {
             $this->errorJson(i::__('Informe o de/para.'), 400);
             return;

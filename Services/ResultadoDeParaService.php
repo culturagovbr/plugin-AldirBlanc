@@ -134,17 +134,20 @@ class ResultadoDeParaService
     }
 
     /**
-     * Guarda só o que aponta para coluna do modelo, fonte do edital e opção declarada; devolve o que ficou gravado
+     * Aplica o recebido sobre o gravado, coluna a coluna (nulo retira), e guarda só o que aponta para coluna do
+     * modelo, fonte do edital e opção declarada; devolve o que ficou gravado
      * e, por `coluna.tipo de proponente`, o motivo do campo que não serve ao documento.
      * @return array{fontes: array, equivalencias: array, recusas: array<string, string>}
      */
     public function salvar(Opportunity $raiz, array $planilha, array $fontesRecebidas, array $equivalenciasRecebidas = []): array
     {
-        $anteriores = $this->fontes((int) $raiz->id, $planilha['modelo'] ?? null);
-        [$fontes, $recusas] = $this->fontesAceitas($raiz, $planilha, $fontesRecebidas, $anteriores);
+        $anterior = $this->gravado((int) $raiz->id, $planilha['modelo'] ?? null);
+        $anteriores = $anterior['fontes'] ?? [];
+        [$fontes, $recusas] = $this->fontesAceitas($raiz, $planilha, array_replace($anteriores, $fontesRecebidas), $anteriores);
+        $equivalencias = array_replace($anterior['equivalencias'] ?? [], $equivalenciasRecebidas);
         $gravado = [
             'fontes' => $fontes,
-            'equivalencias' => $this->equivalenciasAceitas($raiz, $planilha, $fontes, $equivalenciasRecebidas),
+            'equivalencias' => $this->equivalenciasAceitas($raiz, $planilha, $fontes, $equivalencias),
         ];
 
         $this->upsertMeta(
