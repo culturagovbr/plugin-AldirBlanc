@@ -16,6 +16,7 @@ final class FormularioRespostasValidator
         'número', 'moeda', 'data', 'texto', 'textarea', 'booleano', 'radio', 'checkbox', 'múltipla escolha', ...self::TIPOS_DE_TABELA,
     ];
 
+    private const MOEDA_NEGATIVA = 'o valor em reais não pode ser negativo';
     private const TIPOS_DE_COLUNA = ['text', 'number', 'currency', 'dropdown', 'escolha_unica'];
 
     private const FORMATOS_DE_DATA = ['Y-m-d'];
@@ -213,8 +214,17 @@ final class FormularioRespostasValidator
         $config = $questao['config'] ?? [];
         $minimos = array_filter([$questao['valor_minimo'] ?? null, $config['numericoMinimo'] ?? null], is_numeric(...));
 
-        return $this->confereNumero($valor, $minimos === [] ? null : max($minimos), $questao['valor_maximo'] ?? null)
-            ?? $this->confereInteiro($valor, !empty($config['numericoSomenteInteiros']));
+        $minimo = $minimos === [] ? null : max($minimos);
+
+        return $this->confereNumero($valor, $minimo, $questao['valor_maximo'] ?? null)
+            ?? $this->confereInteiro($valor, !empty($config['numericoSomenteInteiros']))
+            ?? ($questao['tipo_questao'] === 'moeda' ? $this->confereMoeda($valor, $minimo) : null);
+    }
+
+    /** Sem mínimo declarado, moeda não aceita negativo: a Conecta MinC o publica. */
+    private function confereMoeda(mixed $valor, mixed $minimo): ?FormularioVeredito
+    {
+        return $minimo === null && (float) $valor < 0 ? FormularioVeredito::invalida(self::MOEDA_NEGATIVA) : null;
     }
 
     private function confereNumero(mixed $valor, mixed $minimo, mixed $maximo): ?FormularioVeredito
@@ -421,7 +431,8 @@ final class FormularioRespostasValidator
 
         return match ($coluna['tipo']) {
             'text' => $this->confereTexto($valor, $coluna['limiteCaracteres']) ?? $this->confereMascaras([$coluna['mascara']], $valor, ''),
-            'number', 'currency' => $this->confereNumero($valor, $coluna['minimo'], $coluna['maximo']),
+            'number' => $this->confereNumero($valor, $coluna['minimo'], $coluna['maximo']),
+            'currency' => $this->confereNumero($valor, $coluna['minimo'], $coluna['maximo']) ?? $this->confereMoeda($valor, $coluna['minimo']),
             'dropdown', 'escolha_unica' => in_array($valor, $coluna['opcoes'], true) ? null : FormularioVeredito::invalida('opção fora da lista'),
             default => FormularioVeredito::invalida("tipo de coluna não suportado: {$coluna['tipo']}"),
         };

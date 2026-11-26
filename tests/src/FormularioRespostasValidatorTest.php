@@ -129,6 +129,9 @@ class FormularioRespostasValidatorTest extends TestCase
             'CNPJ com dígito zero' => [20, 2765, '11222347000103'],
             'CNPJ alfanumérico em minúsculas' => [20, 2765, '12abc34501de35'],
             'moeda com centavos' => [1, 1840, 10.55],
+            'moeda zero sem mínimo declarado' => [12, 1973, 0],
+            'coluna de moeda zerada' => [3, 1764, [['tipo_documento' => 'CNPJ', 'numero_documento' => '11222333000181', 'nome_razao_social' => 'Casa', 'valor_contrato' => 0]]],
+            'número negativo sem mínimo declarado' => [1, 1838, -3],
             'moeda no limite inferior' => [20, 2767, 600000],
             'moeda no limite superior' => [20, 2767, 2000000],
             'texto no limite de caracteres' => [1, 1845, str_repeat('ã', 700)],
@@ -185,6 +188,8 @@ class FormularioRespostasValidatorTest extends TestCase
             'moeda acima do máximo' => [20, 2767, 2000000.01, 'valor máximo'],
             'número com casa decimal' => [1, 1838, 10.5, 'número inteiro'],
             'número negativo em questão com mínimo' => [9, 2838, -1, 'valor mínimo'],
+            'moeda negativa sem mínimo declarado' => [12, 1973, -1, 'não pode ser negativo'],
+            'coluna de moeda negativa' => [3, 1764, [['tipo_documento' => 'CNPJ', 'numero_documento' => '11222333000181', 'nome_razao_social' => 'Casa', 'valor_contrato' => -5]], 'linha 1: Valor do contrato: o valor em reais não pode ser negativo'],
             'texto além do limite' => [1, 1845, str_repeat('a', 701), '700 caracteres'],
             'texto que não é texto' => [1, 1845, 12, 'deve ser texto'],
             'data com hora em questão sem hora' => [1, 2280, '2026-12-31T10:00', 'data deve ser válida'],
@@ -327,7 +332,15 @@ class FormularioRespostasValidatorTest extends TestCase
             'abaixo do mínimo' => [['type' => 'number', 'min' => 1], 0, 'linha 1: Coluna: o valor mínimo é 1'],
             'acima do máximo' => [['type' => 'currency', 'max' => 10], 11, 'linha 1: Coluna: o valor máximo é 10'],
             'tipo inventado' => [['type' => 'mapa'], 'x', 'linha 1: Coluna: tipo de coluna não suportado: mapa'],
+            'moeda negativa acima do mínimo declarado' => [['type' => 'currency', 'min' => -10], -5, ''],
         ];
+    }
+
+    public function testMoedaNegativaValeQuandoOMinimoDeclaradoAPermite(): void
+    {
+        $validator = $this->validator([$this->questao(['tipo_questao' => 'moeda', 'valor_minimo' => -100])]);
+
+        $this->assertSame([], $validator->validate([10 => -50]));
     }
 
     public function testColunaSomenteLeituraNaoEConferida(): void
