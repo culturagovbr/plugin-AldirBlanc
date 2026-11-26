@@ -90,9 +90,18 @@ class LinhasBeneficiariosService
 
         return match ($coluna['tipo']) {
             'cpf', 'cnpj', 'cep' => FormularioMascara::confere($coluna['tipo'], $valor)?->motivo,
-            self::MONETARIO => preg_match('/^\d+\.\d{2}$/', $valor) ? null : i::__('O valor não é um número.'),
+            self::MONETARIO => $this->motivoDoMonetario($valor),
             'lista' => in_array($valor, $coluna['opcoes'] ?? [], true) ? null : i::__('O valor não é uma das opções do CultBR.'),
             default => null,
+        };
+    }
+
+    private function motivoDoMonetario(string $valor): ?string
+    {
+        return match (true) {
+            (bool) preg_match('/^\d+\.\d{2}$/', $valor) => null,
+            (bool) preg_match('/^-\d+(\.\d{1,2})?$/', $valor) => i::__('O valor em reais não pode ser negativo.'),
+            default => i::__('O valor não é um número.'),
         };
     }
 

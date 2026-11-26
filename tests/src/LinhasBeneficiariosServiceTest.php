@@ -92,6 +92,11 @@ class LinhasBeneficiariosServiceTest extends TestCase
         ], $this->service()->pendencias($linha));
     }
 
+    public function testMonetarioNegativoPendeComOMotivo(): void
+    {
+        $this->assertSame(['valor_total_subsidio' => 'O valor em reais não pode ser negativo.'], $this->service()->pendencias($this->linha(['valor_total_subsidio' => -1500])));
+    }
+
     public function testObrigatoriaVaziaPendeEAsDemaisNao(): void
     {
         $linha = $this->linha(['raca_etnia' => null, 'cnpj' => null, 'povos_comunidades_tradicionais' => null]);
