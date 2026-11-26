@@ -5,7 +5,7 @@ namespace Tests\AldirBlanc;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 
-/** A criação, o PATCH e o PUT da oportunidade não gravam o que só o plugin escreve. */
+/** A criação, o PATCH e o PUT da oportunidade e da inscrição não gravam o que só o plugin escreve. */
 class ApiDoCoreSemChavesDoPluginTest extends TestCase
 {
     public static function chavesDoPlugin(): array
@@ -49,5 +49,23 @@ class ApiDoCoreSemChavesDoPluginTest extends TestCase
         $dados = $this->dadosDepoisDoGancho('PUT', ['shortDescription' => 'Descrição nova', $chave => '53790']);
 
         $this->assertSame(['shortDescription' => 'Descrição nova'], $dados);
+    }
+
+    public static function acoesDaInscricao(): array
+    {
+        return [
+            'criação' => ['POST', 'index'],
+            'PATCH' => ['PATCH', 'single'],
+            'PUT' => ['PUT', 'single'],
+        ];
+    }
+
+    #[DataProvider('acoesDaInscricao')]
+    public function testInscricaoDescartaALinhaDaGradeEMantemORestante(string $metodo, string $acao): void
+    {
+        $dados = ['appliedForQuota' => true, 'cultBrResultadoPlanilhaLinha' => ['modelo' => 'pontos_de_cultura', 'celulas' => ['cep_espaco_cultural' => '99999-999']]];
+        $this->app->applyHookBoundTo($this->app->controller('registration'), "{$metodo}(registration.{$acao}):data", ['data' => &$dados]);
+
+        $this->assertSame(['appliedForQuota' => true], $dados);
     }
 }

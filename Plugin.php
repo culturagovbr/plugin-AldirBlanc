@@ -175,6 +175,14 @@ class Plugin extends \MapasCulturais\Plugin
         $app->hook('PATCH(opportunity.single):data', $retiraChavesDoPlugin);
         $app->hook('PUT(opportunity.single):data', $retiraChavesDoPlugin);
 
+        // a linha da inscrição vale como digitada pelo gestor na grade
+        $retiraLinhaDaInscricao = function (&$data) {
+            $data = array_diff_key((array) $data, [Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA => true]);
+        };
+        $app->hook('POST(registration.index):data', $retiraLinhaDaInscricao);
+        $app->hook('PATCH(registration.single):data', $retiraLinhaDaInscricao);
+        $app->hook('PUT(registration.single):data', $retiraLinhaDaInscricao);
+
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
         // ownerEntity inexistente cause null dereference no core.
