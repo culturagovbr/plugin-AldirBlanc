@@ -171,6 +171,7 @@ class Plugin extends \MapasCulturais\Plugin
         $retiraChavesDoPlugin = function (&$data) {
             $data = array_diff_key((array) $data, array_flip(Controller::OPPORTUNITY_META_CULT_BR_GRAVADAS_PELO_PLUGIN));
         };
+        $app->hook('POST(opportunity.index):data', $retiraChavesDoPlugin);
         $app->hook('PATCH(opportunity.single):data', $retiraChavesDoPlugin);
         $app->hook('PUT(opportunity.single):data', $retiraChavesDoPlugin);
 

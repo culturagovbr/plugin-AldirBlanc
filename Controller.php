@@ -92,7 +92,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Células que o gestor digitou, na inscrição de origem, com o modelo de planilha a que pertencem. */
     public const REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA = 'cultBrResultadoPlanilhaLinha';
 
-    /** Só o plugin as grava: a API do core as tira do PATCH e do PUT da oportunidade. */
+    /** Só o plugin as grava: a API do core as tira da criação, do PATCH e do PUT da oportunidade. */
     public const OPPORTUNITY_META_CULT_BR_GRAVADAS_PELO_PLUGIN = [
         self::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM,
         self::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO,
