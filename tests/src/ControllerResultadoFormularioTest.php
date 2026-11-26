@@ -297,6 +297,47 @@ class ControllerResultadoFormularioTest extends TestCase
         });
     }
 
+    private function respostasGravadas(Opportunity $raiz): array
+    {
+        $gravado = $this->app->em->getConnection()->fetchOne(
+            'SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key',
+            ['id' => $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM],
+        );
+
+        return json_decode((string) $gravado, true)['respostas'] ?? [];
+    }
+
+    public function testValorSugeridoApagadoFicaVazioPendenteEForaDoEnvio(): void
+    {
+        $estrutura = $this->estruturaCom([
+            ['id_questao' => 52, 'id_questao_etapa' => 152, 'nome' => 'Valor total repassado', 'tipo_questao' => 'moeda', 'tag' => 'valor_total_repassado_edital_1_1', 'requerida' => true],
+            ['id_questao' => 60, 'id_questao_etapa' => 160, 'nome' => 'Comentários', 'tipo_questao' => 'texto', 'tag' => 'comentarios', 'requerida' => false],
+        ]);
+
+        $this->comEstrutura($estrutura, function () {
+            [$owner, $raiz, $fase] = $this->cenario();
+            $this->gravaFaixas($raiz, [['label' => 'Música', 'limit' => 5, 'value' => 1000]]);
+            $this->inscricao($fase, \MapasCulturais\Entities\Registration::STATUS_APPROVED, 'Música');
+            $this->app->em->clear();
+            $this->login($owner);
+            $this->assertNotNull($this->getFormulario($raiz)['respostas']['52'] ?? null, 'o valor repassado vem sugerido');
+
+            $apagado = $this->postRespostas($raiz, [52 => null, 60 => 'Comentário']);
+
+            $this->assertArrayHasKey('52', $apagado['respostas']);
+            $this->assertNull($apagado['respostas']['52'], 'a sugestão não volta depois de apagada');
+            $this->assertContains(52, array_column($apagado['pendencias'], 'id_questao'));
+            $enviadas = array_column((new FormularioResultadoService())->conteudoParaEnvio($raiz)['respostas'], 'id_par_questao');
+            $this->assertNotContains(152, $enviadas, 'o envio levaria o valor que o gestor apagou');
+
+            $this->postRespostas($raiz, [60 => null]);
+            $this->assertSame(['52' => null], $this->respostasGravadas($raiz), 'fora da sugestão, nulo continua retirando a resposta');
+
+            $respondido = $this->postRespostas($raiz, [52 => 777]);
+            $this->assertSame(777, $respondido['respostas']['52']);
+        });
+    }
+
     private function jobsDeResultado(): array
     {
         return $this->app->repo('Job')->findBy(['type' => \AldirBlanc\Jobs\ResultadoCultJob::SLUG]);

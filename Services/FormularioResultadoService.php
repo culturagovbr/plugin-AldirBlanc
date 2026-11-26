@@ -790,18 +790,22 @@ class FormularioResultadoService
         return array_values(array_map('intval', $alteradas));
     }
 
-    /** Merge sobre as salvas na versão vigente (null limpa); na troca de versão, saem também os documentos. */
+    /**
+     * Merge sobre as salvas na versão vigente (null limpa, e na questão sugerida fica gravado como apagada);
+     * na troca de versão, saem também os documentos.
+     */
     public function gravaRespostas(Opportunity $raiz, array $respostas, array $estrutura): void
     {
         $raizId = (int) $raiz->id;
         $isTrocaDeVersao = $this->isDeOutraVersao($this->savedFormData($raizId), $estrutura);
         $salvas = array_replace($this->savedRespostas($raizId, $estrutura), $respostas);
+        $sugeridas = $this->respostasSugeridas($raiz, $estrutura);
 
         $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => $estrutura['id_formulario'] ?? null,
             'id_formulario_versao' => $estrutura['id_formulario_versao'] ?? null,
             'versao' => $estrutura['versao'] ?? null,
-            'respostas' => array_filter($salvas, fn($valor) => $valor !== null),
+            'respostas' => array_filter($salvas, fn($valor, $id) => $valor !== null || isset($sugeridas[$id]), ARRAY_FILTER_USE_BOTH),
         ], JSON_UNESCAPED_UNICODE));
 
         if ($isTrocaDeVersao) {
