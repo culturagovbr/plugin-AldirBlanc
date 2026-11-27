@@ -1,0 +1,18 @@
+{
+ "message": "Há linhas inválidas. Nenhuma linha foi salva.",
+ "modelo_planilha": "pontos_de_cultura",
+ "processamento_id": null,
+ "total_linhas": 1,
+ "total_inconsistencias": 1,
+ "inconsistencias": [
+  {
+   "linha": 2,
+   "indice": 0,
+   "coluna": "cnpj",
+   "regra": "cnpj_obrigatorio",
+   "descricao": "Campo obrigatório não preenchido (em caso de pessoa jurídica ou mei)",
+   "categoria": "erro de obrigatoriedade",
+   "valor_recebido": ""
+  }
+ ]
+}

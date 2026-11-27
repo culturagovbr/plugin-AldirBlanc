@@ -3,6 +3,7 @@
 namespace Tests\AldirBlanc\Traits;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Services\BeneficiariosService;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use MapasCulturais\Entities\RegistrationFieldConfiguration;
@@ -11,6 +12,19 @@ use MapasCulturais\Entities\RegistrationStep;
 /** Edital com resultado publicado e inscrições contempladas, como a grade de beneficiários encontra. */
 trait BuildsContempladas
 {
+    use LoadsConectaResponses;
+
+    /** O que o modelo cobra além do documento, que vem da ficha. */
+    protected const CELULAS_COMPLETAS = [
+        'tipo_agente' => 'Pessoa física',
+        'cota' => 'Proposta selecionada em ampla concorrência',
+        'raca_etnia' => 'Parda',
+        'pessoa_com_deficiencia' => 'Não',
+        'valor_total_subsidio' => '15000.00',
+        'tipo_espaco_cultural' => 'Atelier',
+        'cep_espaco_cultural' => '70070-000',
+    ];
+
     protected function editalComCategorias(array $categorias = []): array
     {
         $owner = $this->userDirector->createUser();
@@ -116,17 +130,46 @@ trait BuildsContempladas
         return $contemplada;
     }
 
-    /** O de/para do documento do responsável pela execução: tipo de proponente => id do campo da ficha. */
-    protected function mapeiaDocumentos(Opportunity $raiz, array $porTipo): void
+    /** O modelo de planilha, na forma em que os serviços o recebem. */
+    protected function planilha(string $resposta = 'modelo-pontos-de-cultura'): array
+    {
+        $modelo = $this->respostaDaConecta($resposta);
+
+        return ['modelo' => $modelo['modelo'], 'colunas' => $modelo['campos']];
+    }
+
+    /** Acrescenta fontes ao de/para do edital, sem passar pela validação do serviço. */
+    protected function mapeia(Opportunity $raiz, array $fontes): void
     {
         $conn = $this->app->em->getConnection();
-        $parametros = ['id' => (int) $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO];
+        $parametros = ['id' => (int) $raiz->id, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA];
+        $gravado = json_decode((string) $conn->fetchOne('SELECT value FROM opportunity_meta WHERE object_id = :id AND key = :key', $parametros), true);
 
         $conn->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', $parametros);
-        $conn->executeStatement(
-            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
-            $parametros + ['value' => json_encode($porTipo, JSON_UNESCAPED_UNICODE)],
-        );
+        $conn->executeStatement('INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)', $parametros + [
+            'value' => json_encode([
+                'oportunidade' => (int) $raiz->id,
+                'modelo' => 'pontos_de_cultura',
+                'fontes' => $fontes + ($gravado['fontes'] ?? []),
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+    }
+
+    /** O mesmo campo de documento serve às colunas de CPF e de CNPJ, por tipo de proponente. */
+    protected function mapeiaDocumentos(Opportunity $raiz, array $porTipo): void
+    {
+        $fontes = array_map(fn(int $id) => "campo:{$id}", $porTipo);
+
+        $this->mapeia($raiz, ['cpf' => $fontes, 'cnpj' => $fontes]);
+    }
+
+    /** Contemplada sem pendência na planilha. */
+    protected function contempladaCompleta(Opportunity $raiz, Opportunity $fase, string $cpf = '529.982.247-25'): Registration
+    {
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, $cpf);
+        (new BeneficiariosService($this->planilha()))->salvarCelulas($raiz, (int) $contemplada->id, self::CELULAS_COMPLETAS);
+
+        return $contemplada;
     }
 
     /** Campo de documento na fase indicada, já apontado pelo de/para dos tipos informados. */

@@ -1,0 +1,415 @@
+{
+ "id_formulario": 115,
+ "id_formulario_versao": 519,
+ "versao": 9,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1874,
+   "etapas": [
+    {
+     "id_etapa": 2662,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 13461,
+       "id_questao": 2600,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_3_2_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13462,
+       "id_questao": 2601,
+       "nome": "Número e título do edital / termo de referência",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_3_2_espelho_numero_titulo_edital_termo_referencia",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital / termo de referência"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13463,
+       "id_questao": 2262,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_3_2_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1875,
+   "etapas": [
+    {
+     "id_etapa": 2663,
+     "nome": "Contratados",
+     "questoes": [
+      {
+       "id_questao_etapa": 13464,
+       "id_questao": 1820,
+       "nome": "CPF ou CNPJ do contratado",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_contratados_3_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_documento",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Tipo",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Selecione CPF ou CNPJ",
+          "dropdownOptions": {
+           "values": [
+            "CPF",
+            "CNPJ"
+           ]
+          }
+         },
+         {
+          "key": "documento",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "CPF ou CNPJ",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Insira o CPF ou CNPJ",
+          "dropdownOptions": null
+         },
+         {
+          "key": "nome_razao_social",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome / Razão Social",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         },
+         {
+          "key": "valor_contrato",
+          "max": null,
+          "min": null,
+          "type": "currency",
+          "label": "Valor do contrato",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         }
+        ],
+        "minRows": 1,
+        "buttonLabel": "Adicionar contratado",
+        "textoPergunta": "CPF ou CNPJ do contratado",
+        "usePagination": false
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1876,
+   "etapas": [
+    {
+     "id_etapa": 2664,
+     "nome": "Execução e informações",
+     "questoes": [
+      {
+       "id_questao_etapa": 13465,
+       "id_questao": 1828,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "execucao_conforme_planejado_3_2",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13466,
+       "id_questao": 2602,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_3_2",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_3_2_execucao_true",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13465
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13467,
+       "id_questao": 1830,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_3_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_3_2_execucao_false",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13465
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13468,
+       "id_questao": 2603,
+       "nome": "Qual a data prevista de entrega final das informações de execução do edital?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "data_entrega_informacoes_execucao_edital_3_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data prevista de entrega final das informações de execução do edital?"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1877,
+   "etapas": [
+    {
+     "id_etapa": 2665,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 13469,
+       "id_questao": 2604,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "pdf_publicacao_resultado_3_2",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13470,
+       "id_questao": 2605,
+       "nome": "Outros documentos",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "outros_documentos_3_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13471,
+       "id_questao": 2606,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "declaracao_responsabilidade_veracidade_3_2",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_veracidade_3_2",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         }
+        ],
+        "limiteMarcacoes": 1,
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

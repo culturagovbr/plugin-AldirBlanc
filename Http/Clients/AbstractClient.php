@@ -6,6 +6,7 @@ use AldirBlanc\Entities\CultBrRequestLogAttempt;
 use AldirBlanc\Enum\Mode;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Http\Transport\CurlTransport;
+use AldirBlanc\Http\Transport\RequestBody;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Http\Transport\TransportResponse;
 use AldirBlanc\Plugin;
@@ -62,21 +63,21 @@ abstract class AbstractClient
         $this->transport = $transport ?? new CurlTransport();
     }
 
-    private function send(string $method, string $url, ?string $body = null): TransportResponse
+    private function send(string $method, string $url, ?RequestBody $body = null): TransportResponse
     {
         $this->lastResponse = null;
 
-        $resposta = $this->transport->send($method, $url, $this->headers(), $body);
+        $resposta = $this->transport->send($method, $url, $this->headers($body?->contentType ?? RequestBody::JSON), $body?->content);
         $this->lastResponse = $resposta;
 
         return $resposta;
     }
 
     /** @return array<string,string> */
-    private function headers(): array
+    private function headers(string $contentType): array
     {
         return [
-            'Content-Type' => 'application/json',
+            'Content-Type' => $contentType,
             'Authorization' => 'Bearer ' . $this->token,
         ];
     }
@@ -160,7 +161,7 @@ abstract class AbstractClient
                 // isset e não prepareUrl() direto: as propriedades são tipadas e podem não estar
                 // inicializadas numa subclasse, e o erro aqui derrubaria o envio, não só o log.
                 'endpoint' => isset($this->endpoint, $this->document) ? $this->prepareUrl() : ($this->endpoint ?? ''),
-                'payload' => $data,
+                'payload' => $this->recordedPayload($data),
                 'status' => CultBrRequestLogAttempt::RESULT_SIMULATED,
                 'sentAt' => $sentAt,
                 'durationMs' => $this->elapsedMs($startedAt),
@@ -169,15 +170,15 @@ abstract class AbstractClient
         }
 
         $fullUrl = $this->prepareUrl();
-        $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
+        $body = $this->requestBody($data);
 
         $app = App::i();
-        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl} | Body: {$jsonPayload}");
+        $app->log->info("[CultBR] {$metodo} payload | URL: {$fullUrl}" . $this->bodyForLog($body->content));
 
         try {
-            $resposta = $this->send($metodo, $fullUrl, $jsonPayload);
+            $resposta = $this->send($metodo, $fullUrl, $body);
             $rawResponse = $resposta->body;
-            $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status} | Body: " . (is_string($rawResponse) ? $rawResponse : json_encode($rawResponse)));
+            $app->log->info("[CultBR] {$metodo} response | HTTP: {$resposta->status}" . $this->bodyForLog(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)));
             $parsed = $this->parseResponse(
                 $rawResponse,
                 $resposta->status,
@@ -189,8 +190,8 @@ abstract class AbstractClient
             $this->recordExchange([
                 'method' => $metodo,
                 'endpoint' => $fullUrl,
-                'payload' => $data,
-                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'payload' => $this->recordedPayload($data),
+                'response' => $this->recordedResponse(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)),
                 'responseHeaders' => $resposta->headers,
                 'httpStatus' => $resposta->status,
                 'status' => CultBrRequestLogAttempt::RESULT_SUCCESS,
@@ -205,8 +206,8 @@ abstract class AbstractClient
             $this->recordExchange([
                 'method' => $metodo,
                 'endpoint' => $fullUrl,
-                'payload' => $data,
-                'response' => is_string($rawResponse) ? $rawResponse : json_encode($rawResponse),
+                'payload' => $this->recordedPayload($data),
+                'response' => $this->recordedResponse(is_string($rawResponse) ? $rawResponse : (string) json_encode($rawResponse)),
                 'responseHeaders' => $this->lastResponse?->headers,
                 'httpStatus' => $this->lastResponse?->status,
                 'error' => $this->exchangeErrorMessage($e),
@@ -217,6 +218,30 @@ abstract class AbstractClient
 
             $this->handleError($mensagemErro, $e, true);
         }
+    }
+
+    /** O corpo que sai pela rede. */
+    protected function requestBody(array $data): RequestBody
+    {
+        return RequestBody::json($data);
+    }
+
+    /** O corpo enviado como o histórico o guarda; o que sai pela rede é sempre o original. */
+    protected function recordedPayload(array $data): array
+    {
+        return $data;
+    }
+
+    /** A resposta como o histórico a guarda. */
+    protected function recordedResponse(string $response): string
+    {
+        return $response;
+    }
+
+    /** O corpo como vai ao log da aplicação; vazio tira o corpo da linha. */
+    protected function bodyForLog(string $body): string
+    {
+        return " | Body: {$body}";
     }
 
     private function elapsedMs(float $startedAt): int
@@ -370,7 +395,7 @@ abstract class AbstractClient
         // e um corpo ilegível não pode apagar o status que veio com ele.
         if ($httpCode >= self::HTTP_REDIRECT_MIN) {
             throw IntegrationError::http(
-                $this->httpErrorMessage($bodyIsUsable ? $decoded : null, $httpCode, $curlErrorMessage),
+                $this->httpErrorMessageForLog($this->httpErrorMessage($bodyIsUsable ? $decoded : null, $httpCode, $curlErrorMessage)),
                 $httpCode,
                 $rawBody,
             );
@@ -441,6 +466,12 @@ abstract class AbstractClient
         }
 
         return $this->firstFilled($curlErrorMessage, "Erro HTTP {$httpCode}");
+    }
+
+    /** A mensagem do erro vai para o log; a subclasse tira dela o que não pode ir. O corpo bruto segue intacto. */
+    protected function httpErrorMessageForLog(string $mensagem): string
+    {
+        return $mensagem;
     }
 
     /** Achata a lista de `{loc, msg}` do 422 do FastAPI em "campo: motivo". */

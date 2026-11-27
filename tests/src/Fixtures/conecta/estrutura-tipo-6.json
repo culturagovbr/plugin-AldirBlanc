@@ -1,0 +1,685 @@
+{
+ "id_formulario": 29,
+ "id_formulario_versao": 492,
+ "versao": 7,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1744,
+   "etapas": [
+    {
+     "id_etapa": 2528,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 12671,
+       "id_questao": 2428,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_6_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12672,
+       "id_questao": 2218,
+       "nome": "Número e título do edital / termo de referência",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_6_espelho_numero_titulo_instrumento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital / termo de referência"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12673,
+       "id_questao": 2429,
+       "nome": "Objeto da licitação ou contratação",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_6_espelho_objeto_licitacao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Objeto da licitação ou contratação"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12674,
+       "id_questao": 2220,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_1_6_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12675,
+       "id_questao": 2430,
+       "nome": "Enquadramento no Art. 4º da Portaria MinC nº 218/2025",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_6_espelho_enquadramento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Enquadramento no Art. 4º da Portaria MinC nº 218/2025"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12676,
+       "id_questao": 2431,
+       "nome": "Tipo de atividade",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_6_espelho_tipo_atividade",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Tipo de atividade"
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1745,
+   "etapas": [
+    {
+     "id_etapa": 2529,
+     "nome": "Procedimentos Complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 12677,
+       "id_questao": 2432,
+       "nome": "Valor total repassado da contratação",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "valor_total_repassado_contratacao_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total repassado da contratação"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "R$ 0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12678,
+       "id_questao": 1952,
+       "nome": "CPF ou CNPJ do contratado",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_contratados_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_documento",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Tipo",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": {
+           "values": [
+            "CPF",
+            "CNPJ"
+           ]
+          }
+         },
+         {
+          "key": "numero_documento",
+          "max": 18,
+          "min": null,
+          "type": "text",
+          "label": "CPF ou CNPJ",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Informe CPF ou CNPJ",
+          "dropdownOptions": null
+         },
+         {
+          "key": "nome_razao_social",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome / Razão Social",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         },
+         {
+          "key": "valor_contrato",
+          "max": null,
+          "min": null,
+          "type": "currency",
+          "label": "Valor do contrato",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar contratado",
+        "textoPergunta": "CPF ou CNPJ do contratado",
+        "usePagination": false
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12679,
+       "id_questao": 2433,
+       "nome": "Espaços e equipamentos culturais contemplados",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_espacos_equipamentos_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_espaco_equipamento",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Tipo de espaço ou equipamento cultural",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": {
+           "values": [
+            "Arena ou semi arena de apresentação",
+            "Associação comunitária; Espaço multiuso",
+            "Atelier",
+            "Auditório",
+            "Arquivo público; Centro de documentação; Acervo",
+            "Espaço de agremiações; Espaço de cultura popular",
+            "Biblioteca comunitária; Biblioteca parque; Espaço de leitura, Ponto de leitura",
+            "Biblioteca pública",
+            "Casa de concerto; Casa de espetáculo",
+            "Casa de cultura; Centro cultural",
+            "Centro de convenções",
+            "Centro de Inovação e Apoio ao Desenvolvimento de Territórios Criativos (CRIA)",
+            "Centro de Memória e Patrimônio",
+            "Centro de Tradição Regional",
+            "CEU da Cultura, CEU das Artes, CEUs",
+            "Cinema",
+            "Cineclube; Espaço de exibição",
+            "Cinemateca",
+            "Circo; Circo itinerante",
+            "Escola de alimentação e cultura",
+            "Escola de artes e cultura",
+            "Espaço makers; FabLabs; Laboratório de Economia Criativa",
+            "Estúdio de audiovisual",
+            "Estúdio de dança",
+            "Estúdio de música; Rádio comunitária",
+            "Galeria de artes visuais",
+            "Imóvel patrimonializado",
+            "Livraria; Alfarrábio; Sebo",
+            "Mercado ou feira de artes visuais e artesanato",
+            "Memorial; Ponto de memória",
+            "MovCEU, Equipamento itinerante",
+            "Museu",
+            "Ponto de Cultura; Pontão de cultura",
+            "Teatro",
+            "Sala de espetáculo",
+            "Sambódromo, Bumbódromo; similares",
+            "Outros"
+           ]
+          }
+         },
+         {
+          "key": "quantidade",
+          "max": null,
+          "min": null,
+          "type": "number",
+          "label": "Quantidade",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Número inteiro",
+          "dropdownOptions": null
+         },
+         {
+          "key": "nome_espaco_equipamento",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome do espaço ou equipamento",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         },
+         {
+          "key": "cep",
+          "max": 9,
+          "min": null,
+          "type": "text",
+          "label": "CEP",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "00000-000",
+          "dropdownOptions": null
+         },
+         {
+          "key": "endereco_complementado",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Endereço",
+          "readOnly": true,
+          "required": false,
+          "placeholder": "Visualizado após consulta de CEP",
+          "dropdownOptions": null
+         },
+         {
+          "key": "porte",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Porte do espaço ou equipamento cultural",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": {
+           "values": [
+            "Pequeno: até 499 m²",
+            "Médio: de 500 m2 a 1999 m²",
+            "Grande: acima de 2000 m²",
+            "Não se aplica"
+           ]
+          }
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar espaço ou equipamento",
+        "textoPergunta": "Espaços e equipamentos culturais contemplados",
+        "usePagination": false
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12680,
+       "id_questao": 1956,
+       "nome": "Qual a data de emissão da ordem de serviço?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "data_ordem_servico_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data de emissão da ordem de serviço?"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12681,
+       "id_questao": 2434,
+       "nome": "Qual a data prevista de entrega da obra, reforma ou aquisição?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "data_prevista_entrega_obra_reforma_aquisicao_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data prevista de entrega da obra, reforma ou aquisição?"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1746,
+   "etapas": [
+    {
+     "id_etapa": 2530,
+     "nome": "Procedimentos Complementares 2/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 12682,
+       "id_questao": 1958,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "execucao_conforme_planejado_1_6",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "labelNao": "Não",
+        "labelSim": "Sim",
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12683,
+       "id_questao": 2435,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_1_6",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_1_6_execucao_true",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 12682
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12684,
+       "id_questao": 1959,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_1_6_execucao_false",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 12682
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1747,
+   "etapas": [
+    {
+     "id_etapa": 2531,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 12685,
+       "id_questao": 2436,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver.",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "pdf_publicacao_resultado_1_6",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver."
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12686,
+       "id_questao": 2437,
+       "nome": "Outros documentos comprobatórios",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "outros_documentos_comprobatorios_1_6",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos comprobatórios"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12687,
+       "id_questao": 2438,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "declaracao_responsabilidade_veracidade_1_6",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_veracidade_1_6",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         },
+         {
+          "id": "declaracao_portaria_218_2025_1_6",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, a submissão dos documentos comprobatórios de conformidade com as exigências dispostas na Portaria MinC nº 218/2025."
+         }
+        ],
+        "limiteMarcacoes": 2,
+        "limiteMinimoMarcacoes": 2
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,1454 @@
+{
+ "id_formulario": 23,
+ "id_formulario_versao": 544,
+ "versao": 10,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 2028,
+   "etapas": [
+    {
+     "id_etapa": 2817,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 14136,
+       "id_questao": 2212,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "radio",
+       "tag": "resultado_1_5_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": {
+        "itens": [
+         {
+          "id": "fe_tec",
+          "tipo": "simples",
+          "label": "Termo de Execução Cultural (Lei nº 14.903/2024)"
+         },
+         {
+          "id": "fe_outros",
+          "tipo": "campoComplementar",
+          "label": "Outros",
+          "campoComplementar": {
+           "nome": "Informe a forma de execução",
+           "placeholder": "Especifique a modalidade jurídica adotada",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 120
+          }
+         }
+        ]
+       },
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14137,
+       "id_questao": 2213,
+       "nome": "Número e título do edital",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_5_espelho_numero_titulo_instrumento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14138,
+       "id_questao": 2214,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_1_5_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 2029,
+   "etapas": [
+    {
+     "id_etapa": 2818,
+     "nome": "Procedimentos Complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 14139,
+       "id_questao": 1920,
+       "nome": "Número total de espaços, ambientes e iniciativas inscritas no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_espacos_inscritos_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de espaços, ambientes e iniciativas inscritas no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "Informe o número total de espaços, ambientes e iniciativas inscritas.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14140,
+       "id_questao": 1921,
+       "nome": "Número total de espaços, ambientes e iniciativas contempladas no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_espacos_contemplados_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de espaços, ambientes e iniciativas contempladas no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": "Informe o número total de espaços, ambientes e iniciativas contempladas.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14141,
+       "id_questao": 2367,
+       "nome": "Contemplados em ampla concorrência",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "contemplados_ampla_concorrencia_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Contemplados em ampla concorrência",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": "Informe a quantidade de contemplados.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14142,
+       "id_questao": 2368,
+       "nome": "Contemplados em cotas para pessoas negras",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "contemplados_pessoas_negras_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Contemplados em cotas para pessoas negras",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": "Informe a quantidade de contemplados.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14143,
+       "id_questao": 2369,
+       "nome": "Contemplados em cotas para pessoas indígenas",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "contemplados_pessoas_indigenas_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Contemplados em cotas para pessoas indígenas",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": "Informe a quantidade de contemplados.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14144,
+       "id_questao": 2370,
+       "nome": "Contemplados em cotas para pessoas com deficiência",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "contemplados_pessoas_pcd_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Contemplados em cotas para pessoas com deficiência",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": "Informe a quantidade de contemplados.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14145,
+       "id_questao": 2371,
+       "nome": "Contemplados em cotas para outros grupos",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "contemplados_outros_grupos_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Contemplados em cotas para outros grupos",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 7,
+       "mascara": null,
+       "placeholder": "Informe a quantidade de contemplados.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14146,
+       "id_questao": 1927,
+       "nome": "Valor total repassado do edital",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "valor_total_repassado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total repassado do edital"
+       },
+       "sequencial": 8,
+       "mascara": null,
+       "placeholder": "R$ 0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14147,
+       "id_questao": 2372,
+       "nome": "Espaços e equipamentos culturais contemplados",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "espaco_tipos_quantidades_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_espaco",
+          "type": "dropdown",
+          "label": "Tipo de espaço ou equipamento",
+          "required": true,
+          "dropdownOptions": {
+           "values": [
+            "Arena ou semi arena de apresentação;",
+            "Associação comunitária; Espaço multiuso",
+            "Atelier",
+            "Auditório",
+            "Arquivo público; Centro de documentação; Acervo",
+            "Espaço de agremiações; Espaço de cultura popular",
+            "Biblioteca comunitária; Biblioteca parque; Espaço de leitura, Ponto de leitura",
+            "Biblioteca pública",
+            "Casa de concerto; Casa de espetáculo",
+            "Casa de cultura; Centro cultural",
+            "Centro de convenções",
+            "Centro de Inovação e Apoio ao Desenvolvimento de Territórios Criativos (CRIA)",
+            "Centro de Memória e Patrimônio",
+            "Centro de Tradição Regional",
+            "CEU da Cultura, CEU das Artes, CEUs",
+            "Cinema",
+            "Cineclube; Espaço de exibição",
+            "Cinemateca",
+            "Circo; Circo itinerante",
+            "Escola de alimentação e cultura",
+            "Escola de artes e cultura",
+            "Espaço makers; FabLabs; Laboratório de Economia Criativa",
+            "Estúdio de audiovisual",
+            "Estúdio de dança",
+            "Estúdio de música; Rádio comunitária",
+            "Galeria de artes visuais",
+            "Imóvel patrimonializado",
+            "Livraria; Alfarrábio; Sebo",
+            "Mercado ou feira de artes visuais e artesanato",
+            "Memorial; Ponto de memória",
+            "MovCEU, Equipamento itinerante",
+            "Museu",
+            "Ponto de Cultura; Pontão de cultura",
+            "Teatro",
+            "Sala de espetáculo",
+            "Sambódromo, Bumbódromo; similares",
+            "Outros"
+           ]
+          }
+         },
+         {
+          "key": "quantidade",
+          "min": 1,
+          "type": "number",
+          "label": "Quantidade",
+          "required": true,
+          "placeholder": "Informe a quantidade."
+         },
+         {
+          "key": "outro_tipo",
+          "max": 120,
+          "type": "text",
+          "label": "Outro tipo de espaço ou equipamento",
+          "required": false,
+          "placeholder": "Se selecionar Outros, informe o tipo de espaço ou equipamento."
+         }
+        ],
+        "minRows": 1,
+        "buttonLabel": "Adicionar espaço ou equipamento",
+        "textoPergunta": "Espaços e equipamentos culturais contemplados",
+        "usePagination": false
+       },
+       "sequencial": 9,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14148,
+       "id_questao": 2373,
+       "nome": "Nome do espaço ou equipamento",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_nome_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Nome do espaço ou equipamento",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 10,
+       "mascara": null,
+       "placeholder": "Informe o nome do espaço ou equipamento.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14149,
+       "id_questao": 2374,
+       "nome": "Endereço do equipamento",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_cep_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do equipamento",
+        "padraoValidacao": "cep",
+        "limiteCaracteres": 9
+       },
+       "sequencial": 11,
+       "mascara": "cep",
+       "placeholder": "00000-000",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14150,
+       "id_questao": 2375,
+       "nome": "UF",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_uf_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "UF",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 12,
+       "mascara": null,
+       "placeholder": "Ex.: AL",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14151,
+       "id_questao": 2376,
+       "nome": "Município",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_municipio_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Município",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 13,
+       "mascara": null,
+       "placeholder": "Informe o município.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14152,
+       "id_questao": 2377,
+       "nome": "Logradouro",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_logradouro_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Logradouro",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 14,
+       "mascara": null,
+       "placeholder": "Informe a rua, avenida ou outro logradouro.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14153,
+       "id_questao": 2378,
+       "nome": "Número",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_numero_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 15,
+       "mascara": null,
+       "placeholder": "Informe o número do endereço.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14154,
+       "id_questao": 2379,
+       "nome": "Complemento",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_complemento_resultado_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Complemento",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 16,
+       "mascara": null,
+       "placeholder": "Ex.: apartamento, bloco ou ponto de referência.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14155,
+       "id_questao": 2380,
+       "nome": "Bairro",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "espaco_bairro_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Bairro",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 17,
+       "mascara": null,
+       "placeholder": "Informe o bairro.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14156,
+       "id_questao": 2381,
+       "nome": "Reserva de recursos para territórios prioritários",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "espaco_territorios_resultado_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "territorio_1",
+          "tipo": "simples",
+          "label": "Não se aplica - Não reserva recursos a territórios prioritários",
+          "exclusiva": true
+         },
+         {
+          "id": "territorio_2",
+          "tipo": "simples",
+          "label": "Área atingida por desastre natural"
+         },
+         {
+          "id": "territorio_3",
+          "tipo": "simples",
+          "label": "Assentamento ou acampamento"
+         },
+         {
+          "id": "territorio_4",
+          "tipo": "simples",
+          "label": "Conjunto ou empreendimento habitacional de interesse social"
+         },
+         {
+          "id": "territorio_5",
+          "tipo": "simples",
+          "label": "Favelas e comunidades urbanas"
+         },
+         {
+          "id": "territorio_6",
+          "tipo": "simples",
+          "label": "Periferia"
+         },
+         {
+          "id": "territorio_7",
+          "tipo": "simples",
+          "label": "Regiões com menor histórico de acesso aos recursos da política pública de cultura"
+         },
+         {
+          "id": "territorio_8",
+          "tipo": "simples",
+          "label": "Regiões com menor índice de Desenvolvimento Humano – IDH"
+         },
+         {
+          "id": "territorio_9",
+          "tipo": "simples",
+          "label": "Sítios de arqueológicos e de patrimônio cultural"
+         },
+         {
+          "id": "territorio_10",
+          "tipo": "simples",
+          "label": "Território de fronteira"
+         },
+         {
+          "id": "territorio_11",
+          "tipo": "simples",
+          "label": "Território de povos e comunidades tradicionais"
+         },
+         {
+          "id": "territorio_12",
+          "tipo": "simples",
+          "label": "Território indígena"
+         },
+         {
+          "id": "territorio_13",
+          "tipo": "simples",
+          "label": "Território rural"
+         },
+         {
+          "id": "territorio_14",
+          "tipo": "simples",
+          "label": "Zona especial de interesse social"
+         },
+         {
+          "id": "territorio_15",
+          "tipo": "campoComplementar",
+          "label": "Outros",
+          "campoComplementar": {
+           "nome": "Especificar quais",
+           "placeholder": "Especifique quais são os outros territórios prioritários.",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 120
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Reserva de recursos para territórios prioritários"
+       },
+       "sequencial": 18,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14157,
+       "id_questao": 2382,
+       "nome": "Porte do espaço ou equipamento cultural",
+       "descricao": null,
+       "tipo_questao": "radio",
+       "tag": "espaco_porte_resultado_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "porte_1",
+          "tipo": "simples",
+          "label": "Pequeno: até 499 m²"
+         },
+         {
+          "id": "porte_2",
+          "tipo": "simples",
+          "label": "Médio: de 500 m2 a 1999 m²"
+         },
+         {
+          "id": "porte_3",
+          "tipo": "simples",
+          "label": "Grande: acima de 2000 m²"
+         },
+         {
+          "id": "porte_4",
+          "tipo": "simples",
+          "label": "Não se aplica"
+         }
+        ]
+       },
+       "config": {
+        "textoPergunta": "Porte do espaço ou equipamento cultural"
+       },
+       "sequencial": 19,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14158,
+       "id_questao": 2383,
+       "nome": "Como foi utilizado o valor do subsídio?",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "espaco_uso_subsidio_resultado_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "uso_1",
+          "tipo": "simples",
+          "label": "Para custear atividades-meio (manutenção do espaço)."
+         },
+         {
+          "id": "uso_2",
+          "tipo": "simples",
+          "label": "Para custear atividades-fim (atividades culturais)."
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Como foi utilizado o valor do subsídio?"
+       },
+       "sequencial": 20,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14159,
+       "id_questao": 2384,
+       "nome": "O espaço cultural subsidiado tem atividade cultural regular e de acesso público com mais de 2 anos de funcionamento.",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "espaco_atividade_regular_resultado_1_5",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "textoPergunta": "O espaço cultural subsidiado tem atividade cultural regular e de acesso público com mais de 2 anos de funcionamento."
+       },
+       "sequencial": 21,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14160,
+       "id_questao": 2385,
+       "nome": "Qual a data prevista de finalização do subsídio?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "espaco_data_finalizacao_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data prevista de finalização do subsídio?"
+       },
+       "sequencial": 22,
+       "mascara": null,
+       "placeholder": "Selecione a data prevista de finalização do subsídio.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 2030,
+   "etapas": [
+    {
+     "id_etapa": 2819,
+     "nome": "Procedimentos Complementares 2/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 14161,
+       "id_questao": 1929,
+       "nome": "Quais cadastros foram aceitos para inscrição dos espaços culturais pleiteantes? (Enquadramento no art. 9°, §1º, da Lei n° 14.399/2022)",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "cadastros_aceitos_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "estadual",
+          "tipo": "simples",
+          "label": "Cadastro estadual de cultura"
+         },
+         {
+          "id": "municipal",
+          "tipo": "simples",
+          "label": "Cadastros municipais de cultura"
+         },
+         {
+          "id": "nacional_pontos",
+          "tipo": "simples",
+          "label": "Cadastro Nacional de Pontos e Pontões de Cultura;"
+         },
+         {
+          "id": "estadual_pontos",
+          "tipo": "simples",
+          "label": "Cadastro Estadual de Pontos e Pontões de Cultura;"
+         },
+         {
+          "id": "sniic",
+          "tipo": "simples",
+          "label": "Sistema Nacional de Informações e Indicadores Culturais (SNIIC)"
+         },
+         {
+          "id": "sicab",
+          "tipo": "simples",
+          "label": "Sistema de Informações Cadastrais do Artesanato Brasileiro (Sicab)"
+         },
+         {
+          "id": "outros_cadastros",
+          "tipo": "campoComplementar",
+          "label": "Outros cadastros existentes ou criados pelo ente federativo nos 24 (vinte e quatro) meses imediatamente anteriores à data de publicação da Lei.",
+          "campoComplementar": {
+           "nome": "Qual/quais cadastros?",
+           "placeholder": "Informe qual ou quais cadastros foram aceitos.",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 120
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Quais cadastros foram aceitos para inscrição dos espaços culturais pleiteantes? (Enquadramento no art. 9°, §1º, da Lei n° 14.399/2022)"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14162,
+       "id_questao": 2386,
+       "nome": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "procedimentos_cotas_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "nenhum",
+          "tipo": "simples",
+          "label": "Não foram utilizados procedimentos complementares",
+          "exclusiva": true
+         },
+         {
+          "id": "heteroidentificacao",
+          "tipo": "simples",
+          "label": "Heteroidentificação para pessoas negras"
+         },
+         {
+          "id": "carta_pessoas_negras",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas negras"
+         },
+         {
+          "id": "carta_pessoas_indigenas",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas indígenas"
+         },
+         {
+          "id": "pertencimento_etnico",
+          "tipo": "simples",
+          "label": "Documento de pertencimento étnico para pessoas indígenas"
+         },
+         {
+          "id": "avaliacao_biopsicossocial",
+          "tipo": "simples",
+          "label": "Avaliação biopsicossocial para pessoas com deficiência"
+         },
+         {
+          "id": "outras_estrategias",
+          "tipo": "campoComplementar",
+          "label": "Outras estratégias (especificar)",
+          "campoComplementar": {
+           "nome": "Descreva a estratégia",
+           "placeholder": "Descreva a estratégia",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 300
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14163,
+       "id_questao": 2216,
+       "nome": "Dados de contemplados por categoria",
+       "descricao": null,
+       "tipo_questao": "tabela",
+       "tag": "dados_por_categoria_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "tabela": {
+         "linhas": [],
+         "colunas": [
+          {
+           "id": "categoria",
+           "nome": "Nome da Categoria",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": false,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": true
+          },
+          {
+           "id": "quantidade_contemplados",
+           "nome": "Número de vagas contempladas",
+           "tipo": "number",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "valor_individual",
+           "nome": "Valor por vaga",
+           "tipo": "currency",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          }
+         ],
+         "maxLinhas": null,
+         "minLinhas": 0,
+         "linhaModelo": null,
+         "acoesPermitidas": [
+          "adicionar",
+          "editar",
+          "excluir"
+         ],
+         "permitirNovasLinhas": true,
+         "textoBotaoAdicionar": "Adicionar linha",
+         "formaDePreenchimento": "direta",
+         "habilitarBuscaLinhas": false
+        },
+        "textoPergunta": "Dados de contemplados por categoria"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14164,
+       "id_questao": 1933,
+       "nome": "O subsídio destinou-se aos fins planejados?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "subsidio_fins_planejados_1_5",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "textoPergunta": "O subsídio destinou-se aos fins planejados?"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14165,
+       "id_questao": 2387,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_sim_1_5",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 14164
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": "Registre seus comentários e observações sobre a destinação do subsídio.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14166,
+       "id_questao": 1934,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_nao_1_5",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 14164
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": "Registre seus comentários e observações sobre a destinação do subsídio.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 2031,
+   "etapas": [
+    {
+     "id_etapa": 2820,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 14167,
+       "id_questao": 1937,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_diario_oficial_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14168,
+       "id_questao": 2388,
+       "nome": "Documentação comprobatória de que o espaço ou equipamento cultural contemplado possui mais de 2 (dois) anos de funcionamento regular, conforme art. 10 da Lei 14.399/2022.",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "comprovacao_funcionamento_espaco_resultado_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Documentação comprobatória de que o espaço ou equipamento cultural contemplado possui mais de 2 (dois) anos de funcionamento regular, conforme art. 10 da Lei 14.399/2022."
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14169,
+       "id_questao": 1938,
+       "nome": "Outros documentos",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_outros_docs_1_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14170,
+       "id_questao": 1935,
+       "nome": "Planilha de resultados",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_planilha_csv_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".csv",
+         ".xlsx"
+        ],
+        "multiplos": false,
+        "tamanhoMaxMb": 10,
+        "textoPergunta": "Planilha de resultados"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14171,
+       "id_questao": 2389,
+       "nome": "Planilha/PDF de comissão avaliadora",
+       "descricao": null,
+       "tipo_questao": "tabela",
+       "tag": "informacao_comissao_avaliadora_resultado_1_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "tabela": {
+         "linhas": [],
+         "colunas": [
+          {
+           "id": "nome",
+           "nome": "Nome",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "Informe o nome completo do integrante.",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 120,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "cpf",
+           "nome": "CPF",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "000.000.000-00",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 14,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "vinculo",
+           "nome": "Vínculo",
+           "tipo": "escolha_unica",
+           "estilo": null,
+           "opcoes": [
+            "contratado",
+            "servidor público",
+            "voluntário",
+            "integrante de conselho de cultura"
+           ],
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": null,
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": null,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          },
+          {
+           "id": "categoria_grupo",
+           "nome": "Categoria ou grupo de propostas avaliadas",
+           "tipo": "text",
+           "estilo": null,
+           "opcoes": null,
+           "formula": null,
+           "formatoData": null,
+           "obrigatoria": true,
+           "placeholder": "Informe a categoria ou o grupo de propostas analisadas.",
+           "valorMaximo": null,
+           "valorMinimo": null,
+           "maxCaracteres": 120,
+           "minCaracteres": null,
+           "somenteLeitura": false
+          }
+         ],
+         "maxLinhas": null,
+         "minLinhas": 1,
+         "linhaModelo": {
+          "celulas": {
+           "cpf": {
+            "valor": null,
+            "fixado": false
+           },
+           "nome": {
+            "valor": null,
+            "fixado": false
+           },
+           "vinculo": {
+            "valor": null,
+            "fixado": false
+           },
+           "categoria_grupo": {
+            "valor": null,
+            "fixado": false
+           }
+          }
+         },
+         "acoesPermitidas": [
+          "adicionar",
+          "editar",
+          "excluir"
+         ],
+         "permitirNovasLinhas": true,
+         "textoBotaoAdicionar": "Adicionar integrante",
+         "formaDePreenchimento": "direta",
+         "habilitarBuscaLinhas": false
+        },
+        "buttonLabel": "Adicionar integrante",
+        "textoPergunta": "Planilha/PDF de comissão avaliadora"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 14172,
+       "id_questao": 2094,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "múltipla escolha",
+       "tag": "declaracoes_ciencia_resultado_1_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_integral",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         }
+        ],
+        "limiteMarcacoes": 1,
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

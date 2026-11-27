@@ -1,0 +1,784 @@
+{
+ "id_formulario": 15,
+ "id_formulario_versao": 511,
+ "versao": 7,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1840,
+   "etapas": [
+    {
+     "id_etapa": 2624,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 13256,
+       "id_questao": 2745,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_2_5_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13257,
+       "id_questao": 2746,
+       "nome": "Número e título do edital",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_2_5_espelho_numero_titulo_edital",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13258,
+       "id_questao": 2267,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_2_5_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1841,
+   "etapas": [
+    {
+     "id_etapa": 2625,
+     "nome": "Procedimentos complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13259,
+       "id_questao": 2747,
+       "nome": "Número total de inscritos no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_inscritos_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de inscritos no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13260,
+       "id_questao": 2748,
+       "nome": "Número total de contemplados no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "total_vagas_contempladas_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de contemplados no edital",
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13261,
+       "id_questao": 2749,
+       "nome": "Valor total repassado do edital",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "valor_total_repassado_edital_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total repassado do edital"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": "R$ 0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13262,
+       "id_questao": 2750,
+       "nome": "CPF ou CNPJ do contratado",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_contratados_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_documento",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Tipo",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Selecione CPF ou CNPJ",
+          "dropdownOptions": {
+           "values": [
+            "CPF",
+            "CNPJ"
+           ]
+          }
+         },
+         {
+          "key": "documento",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "CPF ou CNPJ",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Insira o CPF ou CNPJ",
+          "dropdownOptions": null
+         },
+         {
+          "key": "nome_razao_social",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome / Razão Social",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         },
+         {
+          "key": "valor_contrato",
+          "max": null,
+          "min": null,
+          "type": "currency",
+          "label": "Valor do contrato",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar contratado",
+        "textoPergunta": "CPF ou CNPJ do contratado",
+        "usePagination": false
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13263,
+       "id_questao": 2751,
+       "nome": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "procedimentos_complementares_cotas_2_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "nao_utilizados",
+          "tipo": "simples",
+          "label": "Não foram utilizados procedimentos complementares",
+          "exclusiva": true
+         },
+         {
+          "id": "heteroidentificacao_negras",
+          "tipo": "simples",
+          "label": "Heteroidentificação para pessoas negras"
+         },
+         {
+          "id": "carta_consubstanciada_negras",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas negras"
+         },
+         {
+          "id": "carta_consubstanciada_indigenas",
+          "tipo": "simples",
+          "label": "Carta consubstanciada para pessoas indígenas"
+         },
+         {
+          "id": "documento_pertencimento_indigenas",
+          "tipo": "simples",
+          "label": "Documento de pertencimento étnico para pessoas indígenas"
+         },
+         {
+          "id": "avaliacao_biopsicossocial",
+          "tipo": "simples",
+          "label": "Avaliação biopsicossocial para pessoas com deficiência"
+         },
+         {
+          "id": "outras_estrategias",
+          "tipo": "campoComplementar",
+          "label": "Outras estratégias (especificar)",
+          "campoComplementar": {
+           "nome": "Descreva a estratégia",
+           "placeholder": "Descreva a estratégia",
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 300
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Quais procedimentos complementares foram utilizados para validar as inscrições por cotas?"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13264,
+       "id_questao": 2752,
+       "nome": "Dados de contemplados por categoria",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_categorias_2_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "nome_categoria",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome da Categoria",
+          "readOnly": true,
+          "required": true,
+          "placeholder": "Categoria proveniente do F2",
+          "dropdownOptions": null
+         },
+         {
+          "key": "numero_vagas_contempladas",
+          "max": null,
+          "min": null,
+          "type": "number",
+          "label": "Número de vagas contempladas",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Número inteiro",
+          "dropdownOptions": null
+         },
+         {
+          "key": "valor_por_vaga",
+          "max": null,
+          "min": null,
+          "type": "currency",
+          "label": "Valor por vaga",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         }
+        ],
+        "maxRows": null,
+        "minRows": 0,
+        "buttonLabel": "Adicionar categoria",
+        "textoPergunta": "Dados de contemplados por categoria",
+        "usePagination": false
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1842,
+   "etapas": [
+    {
+     "id_etapa": 2626,
+     "nome": "Procedimentos complementares 2/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13265,
+       "id_questao": 2753,
+       "nome": "Forma de escuta e participação social realizada",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "forma_escuta_2_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "audiencias_publicas",
+          "tipo": "simples",
+          "label": "Audiências públicas"
+         },
+         {
+          "id": "conferencias",
+          "tipo": "simples",
+          "label": "Conferências"
+         },
+         {
+          "id": "foruns",
+          "tipo": "simples",
+          "label": "Fóruns"
+         },
+         {
+          "id": "plenarias_setoriais",
+          "tipo": "simples",
+          "label": "Plenárias setoriais"
+         },
+         {
+          "id": "formularios_pesquisas_publicas",
+          "tipo": "simples",
+          "label": "Formulários e pesquisas públicas"
+         },
+         {
+          "id": "reuniao_pontos_pontoes",
+          "tipo": "simples",
+          "label": "Reunião com representantes de Pontos e Pontões de Cultura"
+         },
+         {
+          "id": "outras_formas_escuta",
+          "tipo": "campoComplementar",
+          "label": "Outras formas de escuta e participação social [campo aberto]",
+          "campoComplementar": {
+           "nome": "Descreva a forma de escuta e participação social",
+           "placeholder": null,
+           "padraoValidacao": "nenhum",
+           "limiteCaracteres": 120
+          }
+         }
+        ],
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Forma de escuta e participação social realizada"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13266,
+       "id_questao": 2068,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "execucao_conforme_planejado_2_5",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "labelNao": "Não",
+        "labelSim": "Sim",
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13267,
+       "id_questao": 2754,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_2_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_2_5_execucao_true",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13266
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13268,
+       "id_questao": 2069,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_q_res_2_5_execucao_false",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13266
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1843,
+   "etapas": [
+    {
+     "id_etapa": 2627,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 13269,
+       "id_questao": 2755,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "pdf_publicacao_resultado_2_5",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13270,
+       "id_questao": 2756,
+       "nome": "Outros documentos",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "outros_documentos_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13271,
+       "id_questao": 2757,
+       "nome": "Planilha de resultados",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "planilha_resultados_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "multiplos": false,
+        "textoPergunta": "Planilha de resultados"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13272,
+       "id_questao": 2758,
+       "nome": "Informação de comissão avaliadora",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_comissao_avaliadora_2_5",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "nome_integrante",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Nome completo do integrante",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         },
+         {
+          "key": "cpf_integrante",
+          "max": 14,
+          "min": null,
+          "type": "text",
+          "label": "CPF do integrante",
+          "readOnly": false,
+          "required": true,
+          "placeholder": "Informe o CPF",
+          "dropdownOptions": null
+         },
+         {
+          "key": "vinculo",
+          "max": null,
+          "min": null,
+          "type": "dropdown",
+          "label": "Vínculo",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": {
+           "values": [
+            "contratado",
+            "servidor público",
+            "voluntário",
+            "integrante de conselho de cultura"
+           ]
+          }
+         },
+         {
+          "key": "categorias_grupos_avaliadas",
+          "max": 255,
+          "min": null,
+          "type": "text",
+          "label": "Categoria(s) ou grupo(s) de propostas analisadas por cada parecerista",
+          "readOnly": false,
+          "required": true,
+          "placeholder": null,
+          "dropdownOptions": null
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar integrante",
+        "textoPergunta": "Informação de comissão avaliadora",
+        "usePagination": false
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13273,
+       "id_questao": 2759,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "declaracao_responsabilidade_veracidade_2_5",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_veracidade_2_5",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         },
+         {
+          "id": "declaracao_portaria_206_2025_2_5",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, a submissão dos documentos comprobatórios de conformidade com as exigências dispostas na Portaria MinC nº 206/2025."
+         }
+        ],
+        "limiteMarcacoes": 2,
+        "limiteMinimoMarcacoes": 2
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -7,6 +7,7 @@ use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\FormularioResultadoService;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Doubles\InMemoryProvider;
 use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
@@ -201,5 +202,165 @@ class FormularioResultadoServiceTest extends TestCase
                 }
             }),
         );
+    }
+
+    private function editalNoPar(): int
+    {
+        $editalId = $this->novoEditalId();
+        $this->app->em->getConnection()->executeStatement(
+            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
+            ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, 'value' => (string) (900000 + $editalId)],
+        );
+
+        return $editalId;
+    }
+
+    public function testPermissaoDaAcaoEntraNoCacheDoFormulario(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => false;
+
+            $this->assertTrue($servico->isAcaoSemResultado($editalId));
+            $this->assertTrue($servico->isAcaoSemResultado($editalId));
+            $this->assertCount(1, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testLeituraQueFalhouNaoSeRepeteACadaSalvamento(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $this->assertFalse($servico->isAcaoSemResultado($editalId));
+            $this->assertFalse($servico->isAcaoSemResultado($editalId));
+            $this->assertCount(1, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testComCacheDesligadoAFalhaTambemNaoFicaGuardada(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarPermissao = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $servico->isAcaoSemResultado($editalId);
+            $servico->isAcaoSemResultado($editalId);
+            $this->assertCount(2, FakeIntegrationProvider::$permissoesBuscadas);
+        });
+    }
+
+    public function testProvedorSemAConsultaNaoImpedeNada(): void
+    {
+        $editalId = $this->editalNoPar();
+
+        $this->comProviderConfigurado(InMemoryProvider::class, function () use ($editalId) {
+            $this->assertFalse((new FormularioResultadoService())->isAcaoSemResultado($editalId));
+        });
+    }
+
+    public function testEditalSemFormularioNuncaEstaCompleto(): void
+    {
+        $owner = $this->userDirector->createUser();
+        $edital = $this->createOpportunity($owner);
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
+
+            $this->assertFalse($servico->isFormularioCompleto($edital));
+            $this->assertFalse($servico->isEnvioLiberado($edital));
+        });
+    }
+
+    public function testEstruturaDoEnvioVemDaOrigemERegravaOCache(): void
+    {
+        $editalId = $this->novoEditalId();
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9101;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $servico->formStructureForOpportunity($editalId);
+
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 2];
+
+            $this->assertSame(['id_formulario_versao' => 1], $servico->formStructureForOpportunity($editalId), 'a tela segue com a guardada');
+            $this->assertSame(['id_formulario_versao' => 2], $servico->formStructureForEnvio($editalId));
+            $this->assertSame(['id_formulario_versao' => 2], $servico->formStructureForOpportunity($editalId), 'o envio regravou a guardada');
+        });
+    }
+
+    public function testEstruturaDoEnvioSemTipoDeAcaoNaoBuscaFormulario(): void
+    {
+        $editalId = $this->novoEditalId();
+
+        $this->comServico(0, function (FormularioResultadoService $servico) use ($editalId) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => null;
+
+            $this->assertNull($servico->formStructureForEnvio($editalId));
+            $this->assertSame([], FakeIntegrationProvider::$formulariosBuscados);
+        });
+    }
+
+    public function testCorpoDoEnvioNaoSaiDaEstruturaGuardada(): void
+    {
+        $owner = $this->userDirector->createUser();
+        $edital = $this->createOpportunity($owner);
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9103;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $servico->formStructureForOpportunity((int) $edital->id);
+
+            $servico->conteudoParaEnvio($edital);
+
+            $this->assertCount(2, FakeIntegrationProvider::$formulariosBuscados);
+        });
+    }
+
+    public function testImpedimentosDoEnvioLeemOModeloDePlanilhaDaOrigem(): void
+    {
+        $edital = $this->app->repo('Opportunity')->find($this->editalNoPar());
+
+        $this->comServico(300, function (FormularioResultadoService $servico) use ($edital) {
+            FakeIntegrationProvider::$aoBuscarTipoAcao = fn() => 9104;
+            FakeIntegrationProvider::$aoBuscarFormulario = fn() => ['id_formulario_versao' => 1];
+            $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui']);
+            $this->assertTrue($servico->isEnvioLiberado($edital));
+
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $this->assertFalse($servico->formStateForOpportunity($edital)['planilha']['possui'], 'a tela segue com o guardado');
+            $this->assertFalse($servico->isEnvioLiberado($edital));
+            $this->assertCount(1, $servico->impedimentosDoEnvio($edital)['bloqueios']);
+        });
+    }
+
+    private function gravaRespostas(int $editalId, string $respostas): void
+    {
+        $conexao = $this->app->em->getConnection();
+        $conexao->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM]);
+        $conexao->executeStatement(
+            'INSERT INTO opportunity_meta (object_id, key, value) VALUES (:id, :key, :value)',
+            ['id' => $editalId, 'key' => Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, 'value' => '{"id_formulario_versao":1,"respostas":' . $respostas . '}'],
+        );
+    }
+
+    public function testMarcaDasRespostasNaoDependeDaOrdemEmQueForamGravadas(): void
+    {
+        $edital = $this->createOpportunity($this->userDirector->createUser());
+        $servico = new FormularioResultadoService();
+
+        $this->gravaRespostas((int) $edital->id, '{"11":"texto","10":25}');
+        $primeira = $servico->revisao($edital);
+        $this->gravaRespostas((int) $edital->id, '{"10":25,"11":"texto"}');
+        $mesmas = $servico->revisao($edital);
+        $this->gravaRespostas((int) $edital->id, '{"10":26,"11":"texto"}');
+
+        $this->assertSame($primeira, $mesmas);
+        $this->assertNotSame($primeira, $servico->revisao($edital));
     }
 }

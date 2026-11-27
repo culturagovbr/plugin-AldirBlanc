@@ -72,6 +72,26 @@ class OportunidadeCultClientTest extends TestCase
         }
     }
 
+    public function testEnvioDoEditalSegueComOCorpoNoLogENoHistorico(): void
+    {
+        $registrado = null;
+        $capturado = $this->capturandoLog(function () use (&$registrado) {
+            $this->comEnvioReal(new FakeTransport(body: '{"id_par_edital": 1249}'), function (OportunidadeCultClient $client) use (&$registrado) {
+                $client->setExchangeRecorder(function (array $exchange) use (&$registrado) {
+                    $registrado = $exchange;
+                });
+                $client->update($this->makePayload());
+            });
+        });
+        $texto = implode("\n", array_column($capturado->getRecords(), 'message'));
+
+        $this->assertStringContainsString('payload | URL: ', $texto);
+        $this->assertStringContainsString(' | Body: {"id', $texto);
+        $this->assertStringContainsString('response | HTTP: 200 | Body: {"id_par_edital": 1249}', $texto);
+        $this->assertSame('{"id_par_edital": 1249}', $registrado['response']);
+        $this->assertSame(1, $registrado['payload']['id']);
+    }
+
     /** Quem alerta sobre o envio é o job, único a saber se ainda resta tentativa. */
     function testFalhaDoEnvioRegistraSemDispararAlerta()
     {

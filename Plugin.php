@@ -14,6 +14,8 @@ use AldirBlanc\Jobs\OportunidadeCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Jobs\ResultadoCultJob;
+use AldirBlanc\Services\ResultadoAnexosService;
+use MapasCulturais\Definitions\FileGroup;
 
 class Plugin extends \MapasCulturais\Plugin
 {
@@ -49,7 +51,10 @@ class Plugin extends \MapasCulturais\Plugin
                         'parAcoesEndpoint' => 'par/acoes',
                         'oportunidadeEndpoint' => 'oportunidades/{id}',
                         'criarOportunidadeEndpoint' => 'oportunidades',
+                        'listarOportunidadesEndpoint' => 'oportunidades',
                         'criarResultadoEndpoint' => 'editais/{id_edital}/resultado',
+                        'resultadoPublicadoEndpoint' => 'editais/{id_edital}/resultado/publicado',
+                        'modeloPlanilhaEndpoint' => 'editais/{id_edital}/resultado/modelo-planilha',
                         'formularioEstruturaEndpoint' => 'par/formularios/estrutura',
                         'validarTokenEndpoint' => 'validar-token',
                         'parCadastroAnalisesEndpoint' => 'par/cadastro/{document}/analises',
@@ -154,6 +159,29 @@ class Plugin extends \MapasCulturais\Plugin
 
             $this->render('resultado-beneficiarios', ['entity' => $opportunity]);
         });
+
+        // A consulta pública do edital traz o nome até do arquivo privado.
+        $app->hook('ApiQuery(<<*>>Opportunity).findResult', function (array &$editais) {
+            foreach ($editais as &$edital) {
+                unset($edital['files'][ResultadoAnexosService::GRUPO], $edital['@files:' . ResultadoAnexosService::GRUPO]);
+            }
+        });
+
+        // private só filtra a leitura: sem isto, quem edita o edital gravaria por fora o que só o plugin escreve
+        $retiraChavesDoPlugin = function (&$data) {
+            $data = array_diff_key((array) $data, array_flip(Controller::OPPORTUNITY_META_CULT_BR_GRAVADAS_PELO_PLUGIN));
+        };
+        $app->hook('POST(opportunity.index):data', $retiraChavesDoPlugin);
+        $app->hook('PATCH(opportunity.single):data', $retiraChavesDoPlugin);
+        $app->hook('PUT(opportunity.single):data', $retiraChavesDoPlugin);
+
+        // a linha da inscrição vale como digitada pelo gestor na grade
+        $retiraLinhaDaInscricao = function (&$data) {
+            $data = array_diff_key((array) $data, [Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA => true]);
+        };
+        $app->hook('POST(registration.index):data', $retiraLinhaDaInscricao);
+        $app->hook('PATCH(registration.single):data', $retiraLinhaDaInscricao);
+        $app->hook('PUT(registration.single):data', $retiraLinhaDaInscricao);
 
         // Valida campos obrigatórios antes de executar generateopportunity, evitando que
         // ausência de name cause violação NOT NULL no banco (fechando o EntityManager) e que
@@ -260,23 +288,31 @@ class Plugin extends \MapasCulturais\Plugin
             'private' => true,
         ]);
 
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, [
+            'label' => i::__('Último envio do resultado (CultBR)'),
+            'type' => 'json',
+            'private' => true,
+        ]);
+
         $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, [
             'label' => i::__('Respostas do formulário de resultado (CultBR)'),
             'type' => 'json',
             'private' => true,
         ]);
 
-        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA, [
-            'label' => i::__('De/para das colunas da planilha de resultado (CultBR)'),
+        $this->registerMetadata('MapasCulturais\Entities\Opportunity', Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA, [
+            'label' => i::__('De/para da planilha de contemplados (CultBR)'),
             'type' => 'json',
             'private' => true,
         ]);
 
-        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA, [
-            'label' => i::__('Dados de execução informados pelo gestor para a planilha de resultado (CultBR)'),
+        $this->registerMetadata('MapasCulturais\Entities\Registration', Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA, [
+            'label' => i::__('Dados informados pelo gestor para a planilha de contemplados (CultBR)'),
             'type' => 'json',
             'private' => true,
         ]);
+
+        $app->registerFileGroup('opportunity', new FileGroup(ResultadoAnexosService::GRUPO, private: true));
 
         $app->registerJobType(new OportunidadeCultJob(OportunidadeCultJob::SLUG));
         $app->registerJobType(new ResultadoCultJob(ResultadoCultJob::SLUG));

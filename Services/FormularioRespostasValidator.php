@@ -5,28 +5,40 @@ namespace AldirBlanc\Services;
 /** Valida respostas do formulário de resultado contra a estrutura publicada pelo PAR. */
 final class FormularioRespostasValidator
 {
-    /** Questões sem resposta do gestor: anexos ficam de fora e a visualização do edital é informativa. */
-    private const TIPOS_SEM_RESPOSTA = ['anexo', 'visualização simplificada edital'];
+    /** Anexo vai em arquivo próprio e a visualização do edital é informativa. */
+    private const TIPOS_SEM_RESPOSTA = ['anexo', 'múltiplos anexos', 'visualização simplificada edital'];
 
-    /** A data de publicação é calculada pelo sistema, nunca preenchida — a tag a identifica em todo formulário. */
-    private const TAG_DATA_PUBLICACAO = 'data_publicacao';
+    private const TIPO_NAO_SUPORTADO = 'tipo de questão não suportado';
 
-    private const TABELA_MIN_LINHAS_PADRAO = 1;
+    private const TIPOS_DE_TABELA = ['tabela', 'Tabela Dinâmica'];
+
+    private const TIPOS_COM_RESPOSTA = [
+        'número', 'moeda', 'data', 'texto', 'textarea', 'booleano', 'radio', 'checkbox', 'múltipla escolha', ...self::TIPOS_DE_TABELA,
+    ];
+
+    private const MOEDA_NEGATIVA = 'o valor em reais não pode ser negativo';
+    private const TIPOS_DE_COLUNA = ['text', 'number', 'currency', 'dropdown', 'escolha_unica'];
+
+    private const FORMATOS_DE_DATA = ['Y-m-d'];
+    private const FORMATOS_DE_DATA_COM_HORA = ['Y-m-d', 'Y-m-d\TH:i', 'Y-m-d\TH:i:s'];
+
+    private readonly FormularioRegras $regras;
 
     /** @var array<int, array> questões editáveis, por id_questao */
     private array $questoes = [];
 
+    /** @var array<int, array> documentos que o gestor anexa, por id_questao */
+    private array $documentos = [];
+
     public function __construct(array $estrutura)
     {
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    if ($this->isEditavel($questao)) {
-                        $this->questoes[(int) $questao['id_questao']] = $questao;
-                    }
-                }
-            }
-        }
+        $leitura = new FormularioEstrutura($estrutura);
+        $this->regras = new FormularioRegras($leitura);
+        $this->questoes = array_filter($leitura->questoes(), $this->isEditavel(...));
+        $this->documentos = array_filter(
+            $leitura->questoes(),
+            fn(array $questao) => FormularioEstrutura::isDocumento($questao) && empty($questao['somente_leitura']),
+        );
     }
 
     private function isEditavel(array $questao): bool
@@ -35,14 +47,16 @@ final class FormularioRespostasValidator
             return false;
         }
 
-        if (!empty($questao['somente_leitura'])) {
-            return false;
-        }
-
-        return !str_starts_with((string) ($questao['tag'] ?? ''), self::TAG_DATA_PUBLICACAO);
+        return empty($questao['somente_leitura']);
     }
 
-    /** @return array<int, string> erros por id_questao; vazio quando todas as respostas são válidas */
+    /** @return array<int, mixed> só as respostas de questões que o gestor preenche */
+    public function editaveis(array $respostas): array
+    {
+        return array_intersect_key($respostas, $this->questoes);
+    }
+
+    /** @return array<int, string> erros das inválidas, por id_questao; vazio quando todas podem ser gravadas */
     public function validate(array $respostas): array
     {
         $erros = [];
@@ -55,147 +69,373 @@ final class FormularioRespostasValidator
                 continue;
             }
 
-            $erro = $valor === null ? null : $this->validateValor($questao, $valor);
+            $veredito = $this->veredito($questao, $valor);
 
-            if ($erro !== null) {
-                $erros[(int) $idQuestao] = $erro;
+            if ($veredito?->isInvalida) {
+                $erros[(int) $idQuestao] = $veredito->motivo;
             }
         }
 
         return $erros;
     }
 
-    /** @return list<int> ids das questões obrigatórias ainda sem resposta válida de completude */
-    public function missingRequired(array $respostas): array
+    /** @return array<int, string> o que falta em cada questão visível para o envio, por id_questao */
+    public function pendencias(array $respostas): array
     {
-        $faltantes = [];
+        $motivos = [];
 
-        foreach ($this->questoes as $id => $questao) {
-            if (empty($questao['requerida'])) {
-                continue;
-            }
+        foreach ($this->visiveis($respostas) as $id => $questao) {
+            $motivo = $this->pendencia($questao, $respostas[$id] ?? null);
 
-            if ($this->isIncompleta($questao, $respostas[$id] ?? null)) {
-                $faltantes[] = $id;
+            if ($motivo !== null) {
+                $motivos[$id] = $motivo;
             }
         }
 
-        return $faltantes;
+        return $motivos;
     }
 
-    private function isIncompleta(array $questao, mixed $valor): bool
+    /** @return list<int> documentos que o gestor é obrigado a anexar */
+    public function documentosRequeridos(array $respostas): array
     {
-        if ($this->isVazio($valor)) {
-            return true;
-        }
-
-        if (($questao['tipo_questao'] ?? '') !== 'Tabela Dinâmica') {
-            return false;
-        }
-
-        $minimo = (int) ($questao['config']['minRows'] ?? self::TABELA_MIN_LINHAS_PADRAO);
-
-        return is_array($valor) && count($valor) < $minimo;
+        return array_keys(array_filter($this->documentosVisiveis($respostas), fn(array $questao) => !empty($questao['requerida'])));
     }
 
-    private function validateValor(array $questao, mixed $valor): ?string
+    /** @return array<int, array> documentos que o gestor pode anexar, por id_questao */
+    public function documentosVisiveis(array $respostas): array
     {
+        return array_intersect_key($this->documentos, $this->visiveis($respostas));
+    }
+
+    /** @return array<int, mixed> só as respostas completas de questões que o gestor preenche */
+    public function enviaveis(array $respostas): array
+    {
+        return array_filter(
+            $this->editaveis($respostas),
+            fn(mixed $valor, int $id) => $this->isRespondida($this->questoes[$id], $valor) && $this->veredito($this->questoes[$id], $valor) === null,
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
+    /** @return array<int, string> o que esta versão do sistema não sabe tratar, por id_questao */
+    public function bloqueios(array $respostas): array
+    {
+        return array_filter(array_map($this->bloqueio(...), $this->visiveis($respostas)));
+    }
+
+    /** @return array<int, array> */
+    private function visiveis(array $respostas): array
+    {
+        return array_filter(
+            $this->questoes + $this->documentos,
+            fn(array $questao) => $this->regras->isVisivel($questao, $respostas),
+        );
+    }
+
+    private function pendencia(array $questao, mixed $valor): ?string
+    {
+        $isRequerida = !empty($questao['requerida']);
+
+        if (FormularioEstrutura::isDocumento($questao)) {
+            return $isRequerida && $this->isVazio($valor) ? 'anexe o documento' : null;
+        }
+
+        return $this->veredito($questao, $valor)?->motivo
+            ?? ($isRequerida && !$this->isRespondida($questao, $valor) ? 'resposta obrigatória' : null);
+    }
+
+    /** Tabela sem linha é resposta: o mínimo de linhas, quando há, já foi conferido. */
+    private function isRespondida(array $questao, mixed $valor): bool
+    {
+        return in_array($questao['tipo_questao'], self::TIPOS_DE_TABELA, true) ? is_array($valor) : !$this->isVazio($valor);
+    }
+
+    private function bloqueio(array $questao): ?string
+    {
+        if (!$this->regras->isTodaSuportada($questao)) {
+            return 'regra de exibição não suportada';
+        }
+
+        if (FormularioEstrutura::isDocumento($questao)) {
+            return null;
+        }
+
+        if (!in_array($questao['tipo_questao'], self::TIPOS_COM_RESPOSTA, true)) {
+            return self::TIPO_NAO_SUPORTADO;
+        }
+
+        $colunas = FormularioTabela::daQuestao($questao)->colunas;
+        $tipos = array_diff(array_column($colunas, 'tipo'), self::TIPOS_DE_COLUNA);
+
+        if ($tipos !== []) {
+            return 'tipo de coluna não suportado: ' . implode(', ', $tipos);
+        }
+
+        $mascaras = array_filter(
+            [...$this->mascaras($questao), ...array_column($colunas, 'mascara')],
+            fn(?string $mascara) => $mascara !== null && !FormularioMascara::isConhecida($mascara),
+        );
+
+        return $mascaras === [] ? null : 'máscara não reconhecida: ' . implode(', ', $mascaras);
+    }
+
+    /** @return list<?string> */
+    private function mascaras(array $questao): array
+    {
+        $complementos = array_column(FormularioEstrutura::itens($questao), 'campoComplementar');
+
+        return [
+            $questao['mascara'] ?? null,
+            $questao['config']['padraoValidacao'] ?? null,
+            ...array_column($complementos, 'padraoValidacao'),
+        ];
+    }
+
+    private function veredito(array $questao, mixed $valor): ?FormularioVeredito
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
         return match ($questao['tipo_questao']) {
-            'número', 'moeda' => $this->validateNumero($questao, $valor),
-            'data' => $this->validateData($valor),
-            'texto', 'textarea' => is_string($valor) ? null : 'o valor deve ser texto',
-            'booleano' => is_bool($valor) ? null : 'o valor deve ser verdadeiro ou falso',
-            'múltipla escolha' => $this->validateEscolha($questao, $valor),
-            'Tabela Dinâmica' => $this->validateTabela($questao, $valor),
-            // Tipo que o PAR vier a criar: aceito sem validação local, o servidor deles decide.
+            'número', 'moeda' => $this->confereNumeroDaQuestao($questao, $valor),
+            'data' => $this->confereData($questao, $valor),
+            'texto', 'textarea' => $this->confereTextoDaQuestao($questao, $valor),
+            'booleano' => is_bool($valor) ? null : FormularioVeredito::invalida('o valor deve ser verdadeiro ou falso'),
+            'radio' => $this->confereItem($questao, $valor),
+            'checkbox', 'múltipla escolha' => $this->confereEscolhas($questao, $valor),
+            'tabela', 'Tabela Dinâmica' => $this->confereTabela($questao, $valor),
+            default => FormularioVeredito::invalida(self::TIPO_NAO_SUPORTADO),
+        };
+    }
+
+    private function confereNumeroDaQuestao(array $questao, mixed $valor): ?FormularioVeredito
+    {
+        $config = $questao['config'] ?? [];
+        $minimos = array_filter([$questao['valor_minimo'] ?? null, $config['numericoMinimo'] ?? null], is_numeric(...));
+
+        $minimo = $minimos === [] ? null : max($minimos);
+
+        return $this->confereNumero($valor, $minimo, $questao['valor_maximo'] ?? null)
+            ?? $this->confereInteiro($valor, !empty($config['numericoSomenteInteiros']))
+            ?? ($questao['tipo_questao'] === 'moeda' ? $this->confereMoeda($valor, $minimo) : null);
+    }
+
+    /** Sem mínimo declarado, moeda não aceita negativo: a Conecta MinC o publica. */
+    private function confereMoeda(mixed $valor, mixed $minimo): ?FormularioVeredito
+    {
+        return $minimo === null && (float) $valor < 0 ? FormularioVeredito::invalida(self::MOEDA_NEGATIVA) : null;
+    }
+
+    private function confereNumero(mixed $valor, mixed $minimo, mixed $maximo): ?FormularioVeredito
+    {
+        if (!is_int($valor) && !is_float($valor) && !(is_string($valor) && is_numeric($valor))) {
+            return FormularioVeredito::invalida('o valor deve ser numérico');
+        }
+
+        if ($minimo !== null && (float) $valor < (float) $minimo) {
+            return FormularioVeredito::invalida("o valor mínimo é {$minimo}");
+        }
+
+        if ($maximo !== null && (float) $valor > (float) $maximo) {
+            return FormularioVeredito::invalida("o valor máximo é {$maximo}");
+        }
+
+        return null;
+    }
+
+    private function confereInteiro(mixed $valor, bool $somenteInteiros): ?FormularioVeredito
+    {
+        return $somenteInteiros && floor((float) $valor) !== (float) $valor
+            ? FormularioVeredito::invalida('o valor deve ser um número inteiro')
+            : null;
+    }
+
+    private function confereData(array $questao, mixed $valor): ?FormularioVeredito
+    {
+        $comHora = !empty($questao['config']['comHora']);
+        $formatos = $comHora ? self::FORMATOS_DE_DATA_COM_HORA : self::FORMATOS_DE_DATA;
+
+        foreach (is_string($valor) ? $formatos : [] as $formato) {
+            $data = \DateTime::createFromFormat($formato, $valor);
+
+            // Round-trip estrito: createFromFormat aceita 2026-02-30 rolando para março — format() desmascara.
+            if ($data !== false && $data->format($formato) === $valor) {
+                return null;
+            }
+        }
+
+        return FormularioVeredito::invalida('a data deve ser válida e estar no formato AAAA-MM-DD' . ($comHora ? ' ou AAAA-MM-DDTHH:MM' : ''));
+    }
+
+    private function confereTextoDaQuestao(array $questao, mixed $valor): ?FormularioVeredito
+    {
+        $config = $questao['config'] ?? [];
+        $limites = array_filter([$config['limiteCaracteres'] ?? null, $questao['valor_maximo'] ?? null], is_numeric(...));
+
+        return $this->confereTexto($valor, $limites === [] ? null : min($limites), $questao['valor_minimo'] ?? null)
+            ?? $this->confereMascaras([$questao['mascara'] ?? null, $config['padraoValidacao'] ?? null], $valor, $questao['nome'] ?? '');
+    }
+
+    private function confereTexto(mixed $valor, mixed $limite, mixed $minimo = null): ?FormularioVeredito
+    {
+        if (!is_string($valor)) {
+            return FormularioVeredito::invalida('o valor deve ser texto');
+        }
+
+        if ($limite !== null && mb_strlen($valor) > (int) $limite) {
+            return FormularioVeredito::invalida('o texto passa de ' . (int) $limite . ' caracteres');
+        }
+
+        if ($minimo !== null && $valor !== '' && mb_strlen($valor) < (int) $minimo) {
+            return FormularioVeredito::invalida('o texto precisa de pelo menos ' . (int) $minimo . ' caracteres');
+        }
+
+        return null;
+    }
+
+    private function confereMascaras(array $mascaras, string $texto, string $nome): ?FormularioVeredito
+    {
+        if ($texto === '') {
+            return null;
+        }
+
+        $vereditos = array_map(
+            fn(string $mascara) => FormularioMascara::confere($mascara, $texto),
+            array_values(array_unique(array_filter($mascaras))),
+        );
+        $veredito = FormularioVeredito::maisGrave($vereditos);
+
+        return $veredito?->comNome($nome);
+    }
+
+    private function confereEscolhas(array $questao, mixed $valor): ?FormularioVeredito
+    {
+        if (!is_array($valor) || !array_is_list($valor)) {
+            return FormularioVeredito::invalida('o valor deve ser uma lista de opções');
+        }
+
+        if ($valor === []) {
+            return null;
+        }
+
+        return FormularioVeredito::maisGrave([
+            ...array_map(fn(mixed $escolha) => $this->confereItem($questao, $escolha), $valor),
+            $this->confereMarcacoes($questao, array_map(self::idDaEscolha(...), $valor)),
+        ]);
+    }
+
+    /** A escolha simples é o id do item; a que tem campo complementar é {id, complemento}. */
+    private function confereItem(array $questao, mixed $escolha): ?FormularioVeredito
+    {
+        $id = self::idDaEscolha($escolha);
+        $item = $this->item($questao, $id);
+
+        if ($item === null) {
+            return FormularioVeredito::invalida('opção fora da lista' . ($id === null ? '' : ": {$id}"));
+        }
+
+        if (!isset($item['campoComplementar'])) {
+            return is_string($escolha) ? null : FormularioVeredito::invalida("a opção \"{$item['label']}\" não aceita complemento");
+        }
+
+        return $this->confereComplemento($item, is_array($escolha) ? ($escolha['complemento'] ?? '') : '');
+    }
+
+    private function confereComplemento(array $item, mixed $complemento): ?FormularioVeredito
+    {
+        $campo = $item['campoComplementar'];
+
+        if (is_string($complemento) && trim($complemento) === '') {
+            return FormularioVeredito::incompleta("falta o complemento da opção \"{$item['label']}\"");
+        }
+
+        return $this->confereTexto($complemento, $campo['limiteCaracteres'] ?? null)
+            ?? $this->confereMascaras([$campo['padraoValidacao'] ?? null], $complemento, $campo['nome'] ?? $item['label']);
+    }
+
+    /** @param list<?string> $ids */
+    private function confereMarcacoes(array $questao, array $ids): ?FormularioVeredito
+    {
+        $limite = $questao['opcao']['limiteMarcacoes'] ?? null;
+        $minimo = $questao['opcao']['limiteMinimoMarcacoes'] ?? null;
+        $exclusivas = array_filter($ids, fn(?string $id) => !empty($this->item($questao, $id)['exclusiva']));
+
+        return match (true) {
+            count(array_unique($ids)) < count($ids) => FormularioVeredito::invalida('a mesma opção foi marcada mais de uma vez'),
+            $exclusivas !== [] && count($ids) > 1 => FormularioVeredito::invalida('a opção exclusiva não pode ser marcada com outras'),
+            $limite !== null && count($ids) > (int) $limite => FormularioVeredito::invalida("o limite é de {$limite} marcações"),
+            $minimo !== null && count($ids) < (int) $minimo => FormularioVeredito::incompleta("marque pelo menos {$minimo} opções"),
             default => null,
         };
     }
 
-    private function validateNumero(array $questao, mixed $valor): ?string
+    private static function idDaEscolha(mixed $escolha): ?string
     {
-        if (!is_int($valor) && !is_float($valor) && !(is_string($valor) && is_numeric($valor))) {
-            return 'o valor deve ser numérico';
-        }
+        $id = is_array($escolha) ? ($escolha['id'] ?? null) : $escolha;
 
-        $numero = (float) $valor;
-
-        $minimo = $questao['valor_minimo'] ?? null;
-        if ($minimo !== null && $numero < (float) $minimo) {
-            return "o valor mínimo é {$minimo}";
-        }
-
-        $maximo = $questao['valor_maximo'] ?? null;
-        if ($maximo !== null && $numero > (float) $maximo) {
-            return "o valor máximo é {$maximo}";
-        }
-
-        return null;
+        return is_string($id) ? $id : null;
     }
 
-    private function validateData(mixed $valor): ?string
+    private function item(array $questao, ?string $id): ?array
     {
-        // Round-trip estrito: createFromFormat aceita 2026-02-30 rolando para março — format() desmascara.
-        $data = is_string($valor) ? \DateTime::createFromFormat('Y-m-d', $valor) : false;
-
-        if ($data === false || $data->format('Y-m-d') !== $valor) {
-            return 'a data deve ser válida e estar no formato AAAA-MM-DD';
-        }
-
-        return null;
-    }
-
-    private function validateEscolha(array $questao, mixed $valor): ?string
-    {
-        $valores = is_array($valor) ? $valor : [$valor];
-
-        foreach ($valores as $item) {
-            if (!is_string($item)) {
-                return 'cada opção deve ser texto';
+        foreach (FormularioEstrutura::itens($questao) as $item) {
+            if ($item['id'] === $id) {
+                return $item;
             }
         }
 
-        if (!empty($questao['permite_inclusao_outros'])) {
-            return null;
-        }
-
-        $itens = $questao['opcao']['itens'] ?? null;
-        if (!is_array($itens) || $itens === []) {
-            return null;
-        }
-
-        $foraDaLista = array_diff($valores, array_column($itens, 'valor'));
-
-        return $foraDaLista === [] ? null : 'opção fora da lista: ' . implode(', ', $foraDaLista);
+        return null;
     }
 
-    private function validateTabela(array $questao, mixed $valor): ?string
+    private function confereTabela(array $questao, mixed $valor): ?FormularioVeredito
     {
-        if (!is_array($valor) || ($valor !== [] && !array_is_list($valor))) {
-            return 'o valor deve ser uma lista de linhas';
+        if (!is_array($valor) || !array_is_list($valor) || $valor !== array_filter($valor, is_array(...))) {
+            return FormularioVeredito::invalida('o valor deve ser uma lista de linhas');
         }
 
-        $colunas = $questao['config']['columns'] ?? [];
-        $obrigatorias = array_values(array_filter(
-            $colunas,
-            fn($coluna) => !empty($coluna['required']) && empty($coluna['readOnly']),
-        ));
+        $tabela = FormularioTabela::daQuestao($questao);
+
+        if ($tabela->maxLinhas !== null && count($valor) > $tabela->maxLinhas) {
+            return FormularioVeredito::invalida("a tabela aceita no máximo {$tabela->maxLinhas} linhas");
+        }
+
+        $vereditos = [];
 
         foreach ($valor as $indice => $linha) {
-            if (!is_array($linha)) {
-                return 'cada linha deve ser um conjunto de colunas';
-            }
-
-            foreach ($obrigatorias as $coluna) {
-                if ($this->isVazio($linha[$coluna['key']] ?? null)) {
-                    $posicao = $indice + 1;
-
-                    return "linha {$posicao}: a coluna \"{$coluna['label']}\" é obrigatória";
-                }
-            }
+            $vereditos[] = $this->confereLinha($tabela, $linha)?->comNome('linha ' . ($indice + 1));
         }
 
-        return null;
+        if (count($valor) < $tabela->minLinhas) {
+            $vereditos[] = FormularioVeredito::incompleta("preencha pelo menos {$tabela->minLinhas} linha(s)");
+        }
+
+        return FormularioVeredito::maisGrave($vereditos);
+    }
+
+    private function confereLinha(FormularioTabela $tabela, array $linha): ?FormularioVeredito
+    {
+        $editaveis = array_filter($tabela->colunas, fn(array $coluna) => !$coluna['somenteLeitura']);
+
+        return FormularioVeredito::maisGrave(array_map(
+            fn(array $coluna) => $this->confereCelula($coluna, $linha[$coluna['id']] ?? null)?->comNome($coluna['nome']),
+            $editaveis,
+        ));
+    }
+
+    private function confereCelula(array $coluna, mixed $valor): ?FormularioVeredito
+    {
+        if ($this->isVazio($valor)) {
+            return $coluna['obrigatoria'] ? FormularioVeredito::incompleta('preenchimento obrigatório') : null;
+        }
+
+        return match ($coluna['tipo']) {
+            'text' => $this->confereTexto($valor, $coluna['limiteCaracteres']) ?? $this->confereMascaras([$coluna['mascara']], $valor, ''),
+            'number' => $this->confereNumero($valor, $coluna['minimo'], $coluna['maximo']),
+            'currency' => $this->confereNumero($valor, $coluna['minimo'], $coluna['maximo']) ?? $this->confereMoeda($valor, $coluna['minimo']),
+            'dropdown', 'escolha_unica' => in_array($valor, $coluna['opcoes'], true) ? null : FormularioVeredito::invalida('opção fora da lista'),
+            default => FormularioVeredito::invalida("tipo de coluna não suportado: {$coluna['tipo']}"),
+        };
     }
 
     private function isVazio(mixed $valor): bool

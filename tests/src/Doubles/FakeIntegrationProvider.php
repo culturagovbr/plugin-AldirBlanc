@@ -13,6 +13,9 @@ use AldirBlanc\Dtos\SendOutcome;
 use AldirBlanc\Enum\Provider;
 use AldirBlanc\Enum\SendAction;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesModeloPlanilha;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
+use AldirBlanc\Integration\FetchesResultadosDoEdital;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\SendsResultado;
 
@@ -20,7 +23,7 @@ use AldirBlanc\Integration\SendsResultado;
  * Provedor resolvido por nome de classe em `provider`: o envio devolve (ou lança) o que o teste
  * mandar, sem client e sem recorder. O resolver instancia sem argumentos, daí o estado estático.
  */
-class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesFormularioResultado
+class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, FetchesResultadosDoEdital, FetchesFormularioResultado, FetchesResultadoPermitido, FetchesModeloPlanilha
 {
     /** @var null|callable(int): ?array */
     public static $aoBuscarFormulario = null;
@@ -33,6 +36,27 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
 
     /** @var list<int> oportunidades cujo tipo de ação foi pedido, na ordem */
     public static array $tiposAcaoBuscados = [];
+
+    /** @var null|callable(int): ?int sem ele, o edital não publicou nada */
+    public static $aoLerPublicado = null;
+
+    /** @var null|callable(int): list<int> sem ele, a lista vem vazia */
+    public static $aoListarPublicados = null;
+
+    /** @var list<string> leituras e envios de resultado, na ordem em que aconteceram */
+    public static array $passos = [];
+
+    /** @var null|callable(int): array sem ele, o edital não tem modelo de planilha */
+    public static $aoBuscarModelo = null;
+
+    /** @var list<int> editais cujo modelo de planilha foi pedido, na ordem */
+    public static array $modelosBuscados = [];
+
+    /** @var null|callable(int): ?bool sem ele, a origem não diz se a ação recebe resultado */
+    public static $aoBuscarPermissao = null;
+
+    /** @var list<int> editais cuja permissão foi pedida, na ordem */
+    public static array $permissoesBuscadas = [];
 
     /** @var null|callable(OpportunityId, OpportunityDto): SendOutcome */
     public static $aoEnviar = null;
@@ -56,6 +80,13 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$aoBuscarTipoAcao = null;
         self::$formulariosBuscados = [];
         self::$tiposAcaoBuscados = [];
+        self::$aoBuscarPermissao = null;
+        self::$permissoesBuscadas = [];
+        self::$aoLerPublicado = null;
+        self::$aoListarPublicados = null;
+        self::$passos = [];
+        self::$aoBuscarModelo = null;
+        self::$modelosBuscados = [];
     }
 
     public function provider(): Provider
@@ -83,8 +114,23 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         return (self::$aoEnviar)($id, $payload);
     }
 
+    public function fetchIdPublicado(ParEditalId $edital): ?int
+    {
+        self::$passos[] = 'publicado';
+
+        return self::$aoLerPublicado === null ? null : (self::$aoLerPublicado)($edital->id);
+    }
+
+    public function fetchIdsPublicados(ParEditalId $edital): array
+    {
+        self::$passos[] = 'lista';
+
+        return self::$aoListarPublicados === null ? [] : (self::$aoListarPublicados)($edital->id);
+    }
+
     public function sendResultado(ParEditalId $edital, Resultado $payload): SendOutcome
     {
+        self::$passos[] = 'envio';
         self::$resultadosEnviados[] = ['edital' => (int) $edital->id, 'payload' => $payload];
 
         return (self::$aoEnviarResultado)($edital, $payload);
@@ -95,6 +141,22 @@ class FakeIntegrationProvider implements IntegrationProvider, SendsResultado, Fe
         self::$formulariosBuscados[] = $idTipoAcao;
 
         return (self::$aoBuscarFormulario)($idTipoAcao);
+    }
+
+    public function fetchResultadoPermitido(ParEditalId $edital): ?bool
+    {
+        self::$permissoesBuscadas[] = $edital->id;
+
+        return self::$aoBuscarPermissao === null ? null : (self::$aoBuscarPermissao)($edital->id);
+    }
+
+    public function fetchModeloPlanilha(ParEditalId $edital): array
+    {
+        self::$modelosBuscados[] = $edital->id;
+
+        return self::$aoBuscarModelo === null
+            ? ['possui_planilha' => false, 'motivo' => 'A ação não possui modelo de planilha']
+            : (self::$aoBuscarModelo)($edital->id);
     }
 
     public function fetchParTipoAcao(OpportunityId $opportunity): ?int

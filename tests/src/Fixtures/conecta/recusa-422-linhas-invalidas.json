@@ -1,0 +1,45 @@
+{
+ "message": "Há linhas inválidas. Nenhuma linha foi salva.",
+ "modelo_planilha": "pontos_de_cultura",
+ "processamento_id": null,
+ "total_linhas": 2,
+ "total_inconsistencias": 4,
+ "inconsistencias": [
+  {
+   "linha": 3,
+   "indice": 1,
+   "coluna": "cpf",
+   "regra": "cpf_valido",
+   "descricao": "CPF inválido",
+   "categoria": "erro de formato",
+   "valor_recebido": "11111111111"
+  },
+  {
+   "linha": 3,
+   "indice": 1,
+   "coluna": "cota",
+   "regra": "cota_valido",
+   "descricao": "Valor 'Outra cota' não está na lista de valores permitidos. Valores aceitos: Proposta selecionada em ampla concorrência, Reserva de vagas para pessoas negras, Reserva de vagas para pessoas indígenas...",
+   "categoria": "erro de domínio",
+   "valor_recebido": "Outra cota"
+  },
+  {
+   "linha": 3,
+   "indice": 1,
+   "coluna": "valor_total_subsidio",
+   "regra": "valor_total_subsidio_valido",
+   "descricao": "Valor monetário inválido: 'quinze mil'. Informe um número (ex: 1500.00)",
+   "categoria": "erro de formato",
+   "valor_recebido": "quinze mil"
+  },
+  {
+   "linha": 3,
+   "indice": 1,
+   "coluna": "cep_espaco_cultural",
+   "regra": "cep_espaco_cultural_valido",
+   "descricao": "CEP deve conter 8 dígitos (formato: XXXXX-XXX ou XXXXXXXX)",
+   "categoria": "erro de formato",
+   "valor_recebido": "123"
+  }
+ ]
+}

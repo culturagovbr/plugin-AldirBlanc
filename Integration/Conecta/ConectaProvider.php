@@ -20,15 +20,22 @@ use AldirBlanc\Http\Transport\CurlTransport;
 use AldirBlanc\Http\Transport\Transport;
 use AldirBlanc\Integration\Conecta\Http\EntesClient;
 use AldirBlanc\Integration\Conecta\Http\FormularioEstruturaClient;
+use AldirBlanc\Integration\Conecta\Http\ModeloPlanilhaClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeClient;
 use AldirBlanc\Integration\Conecta\Http\OportunidadeConsultaClient;
+use AldirBlanc\Integration\Conecta\Http\OportunidadesListaClient;
 use AldirBlanc\Integration\Conecta\Http\ParAcoesClient;
 use AldirBlanc\Integration\Conecta\Http\ParCadastroAnalisesClient;
 use AldirBlanc\Integration\Conecta\Http\ParCadastroClient;
 use AldirBlanc\Integration\Conecta\Http\ResultadoClient;
+use AldirBlanc\Integration\Conecta\Http\ResultadoPublicadoClient;
+use AldirBlanc\Integration\Conecta\Http\ResultadosListaClient;
 use AldirBlanc\Integration\Conecta\Http\ValidarTokenClient;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesModeloPlanilha;
 use AldirBlanc\Integration\FetchesParSituation;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
+use AldirBlanc\Integration\FetchesResultadosDoEdital;
 use AldirBlanc\Integration\IntegrationProvider;
 use AldirBlanc\Integration\ManagerSnapshotMapper;
 use AldirBlanc\Integration\ParActionPageMapper;
@@ -39,7 +46,7 @@ use AldirBlanc\Integration\ValidatesCredential;
 use AldirBlanc\Plugin;
 
 /** A API Conecta MinC por trás do contrato. */
-final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesFormularioResultado, FetchesParSituation
+final class ConectaProvider implements IntegrationProvider, ValidatesCredential, SendsResultado, FetchesResultadosDoEdital, FetchesFormularioResultado, FetchesResultadoPermitido, FetchesModeloPlanilha, FetchesParSituation
 {
     /** A Gestão usa 403 para credencial; a Conecta usa 401. Os dois significam recusa. */
     private const REFUSED_STATUSES = [401, 403];
@@ -111,9 +118,31 @@ final class ConectaProvider implements IntegrationProvider, ValidatesCredential,
         return RecordedResultadoSend::perform($client, $edital, $payload, $this->provider());
     }
 
+    public function fetchIdPublicado(ParEditalId $edital): ?int
+    {
+        return (new ResultadoPublicadoClient($edital, $this->transport))->fetchId();
+    }
+
+    public function fetchIdsPublicados(ParEditalId $edital): array
+    {
+        return (new ResultadosListaClient($edital, $this->transport))->fetchIdsPublicados();
+    }
+
     public function fetchFormularioResultado(int $idTipoAcao): ?array
     {
         return (new FormularioEstruturaClient($idTipoAcao, $this->transport))->fetch();
+    }
+
+    public function fetchResultadoPermitido(ParEditalId $edital): ?bool
+    {
+        $transport = $this->transport ?? CurlTransport::forLoginSync();
+
+        return (new OportunidadesListaClient($edital, $transport))->fetchPermiteResultado();
+    }
+
+    public function fetchModeloPlanilha(ParEditalId $edital): array
+    {
+        return (array) (new ModeloPlanilhaClient($edital, $this->transport ?? CurlTransport::forLoginSync()))->get();
     }
 
     public function fetchParSituation(string $cnpj): array

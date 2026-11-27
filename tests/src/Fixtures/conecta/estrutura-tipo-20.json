@@ -1,0 +1,813 @@
+{
+ "id_formulario": 128,
+ "id_formulario_versao": 530,
+ "versao": 3,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1926,
+   "etapas": [
+    {
+     "id_etapa": 2714,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 13632,
+       "id_questao": 2760,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "radio",
+       "tag": "res19_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": {
+        "itens": [
+         {
+          "id": "fe_parceria_mrosc",
+          "tipo": "simples",
+          "label": "Termo de Colaboração - Parceria MROSC (Lei nº 13.019/2014)"
+         }
+        ],
+        "respostaPadrao": [
+         "fe_parceria_mrosc"
+        ]
+       },
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13633,
+       "id_questao": 2761,
+       "nome": "Número e título do edital",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_espelho_numero_titulo_edital",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13634,
+       "id_questao": 2762,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "res19_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto",
+        "limiteCaracteres": 255
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1927,
+   "etapas": [
+    {
+     "id_etapa": 2715,
+     "nome": "Procedimentos Complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13635,
+       "id_questao": 2763,
+       "nome": "Quantidade de Crias que tiveram OSCs parceiras selecionadas no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "res19_quantidade_crias_osc_parceiras",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Quantidade de Crias que tiveram OSCs parceiras selecionadas no edital",
+        "numericoMinimo": 0.0,
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "Ex.: 2",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    },
+    {
+     "id_etapa": 2716,
+     "nome": "Dados de cada CRIA",
+     "questoes": [
+      {
+       "id_questao_etapa": 13636,
+       "id_questao": 2764,
+       "nome": "Nome da OSC parceira selecionada",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_cria_nome_osc_parceira",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Nome da OSC parceira selecionada",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "Informe o nome da OSC parceira",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13637,
+       "id_questao": 2765,
+       "nome": "CNPJ da OSC parceria selecionada",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_cria_cnpj_osc_parceira",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "CNPJ da OSC parceria selecionada",
+        "padraoValidacao": "cnpj",
+        "limiteCaracteres": 18
+       },
+       "sequencial": 2,
+       "mascara": "cnpj",
+       "placeholder": "00.000.000/0000-00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13638,
+       "id_questao": 2766,
+       "nome": "Valor total previsto no edital para o CRIA",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "res19_cria_valor_total_previsto",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total previsto no edital para o CRIA"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": "0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13639,
+       "id_questao": 2767,
+       "nome": "Recursos da Política Nacional Aldir Blanc:",
+       "descricao": "Intervalo entre R$ 600.000,00 e R$ 2.000.000,00 por CRIA.",
+       "tipo_questao": "moeda",
+       "tag": "res19_cria_recursos_pnab",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Recursos da Política Nacional Aldir Blanc:"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": "0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": 600000.0,
+       "valor_maximo": 2000000.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13640,
+       "id_questao": 2768,
+       "nome": "Recursos complementares:",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "res19_cria_recursos_complementares",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Recursos complementares:"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": "0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13641,
+       "id_questao": 2769,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – CEP",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_cep",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – CEP",
+        "padraoValidacao": "cep",
+        "limiteCaracteres": 9
+       },
+       "sequencial": 6,
+       "mascara": "cep",
+       "placeholder": "00000-000",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13642,
+       "id_questao": 2770,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – UF",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_uf",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – UF",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 7,
+       "mascara": null,
+       "placeholder": "Ex.: AL",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13643,
+       "id_questao": 2771,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Município",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_municipio",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Município",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 8,
+       "mascara": null,
+       "placeholder": "Ex.: Maceió",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13644,
+       "id_questao": 2772,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Logradouro",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_logradouro",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Logradouro",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 9,
+       "mascara": null,
+       "placeholder": "Ex.: Rua, avenida ou travessa",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13645,
+       "id_questao": 2773,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Número",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_numero",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Número",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 10
+       },
+       "sequencial": 10,
+       "mascara": null,
+       "placeholder": "Ex.: 123 ou S/N",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13646,
+       "id_questao": 2774,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Complemento",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_complemento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Complemento",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 11,
+       "mascara": null,
+       "placeholder": "Ex.: sala, bloco ou ponto de referência",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13647,
+       "id_questao": 2775,
+       "nome": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Bairro",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "res19_endereco_cria_bairro",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Endereço do espaço disponibilizado pelo ente federativo para a implantação do CRIA – Bairro",
+        "padraoValidacao": "nenhum",
+        "limiteCaracteres": 120
+       },
+       "sequencial": 12,
+       "mascara": null,
+       "placeholder": "Ex.: Centro",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13648,
+       "id_questao": 2776,
+       "nome": "Território de abrangência de cada CRIA",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "res19_cria_territorio_abrangencia",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Território de abrangência de cada CRIA",
+        "limiteCaracteres": 255
+       },
+       "sequencial": 13,
+       "mascara": null,
+       "placeholder": "Informe os municípios de abrangência do CRIA (no DF, as regiões administrativas).",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1928,
+   "etapas": [
+    {
+     "id_etapa": 2717,
+     "nome": "Procedimentos Complementares 2/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 13649,
+       "id_questao": 2777,
+       "nome": "Número total de inscritos no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "res19_total_inscritos_edital",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de inscritos no edital",
+        "numericoMinimo": 0.0,
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "Ex.: 10",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13650,
+       "id_questao": 2778,
+       "nome": "Número total de OSCs habilitadas no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "res19_total_osc_habilitadas_edital",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de OSCs habilitadas no edital",
+        "numericoMinimo": 0.0,
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": "Ex.: 10",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13651,
+       "id_questao": 2779,
+       "nome": "Número total de OSCs contempladas no edital",
+       "descricao": null,
+       "tipo_questao": "número",
+       "tag": "res19_total_osc_contempladas_edital",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número total de OSCs contempladas no edital",
+        "numericoMinimo": 0.0,
+        "numericoSomenteInteiros": true
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": "Ex.: 10",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13652,
+       "id_questao": 2780,
+       "nome": "Valor total a ser repassado pelo edital",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "res19_valor_total_repassado_edital",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total a ser repassado pelo edital"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": "0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13653,
+       "id_questao": 2781,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "res19_execucao_conforme_planejado",
+       "requerida": true,
+       "opcao": "Sim",
+       "config": {
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 5,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": "Não",
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13654,
+       "id_questao": 2782,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "res19_comentarios_observacoes_execucao_sim",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "vis_q_res_1_9_coment_sim",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13653
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 6,
+       "mascara": null,
+       "placeholder": "Registre comentários e observações sobre a execução (opcional).",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13655,
+       "id_questao": 2783,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "res19_comentarios_observacoes_execucao_nao",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "vis_q_res_1_9_coment_nao",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 13653
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 7,
+       "mascara": null,
+       "placeholder": "Explique o que ocorreu de diferente do planejado.",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1929,
+   "etapas": [
+    {
+     "id_etapa": 2718,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 13656,
+       "id_questao": 2784,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver",
+       "descricao": null,
+       "tipo_questao": "múltiplos anexos",
+       "tag": "res19_publicacao_resultado_diario_oficial",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13657,
+       "id_questao": 2785,
+       "nome": "Outros documentos",
+       "descricao": null,
+       "tipo_questao": "múltiplos anexos",
+       "tag": "res19_outros_documentos",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf",
+         ".csv",
+         ".xls",
+         ".xlsx"
+        ],
+        "multiplos": true,
+        "textoPergunta": "Outros documentos"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13658,
+       "id_questao": 2786,
+       "nome": "Planilha de resultados",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "res19_planilha_resultados",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".csv",
+         ".xlsx"
+        ],
+        "multiplos": false,
+        "textoPergunta": "Planilha de resultados"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 13659,
+       "id_questao": 2787,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": null,
+       "tipo_questao": "checkbox",
+       "tag": "res19_declaracao_responsabilidade_veracidade",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_1",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         },
+         {
+          "id": "declaracao_2",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, a submissão dos documentos comprobatórios de conformidade com as exigências dispostas na Portaria MinC nº 324/2026."
+         }
+        ],
+        "habilitarBusca": false,
+        "limiteMarcacoes": 2,
+        "selecaoOrdenada": false,
+        "limiteMinimoMarcacoes": 2,
+        "habilitarSelecionarTodos": false
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

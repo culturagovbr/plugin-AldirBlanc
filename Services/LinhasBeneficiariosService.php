@@ -4,330 +4,140 @@ namespace AldirBlanc\Services;
 
 use MapasCulturais\i;
 
-/**
- * Linhas da planilha acao_cultural_realizada: uma por inscrição contemplada, montada de três fontes —
- * o que o sistema calcula, o que o de/para traz da ficha e o que o gestor digitou na grade.
- */
+/** Linha da planilha de contemplados, conferida pelo que cada coluna do modelo declara. */
 class LinhasBeneficiariosService
 {
-    public const FONTE_AUTOMATICA = 'automatica';
     public const FONTE_FICHA = 'ficha';
     public const FONTE_GESTOR = 'gestor';
 
-    public const COLUNAS = [
-        'tipo_agente' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
-        'identificador_edital' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
-        'cpf_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
-        'cnpj_responsavel_execucao' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'texto', 'editavel' => false],
-        'valor_recebido_pnab' => ['fonte' => self::FONTE_AUTOMATICA, 'tipo' => 'moeda', 'editavel' => true],
-        'data_recebimento_recurso' => ['fonte' => self::FONTE_GESTOR, 'tipo' => 'data', 'editavel' => true],
-        'data_inicio_execucao' => ['fonte' => self::FONTE_GESTOR, 'tipo' => 'data', 'editavel' => true],
-        'data_termino_execucao' => ['fonte' => self::FONTE_GESTOR, 'tipo' => 'data', 'editavel' => true],
-        'recebeu_recursos_outras_fontes' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'lista', 'editavel' => true],
-        'valor_recursos_outras_fontes' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'moeda', 'editavel' => true],
-        'qtd_pessoas_remuneradas_exec' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'numero', 'editavel' => true],
-        'cpfs_remunerados' => ['fonte' => self::FONTE_GESTOR, 'tipo' => 'lista', 'editavel' => true],
-        'formato_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'selecao', 'editavel' => true],
-        'cep_local_execucao' => ['fonte' => self::FONTE_FICHA, 'tipo' => 'texto', 'editavel' => true],
-    ];
+    private const OBRIGATORIO = 'obrigatorio';
+    private const OBRIGATORIEDADES = [self::OBRIGATORIO, 'condicional', 'opcional', 'nao_informado'];
 
-    /** Vocabulário informado pela equipe do CultBr; valor fora dele é recusado com 'erro de domínio'. */
-    public const OPCOES = [
-        'recebeu_recursos_outras_fontes' => [
-            'Não, a ação foi integralmente realizada com recursos do PNAB',
-            'Sim - Governo Federal',
-            'Sim - Governo Estadual',
-            'Sim - Governo Municipal',
-            'Sim - Setor Privado',
-            'Sim - Pessoa Física',
-            'Sim - Organização da Sociedade Civil',
-        ],
-        'formato_execucao' => [
-            'Presencial Fixo',
-            'Presencial Itinerante',
-            'Híbrido',
-            'Remoto/Online',
-            'Não se aplica',
-        ],
-    ];
+    private const DOCUMENTOS = ['cpf', 'cnpj'];
+    private const MONETARIO = 'monetario';
+    private const TIPOS = [...self::DOCUMENTOS, self::MONETARIO, 'cep', 'lista', 'texto', 'a_definir'];
 
-    /** Sem estes o validador do CultBr recusa a planilha inteira, com 422 e nada salvo. */
-    public const OBRIGATORIAS = [
-        'identificador_edital',
-        'valor_recebido_pnab',
-        'data_recebimento_recurso',
-    ];
-
-    /** Menos do que a grade cobra: no envio a data de recebimento deixou de ser obrigatória. */
-    public const OBRIGATORIAS_NO_ENVIO = [
-        'identificador_edital',
-        'valor_recebido_pnab',
-    ];
-
-    /** Escolha que não convive com as outras da mesma coluna: marcá-la desmarca o resto. */
-    public const OPCOES_EXCLUSIVAS = [
-        'recebeu_recursos_outras_fontes' => self::RESPOSTA_SEM_OUTRAS_FONTES,
-    ];
-
-    /** Presencial exige o local: o validador recusa com 'cep_local_execucao_obrigatorio'. */
-    public const FORMATOS_QUE_EXIGEM_CEP = [
-        'Presencial Fixo',
-        'Presencial Itinerante',
-        'Híbrido',
-    ];
-
-    public const RESPOSTA_SEM_OUTRAS_FONTES = 'Não, a ação foi integralmente realizada com recursos do PNAB';
-
-    /** As datas da linha, na ordem em que os fatos acontecem. */
-    private const SEQUENCIA_DAS_DATAS = [
-        'data_recebimento_recurso',
-        'data_inicio_execucao',
-        'data_termino_execucao',
-    ];
-
-    /** CPF e CNPJ satisfazem a mesma exigência, então a dupla pende como um item só. */
-    public const PENDENCIA_RESPONSAVEL = 'responsavel_execucao';
-
-    /** Colunas da grade com rótulo e tipo, na ordem do modelo de planilha. */
-    public function colunas(): array
+    /** @param list<array> $colunas do modelo de planilha do edital */
+    public function __construct(private readonly array $colunas)
     {
-        $labels = [
-            'tipo_agente' => i::__('Tipo de agente'),
-            'identificador_edital' => i::__('Identificador do edital'),
-            'cpf_responsavel_execucao' => i::__('CPF do responsável'),
-            'cnpj_responsavel_execucao' => i::__('CNPJ do responsável'),
-            'valor_recebido_pnab' => i::__('Valor recebido (PNAB)'),
-            'data_recebimento_recurso' => i::__('Data de recebimento do recurso'),
-            'data_inicio_execucao' => i::__('Início da execução'),
-            'data_termino_execucao' => i::__('Término da execução'),
-            'recebeu_recursos_outras_fontes' => i::__('Recebeu recursos de outras fontes?'),
-            'valor_recursos_outras_fontes' => i::__('Valor de outras fontes'),
-            'qtd_pessoas_remuneradas_exec' => i::__('Pessoas remuneradas'),
-            'cpfs_remunerados' => i::__('CPFs remunerados'),
-            'formato_execucao' => i::__('Formato de execução'),
-            'cep_local_execucao' => i::__('CEP do local de execução'),
-        ];
+    }
 
-        $colunas = [];
-        foreach (self::COLUNAS as $chave => $def) {
-            $colunas[] = [
-                'chave' => $chave,
-                'label' => $labels[$chave] ?? $chave,
-                'tipo' => $def['tipo'],
-                'editavel' => $def['editavel'],
-                'obrigatoria' => in_array($chave, self::OBRIGATORIAS, true),
-                'opcoes' => self::OPCOES[$chave] ?? null,
-                'opcaoExclusiva' => self::OPCOES_EXCLUSIVAS[$chave] ?? null,
+    /**
+     * Célula a célula, o que o gestor digitou vence a fonte do de/para.
+     *
+     * @param array<string, array<string, string>> $equivalencias por coluna, a opção de cada valor da fonte
+     * @return array<string, array{valor: mixed, fonte: string}> valor final e de onde ele veio, por coluna
+     */
+    public function mesclar(array $daFonte, array $override, array $equivalencias = []): array
+    {
+        $linha = [];
+
+        foreach ($this->colunas as $coluna) {
+            $chave = $coluna['coluna'];
+            // Célula que o gestor apagou fica apagada: a fonte não volta a preencher o que ele tirou.
+            $isDoGestor = array_key_exists($chave, $override);
+
+            $valor = $this->valor($coluna['tipo'], $isDoGestor ? $override[$chave] : $daFonte[$chave] ?? null);
+
+            if (!$isDoGestor && is_string($valor)) {
+                $valor = $equivalencias[$chave][$valor] ?? $valor;
+            }
+
+            $linha[$chave] = [
+                'valor' => $valor,
+                'fonte' => $isDoGestor ? self::FONTE_GESTOR : self::FONTE_FICHA,
             ];
         }
 
-        return $colunas;
-    }
-
-    /**
-     * Mescla as três fontes de uma linha: o que o gestor digitou vence a ficha, que vence o calculado.
-     *
-     * @return array<string, array{valor: mixed, fonte: string}> valor final e de onde ele veio, por coluna
-     */
-    public function mesclar(array $automatico, array $daFicha, array $override): array
-    {
-        $linha = [];
-
-        foreach (self::COLUNAS as $chave => $def) {
-            // Célula que o gestor apagou fica apagada: a ficha não volta a preencher o que ele tirou.
-            if (array_key_exists($chave, $override) && !$this->preenchido($override[$chave])) {
-                $linha[$chave] = ['valor' => null, 'fonte' => self::FONTE_GESTOR];
-                continue;
-            }
-
-            foreach ([self::FONTE_GESTOR => $override, self::FONTE_FICHA => $daFicha, self::FONTE_AUTOMATICA => $automatico] as $fonte => $valores) {
-                if ($this->preenchido($valores[$chave] ?? null)) {
-                    $linha[$chave] = ['valor' => $valores[$chave], 'fonte' => $fonte];
-                    continue 2;
-                }
-            }
-
-            $linha[$chave] = ['valor' => null, 'fonte' => $def['fonte']];
-        }
-
         return $linha;
     }
 
-    /** Colunas obrigatórias que a linha ainda não tem; vazio significa pronta para o envio. */
+    /** @return array<string, string> motivo por coluna que ainda impede o envio; vazio significa pronta */
     public function pendencias(array $linhaMesclada): array
     {
-        return array_merge(
-            $this->faltando(self::OBRIGATORIAS, $linhaMesclada),
-            $this->contradicoes($linhaMesclada),
-        );
-    }
+        $pendencias = [];
 
-    /** @return string[] o que impede esta linha de ir no envio; vazio significa pronta */
-    public function faltasParaEnvio(array $linhaMesclada): array
-    {
-        return array_merge(
-            $this->faltando(self::OBRIGATORIAS_NO_ENVIO, $linhaMesclada),
-            $this->contradicoes($linhaMesclada),
-        );
-    }
+        foreach ($this->colunas as $coluna) {
+            $motivo = $this->pendencia($coluna, $linhaMesclada[$coluna['coluna']]['valor'] ?? null);
 
-    /** @return string[] */
-    private function faltando(array $obrigatorias, array $linhaMesclada): array
-    {
-        $faltas = [];
-        foreach ($obrigatorias as $chave) {
-            if (!$this->preenchido($linhaMesclada[$chave]['valor'] ?? null)) {
-                $faltas[] = $chave;
+            if ($motivo !== null) {
+                $pendencias[$coluna['coluna']] = $motivo;
             }
         }
 
-        if (!$this->temResponsavel($linhaMesclada)) {
-            $faltas[] = self::PENDENCIA_RESPONSAVEL;
-        }
-
-        return $faltas;
+        return $pendencias;
     }
 
-    /**
-     * Linha que se contradiz: cobrada na grade e também no envio, porque o validador recusa a planilha inteira por qualquer uma delas.
-     *
-     * @return string[]
-     */
-    private function contradicoes(array $linhaMesclada): array
-    {
-        $achadas = [];
-
-        if ($this->valorDeOutrasFontesNaoBateComAResposta($linhaMesclada)) {
-            $achadas[] = 'valor_recursos_outras_fontes';
-        }
-
-        if ($this->presencialSemCep($linhaMesclada)) {
-            $achadas[] = 'cep_local_execucao';
-        }
-
-        foreach (array_keys(self::OPCOES) as $chave) {
-            $valor = $linhaMesclada[$chave]['valor'] ?? null;
-            if ($this->preenchido($valor) && !$this->noVocabulario($chave, $valor)) {
-                $achadas[] = $chave;
-            }
-        }
-
-        return array_merge($achadas, $this->datasForaDaOrdem($linhaMesclada));
-    }
-
-    /**
-     * A linha como o contrato a espera: valor cru, sem a fonte, e sem as colunas vazias.
-     *
-     * @return array<string, mixed>
-     */
+    /** @return array<string, string> a linha como o contrato a espera: valor cru, sem as colunas vazias */
     public function paraOEnvio(array $linhaMesclada): array
     {
-        $linha = [];
-        foreach (array_keys(self::COLUNAS) as $chave) {
-            $valor = $linhaMesclada[$chave]['valor'] ?? null;
+        return array_filter(array_map(fn(array $celula) => $celula['valor'], $linhaMesclada), is_string(...));
+    }
 
-            if ($this->preenchido($valor) && $this->noVocabulario($chave, $valor)) {
-                $linha[$chave] = $valor;
-            }
+    private function pendencia(array $coluna, mixed $valor): ?string
+    {
+        if (!in_array($coluna['tipo'], self::TIPOS, true) || !in_array($coluna['obrigatoriedade'], self::OBRIGATORIEDADES, true)) {
+            return i::__('O CultBR declara esta coluna de uma forma que o sistema ainda não reconhece.');
         }
 
-        return $linha;
-    }
-
-    /** Valor fora da lista derruba a planilha inteira; a ficha traz o que o ente cadastrou, não o vocabulário do contrato. */
-    public function noVocabulario(string $chave, mixed $valor): bool
-    {
-        $opcoes = self::OPCOES[$chave] ?? null;
-        if ($opcoes === null) {
-            return true;
+        if ($valor === null) {
+            return $coluna['obrigatoriedade'] === self::OBRIGATORIO ? i::__('Preenchimento obrigatório.') : null;
         }
 
-        foreach (is_array($valor) ? $valor : [$valor] as $item) {
-            if (!in_array($item, $opcoes, true)) {
-                return false;
-            }
+        if (!is_string($valor)) {
+            return i::__('A resposta da ficha traz mais de um valor. Informe um só.');
         }
 
-        return true;
+        return match ($coluna['tipo']) {
+            'cpf', 'cnpj', 'cep' => FormularioMascara::confere($coluna['tipo'], $valor)?->motivo,
+            self::MONETARIO => $this->motivoDoMonetario($valor),
+            'lista' => in_array($valor, $coluna['opcoes'] ?? [], true) ? null : i::__('O valor não é uma das opções do CultBR.'),
+            default => null,
+        };
     }
 
-    /** Só o CPF ou só o CNPJ basta ao validador, então a dupla conta como uma exigência. */
-    public function temResponsavel(array $linhaMesclada): bool
+    private function motivoDoMonetario(string $valor): ?string
     {
-        return $this->preenchido($linhaMesclada['cpf_responsavel_execucao']['valor'] ?? null)
-            || $this->preenchido($linhaMesclada['cnpj_responsavel_execucao']['valor'] ?? null);
+        return match (true) {
+            (bool) preg_match('/^\d+\.\d{2}$/', $valor) => null,
+            (bool) preg_match('/^-\d+(\.\d{1,2})?$/', $valor) => i::__('O valor em reais não pode ser negativo.'),
+            default => i::__('O valor não é um número.'),
+        };
     }
 
-    /** O validador cobra as duas direções, por 'valor_outras_fontes_obrigatorio' e 'valor_outras_fontes_deve_ser_vazio'. */
-    private function valorDeOutrasFontesNaoBateComAResposta(array $linhaMesclada): bool
+    /** Vazio vira null, e o que não é um valor só segue como veio, para pender. */
+    private function valor(string $tipo, mixed $bruto): mixed
     {
-        $respondeu = $this->preenchido($linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null);
-        $temValor = $this->preenchido($linhaMesclada['valor_recursos_outras_fontes']['valor'] ?? null);
-
-        // Valor sem resposta nenhuma também é contradição: o validador exige a fonte junto do valor.
-        if (!$respondeu) {
-            return $temValor;
+        if (is_array($bruto) || is_object($bruto)) {
+            return (array) $bruto === [] ? null : $bruto;
         }
 
-        return $this->negouOutrasFontes($linhaMesclada) ? $temValor : !$temValor;
-    }
+        $texto = is_bool($bruto) ? '' : trim((string) $bruto);
 
-    private function presencialSemCep(array $linhaMesclada): bool
-    {
-        $formato = $linhaMesclada['formato_execucao']['valor'] ?? null;
-
-        return in_array($formato, self::FORMATOS_QUE_EXIGEM_CEP, true)
-            && !$this->preenchido($linhaMesclada['cep_local_execucao']['valor'] ?? null);
-    }
-
-    private function negouOutrasFontes(array $linhaMesclada): bool
-    {
-        $resposta = $linhaMesclada['recebeu_recursos_outras_fontes']['valor'] ?? null;
-
-        return array_values(array_filter(is_array($resposta) ? $resposta : [$resposta])) === [self::RESPOSTA_SEM_OUTRAS_FONTES];
-    }
-
-    /**
-     * O recurso chega antes de a execução começar, e ela termina depois de começada.
-     *
-     * @return string[] as colunas cuja data contraria a data válida anterior
-     */
-    public function datasForaDaOrdem(array $linhaMesclada): array
-    {
-        $foraDaOrdem = [];
-        $ultimaValida = null;
-
-        foreach (self::SEQUENCIA_DAS_DATAS as $chave) {
-            $data = $this->dataComparavel($linhaMesclada[$chave]['valor'] ?? null);
-
-            if ($data === null) {
-                continue;
-            }
-
-            if ($ultimaValida !== null && $data < $ultimaValida) {
-                $foraDaOrdem[] = $chave;
-                continue;
-            }
-
-            $ultimaValida = $data;
+        if ($texto === '') {
+            return null;
         }
 
-        return $foraDaOrdem;
-    }
-
-    private function dataComparavel(mixed $valor): ?string
-    {
-        return preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', (string) $valor, $partes)
-            ? $partes[3] . $partes[2] . $partes[1]
-            : null;
-    }
-
-    private function preenchido(mixed $valor): bool
-    {
-        if (is_array($valor)) {
-            return $valor !== [];
+        if (in_array($tipo, self::DOCUMENTOS, true)) {
+            return FormularioMascara::semPontuacao($texto);
         }
 
-        return $valor !== null && trim((string) $valor) !== '';
+        return $tipo === self::MONETARIO ? $this->monetario($bruto) ?? $texto : $texto;
+    }
+
+    private function monetario(mixed $bruto): ?string
+    {
+        if (is_int($bruto) || is_float($bruto)) {
+            return number_format($bruto, 2, '.', '');
+        }
+
+        $texto = trim(str_replace('R$', '', $bruto));
+
+        // "15.000" é quinze mil, e is_numeric o leria como quinze.
+        if (preg_match('/^\d{1,3}(\.\d{3})+(,\d{1,2})?$|^\d+,\d{1,2}$/', $texto)) {
+            $texto = strtr($texto, ['.' => '', ',' => '.']);
+        }
+
+        return preg_match('/^\d+(\.\d{1,2})?$/', $texto) ? number_format((float) $texto, 2, '.', '') : null;
     }
 }

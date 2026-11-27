@@ -1,0 +1,89 @@
+{
+ "pagination": {
+  "skip": 0,
+  "limit": 100,
+  "total": 3,
+  "next": null,
+  "previous": null
+ },
+ "data": [
+  {
+   "id_par_edital_resultado_tipo": 3,
+   "id_par_edital_resultado_status": 3,
+   "id_par_edital": 54042,
+   "data_publicacao": "2026-11-21T10:00:00-03:00",
+   "id_par_edital_resultado": 20128,
+   "id_oportunidade_mapas": 12570,
+   "tipo": {
+    "id_par_edital_resultado_tipo": 3,
+    "nome": "Resultado final retificado",
+    "descricao": "Retificação do resultado final",
+    "ativo": true,
+    "sequencial": 3
+   },
+   "status_obj": {
+    "id_par_edital_resultado_status": 3,
+    "nome": "publicado",
+    "descricao": "Resultado publicado oficialmente",
+    "ativo": true,
+    "permite_edicao": false,
+    "permite_exclusao": false,
+    "sequencial": 3
+   },
+   "anexos": [],
+   "respostas": []
+  },
+  {
+   "id_par_edital_resultado_tipo": 2,
+   "id_par_edital_resultado_status": 3,
+   "id_par_edital": 54042,
+   "data_publicacao": "2026-11-20T10:00:00-03:00",
+   "id_par_edital_resultado": 20127,
+   "id_oportunidade_mapas": 12570,
+   "tipo": {
+    "id_par_edital_resultado_tipo": 2,
+    "nome": "Resultado final",
+    "descricao": "Resultado final do edital",
+    "ativo": true,
+    "sequencial": 2
+   },
+   "status_obj": {
+    "id_par_edital_resultado_status": 3,
+    "nome": "publicado",
+    "descricao": "Resultado publicado oficialmente",
+    "ativo": true,
+    "permite_edicao": false,
+    "permite_exclusao": false,
+    "sequencial": 3
+   },
+   "anexos": [],
+   "respostas": []
+  },
+  {
+   "id_par_edital_resultado_tipo": 3,
+   "id_par_edital_resultado_status": 3,
+   "id_par_edital": 54042,
+   "data_publicacao": "2026-11-19T10:00:00-03:00",
+   "id_par_edital_resultado": 20129,
+   "id_oportunidade_mapas": 12570,
+   "tipo": {
+    "id_par_edital_resultado_tipo": 3,
+    "nome": "Resultado final retificado",
+    "descricao": "Retificação do resultado final",
+    "ativo": true,
+    "sequencial": 3
+   },
+   "status_obj": {
+    "id_par_edital_resultado_status": 3,
+    "nome": "publicado",
+    "descricao": "Resultado publicado oficialmente",
+    "ativo": true,
+    "permite_edicao": false,
+    "permite_exclusao": false,
+    "sequencial": 3
+   },
+   "anexos": [],
+   "respostas": []
+  }
+ ]
+}

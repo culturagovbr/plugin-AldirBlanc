@@ -3,15 +3,19 @@
 namespace Tests\AldirBlanc;
 
 use AldirBlanc\Controller;
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Services\LinhasBeneficiariosService;
 use Laminas\Diactoros\Response;
 use MapasCulturais\Entities\Opportunity;
 use MapasCulturais\Entities\Registration;
 use MapasCulturais\Exceptions\Halt;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
+use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
 use Tests\AldirBlanc\Doubles\TestableController;
 use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
+use Tests\AldirBlanc\Traits\SendsOpportunityThroughJob;
 use Tests\Traits\UserDirector;
 
 /** GET/POST dos beneficiários: página da grade e gravação das células digitadas pelo gestor. */
@@ -20,16 +24,30 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     use UserDirector;
     use BuildsPublishedFinalPhase;
     use BuildsContempladas;
+    use SendsOpportunityThroughJob;
+
+    private ?\Closure $modelo = null;
 
     private function callJson(callable $callback): array
     {
         $this->app->response = new Response();
+        FakeIntegrationProvider::reset();
+        FakeIntegrationProvider::$aoBuscarModelo = $this->modelo ?? fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
 
-        try {
-            $callback();
-            $this->fail('Esperava que o controller encerrasse a resposta com Halt');
-        } catch (Halt) {
-        }
+        $this->comConfigDoPlugin(
+            function (array $config) {
+                $config['integration']['formularioCacheTTL'] = 0;
+
+                return $config;
+            },
+            fn() => $this->comProviderConfigurado(FakeIntegrationProvider::class, function () use ($callback) {
+                try {
+                    $callback();
+                    $this->fail('Esperava que o controller encerrasse a resposta com Halt');
+                } catch (Halt) {
+                }
+            }),
+        );
 
         return json_decode((string) $this->app->response->getBody(), true, flags: JSON_THROW_ON_ERROR);
     }
@@ -52,21 +70,10 @@ class ControllerResultadoBeneficiariosTest extends TestCase
     {
         $bruto = $this->app->em->getConnection()->fetchOne(
             'SELECT value FROM registration_meta WHERE key = :key AND object_id = (SELECT id FROM registration WHERE opportunity_id = :raiz AND number = :number)',
-            ['key' => Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA, 'raiz' => (int) $raiz->id, 'number' => $number],
+            ['key' => Controller::REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA, 'raiz' => (int) $raiz->id, 'number' => $number],
         );
 
-        return is_string($bruto) ? (array) json_decode($bruto, true) : [];
-    }
-
-    /** Grava o override sem passar pelo endpoint, para montar o estado que antecede a regra. */
-    private function gravaDireto(Opportunity $raiz, string $number, array $override): void
-    {
-        $ancora = $this->app->repo('Registration')->findOneBy(['opportunity' => $raiz, 'number' => $number]);
-
-        $this->app->disableAccessControl();
-        $ancora->{Controller::REGISTRATION_META_CULT_BR_RESULTADO_LINHA} = $override;
-        $ancora->saveMetadata(true);
-        $this->app->enableAccessControl();
+        return is_string($bruto) ? json_decode($bruto, true)['celulas'] : [];
     }
 
     private function postLinha(Opportunity $raiz, array $dados): array
@@ -88,38 +95,8 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $this->assertCount(1, $payload['data']);
         $this->assertSame(1, $payload['total']);
         $this->assertSame(0, $payload['skip']);
-        $this->assertCount(count(LinhasBeneficiariosService::COLUNAS), $payload['colunas']);
-        $this->assertSame('11144477735', $payload['data'][0]['celulas']['cpf_responsavel_execucao']['valor']);
-    }
-
-    function testPostRecusaDataQueQuebraAOrdemDaExecucao()
-    {
-        [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
-        $this->login($owner);
-
-        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_inicio_execucao' => '01/02/2026']]);
-        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_termino_execucao' => '01/01/2026']]);
-
-        $this->assertSame(400, $this->responseStatus(), 'término anterior ao início não chega a ser gravado');
-
-        $linha = $this->getPagina($raiz)['data'][0];
-        $this->assertNull($linha['celulas']['data_termino_execucao']['valor'] ?? null, 'e a célula recusada continua vazia');
-    }
-
-    function testDataJaForaDaOrdemNaoImpedeEditarAsDemaisColunas()
-    {
-        [$raiz, $fase, $owner] = $this->editalComCategorias();
-        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
-        $this->login($owner);
-
-        // Deixa a linha inconsistente por fora do endpoint, como as gravadas antes de a regra existir.
-        $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['data_inicio_execucao' => '01/02/2026']]);
-        $this->gravaDireto($raiz, (string) $contemplada->number, ['data_inicio_execucao' => '01/02/2026', 'data_termino_execucao' => '01/01/2026']);
-
-        $payload = $this->postLinha($raiz, ['registrationId' => (int) $contemplada->id, 'celulas' => ['cep_local_execucao' => '57072-900']]);
-
-        $this->assertSame('57072-900', $payload['linha']['celulas']['cep_local_execucao']['valor'], 'o defeito antigo não pode travar a linha inteira');
+        $this->assertCount(10, $payload['colunas']);
+        $this->assertSame('11144477735', $payload['data'][0]['celulas']['cpf']['valor']);
     }
 
     function testGetPorListaDeInscricoesDevolveSoAsPedidas()
@@ -133,7 +110,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
 
         $this->assertCount(1, $payload['data']);
         $this->assertSame((int) $pedida->id, $payload['data'][0]['registrationId']);
-        $this->assertCount(count(LinhasBeneficiariosService::COLUNAS), $payload['colunas']);
+        $this->assertCount(10, $payload['colunas']);
         $this->assertSame((int) $fase->id, $payload['faseFinal'], 'é dela que a tabela lista as contempladas');
     }
 
@@ -187,12 +164,12 @@ class ControllerResultadoBeneficiariosTest extends TestCase
 
         $payload = $this->postLinha($raiz, [
             'registrationId' => $contemplada->id,
-            'celulas' => ['data_recebimento_recurso' => '10/01/2026'],
+            'celulas' => ['raca_etnia' => 'Parda'],
         ]);
 
-        $this->assertSame('10/01/2026', $payload['linha']['celulas']['data_recebimento_recurso']['valor']);
-        $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $payload['linha']['celulas']['data_recebimento_recurso']['fonte']);
-        $this->assertSame('10/01/2026', $this->getPagina($raiz)['data'][0]['celulas']['data_recebimento_recurso']['valor'], 'o valor persiste entre requisições');
+        $this->assertSame('Parda', $payload['linha']['celulas']['raca_etnia']['valor']);
+        $this->assertSame(LinhasBeneficiariosService::FONTE_GESTOR, $payload['linha']['celulas']['raca_etnia']['fonte']);
+        $this->assertSame('Parda', $this->getPagina($raiz)['data'][0]['celulas']['raca_etnia']['valor'], 'o valor persiste entre requisições');
     }
 
     function testPostApagaACelulaQuandoOValorVemVazio()
@@ -201,12 +178,12 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
-        $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
-        $payload = $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['data_recebimento_recurso' => '']]);
+        $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['raca_etnia' => 'Parda']]);
+        $payload = $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['raca_etnia' => '']]);
 
-        $this->assertNull($payload['linha']['celulas']['data_recebimento_recurso']['valor']);
-        $this->assertContains('data_recebimento_recurso', $payload['linha']['pendencias'], 'apagada, a coluna obrigatória volta a pender');
-        $this->assertSame(['data_recebimento_recurso' => ''], $this->overrideGravado($raiz, (string) $contemplada->number), 'o vazio fica gravado, para a ficha não repor o que o gestor tirou');
+        $this->assertNull($payload['linha']['celulas']['raca_etnia']['valor']);
+        $this->assertArrayHasKey('raca_etnia', $payload['linha']['pendencias'], 'apagada, a coluna obrigatória volta a pender');
+        $this->assertSame(['raca_etnia' => ''], $this->overrideGravado($raiz, (string) $contemplada->number), 'o vazio fica gravado, para a ficha não repor o que o gestor tirou');
     }
 
     function testPostDeAprovadaForaDaFaseFinalResponde404()
@@ -220,23 +197,59 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $this->app->enableAccessControl();
         $this->login($owner);
 
-        $this->postLinha($raiz, ['registrationId' => $aprovadaNaRaiz->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
+        $this->postLinha($raiz, ['registrationId' => $aprovadaNaRaiz->id, 'celulas' => ['raca_etnia' => 'Parda']]);
 
         $this->assertSame(404, $this->responseStatus(), 'quem endereça a linha é a inscrição da fase final, não uma aprovada de outra fase');
     }
 
-    function testPostNaoDeixaOGestorEscreverColunaQueOSistemaResolve()
+    public function testPostDeixaOGestorCorrigirTodaColunaDoModelo(): void
     {
         [$raiz, $fase, $owner] = $this->editalComCategorias();
         $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
-        $payload = $this->postLinha($raiz, [
-            'registrationId' => $contemplada->id,
-            'celulas' => ['cpf_responsavel_execucao' => '00000000000'],
+        $payload = $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['cpf' => '529.982.247-25']]);
+
+        $this->assertSame('52998224725', $payload['linha']['celulas']['cpf']['valor']);
+    }
+
+    #[DataProvider('semPlanilha')]
+    public function testSemModeloDePlanilhaAGradeRespondeOMotivo(callable $modelo, int $status, string $motivo): void
+    {
+        [$raiz, $fase, $owner] = $this->editalComCategorias();
+        $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
+        $this->login($owner);
+        $this->modelo = $modelo(...);
+
+        foreach ([$this->getPagina($raiz), $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['raca_etnia' => 'Parda']])] as $resposta) {
+            $this->assertSame($status, $this->responseStatus());
+            $this->assertStringContainsString($motivo, $resposta['data']);
+        }
+
+        $this->assertSame([], $this->overrideGravado($raiz, (string) $contemplada->number));
+    }
+
+    public static function semPlanilha(): array
+    {
+        return [
+            'ação sem modelo' => [fn() => ['possui_planilha' => false, 'motivo' => 'A ação 1.2 não possui modelo de planilha'], 400, 'não possui modelo'],
+            'CultBR indisponível' => [fn() => throw IntegrationError::transport('Connection timed out', 28), 502, 'Não foi possível consultar'],
+        ];
+    }
+
+    public function testEditalForaDoParNaoTemGrade(): void
+    {
+        [$raiz, , $owner] = $this->editalComCategorias();
+        $this->login($owner);
+        $this->app->em->getConnection()->executeStatement('DELETE FROM opportunity_meta WHERE object_id = :id AND key = :key', [
+            'id' => (int) $raiz->id,
+            'key' => Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID,
         ]);
 
-        $this->assertSame('11144477735', $payload['linha']['celulas']['cpf_responsavel_execucao']['valor'], 'o CPF continua vindo do cadastro do agente');
+        $resposta = $this->getPagina($raiz);
+
+        $this->assertSame(400, $this->responseStatus());
+        $this->assertStringContainsString('não está integrado', $resposta['data']);
     }
 
     function testPostEmEditalComResultadoNaoPublicadoResponde409()
@@ -244,11 +257,12 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $owner = $this->userDirector->createUser();
         $subsite = $this->integrationSubsite($owner, 'Subsite Sem Publicacao ' . uniqid());
         $raiz = $this->raizElegivel($owner, $subsite);
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
         $fase = $this->faseFinal($raiz, publicada: false);
         $contemplada = $this->contempladaComDocumento($raiz, $fase, '111.444.777-35');
         $this->login($owner);
 
-        $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
+        $this->postLinha($raiz, ['registrationId' => $contemplada->id, 'celulas' => ['raca_etnia' => 'Parda']]);
 
         $this->assertSame(409, $this->responseStatus(), 'a inscrição existe; o que falta é o resultado publicado');
     }
@@ -271,7 +285,7 @@ class ControllerResultadoBeneficiariosTest extends TestCase
         $deOutroEdital = $this->contempladaComDocumento($outraRaiz, $outraFase, '529.982.247-25');
         $this->login($owner);
 
-        $this->postLinha($raiz, ['registrationId' => $deOutroEdital->id, 'celulas' => ['data_recebimento_recurso' => '10/01/2026']]);
+        $this->postLinha($raiz, ['registrationId' => $deOutroEdital->id, 'celulas' => ['raca_etnia' => 'Parda']]);
 
         $this->assertSame(404, $this->responseStatus());
     }

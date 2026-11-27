@@ -20,20 +20,24 @@ use AldirBlanc\Enum\Role;
 use AldirBlanc\Enum\SyncFailure;
 use AldirBlanc\Services\CultBrRequestLogService;
 use AldirBlanc\Services\FederativeEntityService;
-use AldirBlanc\Services\FormularioRespostasValidator;
+use AldirBlanc\Services\FormularioEstrutura;
 use AldirBlanc\Services\FormularioResultadoService;
+use AldirBlanc\Services\ModeloPlanilhaService;
 use AldirBlanc\Jobs\GestorCultJob;
 use AldirBlanc\Jobs\OpportunityBatchSyncJob;
 use AldirBlanc\Jobs\OpportunityForceResyncJob;
 use AldirBlanc\Services\BeneficiariosService;
-use AldirBlanc\Services\LinhasBeneficiariosService;
 use AldirBlanc\Services\OpportunityService;
 use AldirBlanc\Services\ParSituationService;
+use AldirBlanc\Services\ResultadoAnexosService;
 use AldirBlanc\Services\ResultadoDeParaService;
 use AldirBlanc\Services\ResultadoService;
 use AldirBlanc\Services\UserService;
 use AldirBlanc\Services\UserAccessService;
+use MapasCulturais\Entities\File;
+use MapasCulturais\Exceptions\FileUploadError;
 use MapasCulturais\Exceptions\Halt;
+use MapasCulturais\Exceptions\SaveFileError;
 
 class Controller extends \MapasCulturais\Controllers\EntityController
 {
@@ -77,14 +81,26 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /** Hash do conteúdo do último resultado enviado; dispensa o reenvio quando a alteração não muda o payload. */
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_LAST_HASH = 'cultBrResultadoLastPayloadHash';
 
+    /** Situação do último envio do resultado, para o gestor e para o próximo envio. */
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO = 'cultBrResultadoUltimoEnvio';
+
     public const OPPORTUNITY_META_CULT_BR_RESULTADO_FORM = 'cultBrResultadoFormData';
 
-    /** De/para por edital: coluna da planilha => id do campo da ficha que a alimenta. */
-    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DE_PARA = 'cultBrResultadoDePara';
-    public const OPPORTUNITY_META_CULT_BR_RESULTADO_DOCUMENTO_POR_TIPO = 'cultBrResultadoDocumentoPorTipo';
+    /** De/para por edital: coluna do modelo de planilha => fonte que a alimenta. */
+    public const OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA = 'cultBrResultadoPlanilhaDePara';
 
-    /** Células da linha digitadas pelo gestor, na inscrição de origem: coluna => valor. */
-    public const REGISTRATION_META_CULT_BR_RESULTADO_LINHA = 'cultBrResultadoLinha';
+    /** Células que o gestor digitou, na inscrição de origem, com o modelo de planilha a que pertencem. */
+    public const REGISTRATION_META_CULT_BR_RESULTADO_PLANILHA_LINHA = 'cultBrResultadoPlanilhaLinha';
+
+    /** Só o plugin as grava: a API do core as tira da criação, do PATCH e do PUT da oportunidade. */
+    public const OPPORTUNITY_META_CULT_BR_GRAVADAS_PELO_PLUGIN = [
+        self::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM,
+        self::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO,
+        self::OPPORTUNITY_META_CULT_BR_RESULTADO_PLANILHA_DE_PARA,
+        self::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID,
+        self::OPPORTUNITY_META_CULT_BR_PAR_TIPO_ACAO_ID,
+        self::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID,
+    ];
 
     /** Paginação da aba "Logs CultBr" (GET_opportunityCultLogs). */
     private const CULT_LOGS_DEFAULT_LIMIT = 20;
@@ -240,7 +256,7 @@ class Controller extends \MapasCulturais\Controllers\EntityController
     /**
      * Salva respostas (inclusive parciais) do formulário de resultado e devolve o estado novo.
      *
-     * POST /aldirblanc/resultadoFormulario — body: opportunityId, respostas {id_questao: valor}
+     * POST /aldirblanc/resultadoFormulario — body: opportunityId, id_formulario_versao, respostas {id_questao: valor}
      */
     public function POST_resultadoFormulario(): void
     {
@@ -250,21 +266,8 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $service = new FormularioResultadoService();
-
-        try {
-            $estrutura = $service->formStructureForOpportunity((int) $opportunity->id);
-        } catch (IntegrationError $e) {
-            $this->failResultadoFormulario($e);
-            return;
-        }
-
+        $estrutura = $this->estruturaParaPreencher($opportunity);
         if ($estrutura === null) {
-            $this->errorJson(i::__('Este edital não tem formulário de resultado no CultBR.'), 400);
-            return;
-        }
-
-        if (!$service->isFaseFinalPublicada($opportunity)) {
-            $this->errorJson(i::__('Publique o resultado final do edital para preencher o formulário.'), 400);
             return;
         }
 
@@ -274,17 +277,134 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $erros = (new FormularioRespostasValidator($estrutura))->validate($respostas);
-        if ($erros !== []) {
-            $this->errorJson(['message' => i::__('Há respostas inválidas.'), 'respostas' => $erros], 400);
+        if ($this->isRespostaDeOutraVersao($estrutura)) {
+            $this->json(['versaoAlterada' => true] + $service->formStateForOpportunity($opportunity));
             return;
         }
 
-        $service->saveRespostas($opportunity, $respostas, $estrutura);
+        $erros = $service->saveRespostas($opportunity, $respostas, $estrutura);
 
-        $formState = $service->formStateForOpportunity($opportunity);
+        $this->json($service->formStateForOpportunity($opportunity) + ['erros' => (object) $erros]);
+    }
 
-        $this->json($formState);
+    /** Estrutura do formulário do edital, quando o gestor já pode preenchê-lo; respondeu erro = null. */
+    private function estruturaParaPreencher(Opportunity $opportunity): ?array
+    {
+        $service = new FormularioResultadoService();
+
+        try {
+            $estrutura = $service->formStructureForOpportunity((int) $opportunity->id);
+        } catch (IntegrationError $e) {
+            $this->failResultadoFormulario($e);
+            return null;
+        }
+
+        $motivo = match (true) {
+            $estrutura === null => i::__('Este edital não tem formulário de resultado no CultBR.'),
+            $service->isAcaoSemResultado((int) $opportunity->id) => FormularioResultadoService::motivoAcaoSemResultado(),
+            !$service->isFaseFinalPublicada($opportunity) => i::__('Publique o resultado final do edital para preencher o formulário.'),
+            default => null,
+        };
+
+        if ($motivo !== null) {
+            $this->errorJson($motivo, 400);
+            return null;
+        }
+
+        return $estrutura;
+    }
+
+    /**
+     * Guarda o arquivo na questão de documento e devolve o estado novo.
+     *
+     * POST /aldirblanc/resultadoAnexo?opportunityId={id} — multipart: id_formulario_versao, id_questao, arquivo
+     */
+    public function POST_resultadoAnexo(): void
+    {
+        $this->alteraAnexos(function (ResultadoAnexosService $anexos, int $idQuestao): ?string {
+            $arquivo = $this->arquivoEnviado();
+
+            try {
+                return is_string($arquivo) ? $arquivo : $anexos->anexar($idQuestao, $arquivo);
+            } catch (SaveFileError $e) {
+                return $e->getMessage();
+            }
+        });
+    }
+
+    /**
+     * Retira da questão o arquivo, que é apagado, e devolve o estado novo.
+     *
+     * POST /aldirblanc/resultadoAnexoRetirar — body: opportunityId, id_formulario_versao, id_questao, id_arquivo
+     */
+    public function POST_resultadoAnexoRetirar(): void
+    {
+        $this->alteraAnexos(
+            fn(ResultadoAnexosService $anexos, int $idQuestao): ?string => $anexos->retirar($idQuestao, (int) ($this->data['id_arquivo'] ?? 0))
+                ? null
+                : i::__('Arquivo não encontrado nesta questão.'),
+        );
+    }
+
+    /** @param callable(ResultadoAnexosService, int): ?string $alteracao devolve o motivo da recusa */
+    private function alteraAnexos(callable $alteracao): void
+    {
+        $opportunity = $this->resultadoFormularioOpportunity();
+        $estrutura = $opportunity === null ? null : $this->estruturaParaPreencher($opportunity);
+
+        if ($estrutura === null) {
+            return;
+        }
+
+        $service = new FormularioResultadoService();
+
+        if ($this->isRespostaDeOutraVersao($estrutura)) {
+            $this->json(['versaoAlterada' => true] + $service->formStateForOpportunity($opportunity));
+            return;
+        }
+
+        $motivo = $alteracao(new ResultadoAnexosService($opportunity, $estrutura), (int) ($this->data['id_questao'] ?? 0));
+
+        if ($motivo !== null) {
+            $this->errorJson($motivo, 400);
+            return;
+        }
+
+        $this->json($service->formStateForOpportunity($opportunity));
+    }
+
+    /** O arquivo recebido, ou o motivo de não haver um. */
+    private function arquivoEnviado(): File|string
+    {
+        $campo = 'arquivo';
+
+        if (!is_string($_FILES[$campo]['name'] ?? null)) {
+            return $this->isCorpoAcimaDoLimite() ? i::__('O arquivo enviado é maior do que o permitido.') : i::__('Selecione um arquivo.');
+        }
+
+        // O mesmo nome que o upload do core grava.
+        $nome = pathinfo($_FILES[$campo]['name']);
+        $_FILES[$campo]['name'] = App::i()->slugify($nome['filename']) . '.' . ($nome['extension'] ?? '');
+
+        try {
+            return App::i()->handleUpload($campo, Opportunity::getFileClassName());
+        } catch (FileUploadError $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /** Acima do limite, o PHP descarta o corpo inteiro e só o tamanho declarado denuncia o motivo. */
+    private function isCorpoAcimaDoLimite(): bool
+    {
+        return (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > App::i()->getMaxUploadSize(false) * 1024;
+    }
+
+    /** A aba aberta antes da troca de versão responde a questões que podem ter mudado de sentido. */
+    private function isRespostaDeOutraVersao(array $estrutura): bool
+    {
+        $versao = $this->data['id_formulario_versao'] ?? null;
+
+        return $versao !== null && (int) $versao !== (new FormularioEstrutura($estrutura))->versao();
     }
 
     /**
@@ -303,6 +423,11 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $raiz = $opportunity->firstPhase ?: $opportunity;
         $faseFinal = $raiz->lastPhase;
 
+        if (!FormularioResultadoService::isStatusComResultado($raiz)) {
+            $this->errorJson(FormularioResultadoService::motivoEditalNaoPublicado(), 400);
+            return;
+        }
+
         if (!$faseFinal || !$faseFinal->publishedRegistrations) {
             $this->errorJson(i::__('Publique o resultado final do edital antes de enviar.'), 400);
             return;
@@ -315,8 +440,29 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
+        if ((new FormularioResultadoService())->isAcaoSemResultado((int) $raiz->id)) {
+            $this->errorJson(FormularioResultadoService::motivoAcaoSemResultado(), 400);
+            return;
+        }
+
+        $novoPedidoEm = $service->ultimoEnvio((int) $raiz->id)['novoPedidoEm'] ?? null;
+        if ($novoPedidoEm !== null) {
+            $hora = (new \DateTime($novoPedidoEm))->format('H:i');
+            $this->errorJson(sprintf(i::__('Já há um envio em andamento. Um novo pedido poderá ser feito às %s.'), $hora), 409);
+            return;
+        }
+
+        $revisao = $this->data['revisao'] ?? null;
+        if ($revisao !== null && (string) $revisao !== (new FormularioResultadoService())->revisao($raiz)) {
+            $this->errorJson(FormularioResultadoService::motivoRespostasDesatualizadas(), 400);
+            return;
+        }
+
         if (!$service->isResultadoFormComplete($raiz)) {
-            $this->errorJson(i::__('Complete o formulário do resultado antes de enviar.'), 400);
+            $this->errorJson(
+                ['message' => i::__('Complete o formulário do resultado antes de enviar.')] + $this->impedimentosDoEnvio($raiz),
+                400,
+            );
             return;
         }
 
@@ -325,8 +471,18 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         $this->json(['enfileirado' => true]);
     }
 
+    /** Com a origem fora do ar, a recusa sai sem a lista do que falta. */
+    private function impedimentosDoEnvio(Opportunity $raiz): array
+    {
+        try {
+            return (new FormularioResultadoService())->impedimentosDoEnvio($raiz);
+        } catch (IntegrationError) {
+            return [];
+        }
+    }
+
     /**
-     * Campos da ficha do edital, colunas mapeáveis e o de/para salvo (ou a sugestão, se ainda não há).
+     * Colunas do modelo de planilha do edital, fontes possíveis e o de/para gravado.
      *
      * GET /aldirblanc/resultadoDePara?opportunityId=
      */
@@ -338,23 +494,29 @@ class Controller extends \MapasCulturais\Controllers\EntityController
         }
 
         $service = new ResultadoDeParaService();
-        $campos = $service->camposDaFicha($opportunity);
-        $salvo = $service->mapeamento((int) $opportunity->id);
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $opportunity->id);
+        $modelo = $planilha['modelo'] ?? null;
 
         $this->json([
-            'campos' => $campos,
-            'colunas' => $service->colunas(),
-            'mapeamento' => $salvo !== [] ? $salvo : $service->sugestao($campos),
-            'temMapeamentoSalvo' => $salvo !== [],
+            'planilha' => $planilha === null ? null : array_diff_key($planilha, ['colunas' => true]),
+            'colunas' => array_map(
+                fn(array $coluna) => $coluna + ['porTipoDeProponente' => ResultadoDeParaService::isPorTipoDeProponente($coluna)],
+                $planilha['colunas'] ?? [],
+            ),
+            'campos' => $service->camposDaFicha($opportunity),
+            'dadosDaInscricao' => $service->dadosDaInscricao(),
             'tiposDeProponente' => $service->tiposDeProponente(),
-            'documentoPorTipo' => $service->documentoPorTipo((int) $opportunity->id),
-        ]);
+        ] + $this->deParaParaATela($opportunity, $planilha ?? ['colunas' => []], [
+            'fontes' => $service->fontes((int) $opportunity->id, $modelo),
+            'equivalencias' => $service->equivalencias((int) $opportunity->id, $modelo),
+        ]));
     }
 
     /**
      * Salva o de/para das colunas da planilha de resultado.
      *
-     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: id}, documentoPorTipo {tipo: id}
+     * POST /aldirblanc/resultadoDePara — body: opportunityId, mapeamento {coluna: fonte ou {tipo: fonte}},
+     * equivalencias {coluna: {valor da fonte: opção}}
      */
     public function POST_resultadoDePara(): void
     {
@@ -363,17 +525,46 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $mapeamento = $this->data['mapeamento'] ?? null;
+        $mapeamento = $this->data['mapeamento'] ?? [];
         if (!is_array($mapeamento)) {
             $this->errorJson(i::__('Informe o de/para.'), 400);
             return;
         }
 
-        $service = new ResultadoDeParaService();
-        $salvo = $service->salvarMapeamento($opportunity, $mapeamento);
-        $documentoPorTipo = $service->salvarDocumentoPorTipo($opportunity, (array) ($this->data['documentoPorTipo'] ?? []));
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
 
-        $this->json(['mapeamento' => $salvo, 'documentoPorTipo' => $documentoPorTipo]);
+        $equivalencias = $this->data['equivalencias'] ?? [];
+        $gravado = (new ResultadoDeParaService())->salvar($opportunity, $planilha, $mapeamento, is_array($equivalencias) ? $equivalencias : []);
+
+        $this->json(['recusas' => (object) $gravado['recusas']] + $this->deParaParaATela($opportunity, $planilha, $gravado));
+    }
+
+    /** (object): vazio precisa serializar como {} — como [] o cliente trataria o de/para como lista. */
+    private function deParaParaATela(Opportunity $opportunity, array $planilha, array $gravado): array
+    {
+        return [
+            'mapeamento' => (object) $gravado['fontes'],
+            'equivalencias' => (object) array_map(fn(array $porValor) => (object) $porValor, $gravado['equivalencias']),
+            'valoresSemOpcao' => (object) (new ResultadoDeParaService())->valoresSemOpcao($opportunity, $planilha, $gravado['fontes']),
+        ];
+    }
+
+    /** Modelo de planilha do edital, ou null com o motivo já respondido. */
+    private function planilhaDoEdital(Opportunity $opportunity): ?array
+    {
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $opportunity->id);
+
+        if (($planilha['possui'] ?? null) === true) {
+            return $planilha;
+        }
+
+        $isIndisponivel = $planilha !== null && $planilha['possui'] === null;
+        $this->errorJson($planilha['motivo'] ?? i::__('Este edital ainda não está integrado ao CultBR.'), $isIndisponivel ? 502 : 400);
+
+        return null;
     }
 
     /**
@@ -388,8 +579,13 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service = new BeneficiariosService();
-        $colunas = (new LinhasBeneficiariosService())->colunas();
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
+
+        $service = new BeneficiariosService($planilha);
+        $colunas = $planilha['colunas'];
         $faseFinal = $service->faseFinalPublicada($opportunity);
 
         // A tabela da aplicação já pagina e filtra; aqui só vêm as células das inscrições que ela listou.
@@ -447,24 +643,24 @@ class Controller extends \MapasCulturais\Controllers\EntityController
             return;
         }
 
-        $service = new BeneficiariosService();
+        $planilha = $this->planilhaDoEdital($opportunity);
+        if ($planilha === null) {
+            return;
+        }
+
+        $service = new BeneficiariosService($planilha);
         if ($service->faseFinalPublicada($opportunity) === null) {
             $this->errorJson(i::__('O resultado deste edital ainda não foi publicado.'), 409);
             return;
         }
 
-        $resultado = $service->salvarCelulas($opportunity, $registrationId, $celulas);
-        if ($resultado === null) {
+        $linha = $service->salvarCelulas($opportunity, $registrationId, $celulas);
+        if ($linha === null) {
             $this->errorJson(i::__('Inscrição contemplada não encontrada neste edital.'), 404);
             return;
         }
 
-        if (isset($resultado['recusadas'])) {
-            $this->errorJson(i::__('O recurso é recebido antes da execução começar, e ela termina depois de começada. Confira as datas da linha.'), 400);
-            return;
-        }
-
-        $this->json(['linha' => $resultado['linha']]);
+        $this->json(['linha' => $linha]);
     }
 
     /** API da Conecta indisponível não é culpa do gestor: 502 com o motivo no log, como no catálogo. */

@@ -18,9 +18,6 @@ class ResultadoDtoTest extends TestCase
                 ['id_par_questao' => 100, 'resposta' => ['resposta' => 'resposta1']],
                 ['id_par_questao' => 101, 'resposta' => ['resposta' => 42]],
             ],
-            'anexos' => [
-                ['nome' => 'resultado-final.pdf', 'caminho' => 'https://mapas.exemplo/files/resultado-final.pdf', 'descricao' => 'Lista de selecionados'],
-            ],
         ];
     }
 
@@ -39,57 +36,45 @@ class ResultadoDtoTest extends TestCase
         $this->assertSame(3, $dto->id_status);
         $this->assertNull($dto->data_publicacao);
         $this->assertNull($dto->respostas);
-        $this->assertNull($dto->anexos);
+        $this->assertSame([], $dto->arquivos);
     }
 
-    function testConstrucaoDiretaComOsTiposDoContrato()
+    public function testConstrucaoDiretaComOsTiposDoContrato(): void
     {
         $dto = new Resultado(id_tipo: 3, id_status: 3, data_publicacao: '2026-10-16T20:00:00-03:00');
 
         $this->assertSame(
-            [
-                'id_tipo' => 3,
-                'id_status' => 3,
-                'data_publicacao' => '2026-10-16T20:00:00-03:00',
-                'respostas' => null,
-                'anexos' => null,
-            ],
-            $dto->toArray()
+            ['id_tipo' => 3, 'id_status' => 3, 'data_publicacao' => '2026-10-16T20:00:00-03:00', 'respostas' => null],
+            $dto->toArray(),
+            'linhas só entram quando há o que enviar',
         );
     }
 
-    function testSemPlanilhaOCorpoNaoGanhaAsChavesDaPlanilha()
-    {
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3))->toArray();
-
-        $this->assertArrayNotHasKey('tipo_planilha', $corpo, 'chave a mais mudaria o hash e faria todo resultado publicado virar retificado');
-        $this->assertArrayNotHasKey('linhas', $corpo);
-    }
-
-    function testComPlanilhaOCorpoCarregaOTipoEAsLinhas()
+    public function testLinhasEntramSemOTipoDaPlanilha(): void
     {
         $linhas = [['identificador_edital' => 'Edital X', 'valor_recebido_pnab' => '15000.00']];
 
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3, tipo_planilha: 'acao_cultural_realizada', linhas: $linhas))->toArray();
+        $corpo = (new Resultado(id_tipo: 2, id_status: 3, linhas: $linhas))->toArray();
 
-        $this->assertSame('acao_cultural_realizada', $corpo['tipo_planilha']);
         $this->assertSame($linhas, $corpo['linhas']);
-    }
-
-    function testLinhasSemOTipoDaPlanilhaNaoEntramNoCorpo()
-    {
-        $corpo = (new Resultado(id_tipo: 2, id_status: 3, linhas: [['identificador_edital' => 'Edital X']]))->toArray();
-
-        $this->assertArrayNotHasKey('linhas', $corpo, 'as duas chaves só fazem sentido juntas');
         $this->assertArrayNotHasKey('tipo_planilha', $corpo);
     }
 
-    function testRoundTripPreservaAPlanilha()
+    public function testArquivoNaoEntraNoCorpo(): void
     {
-        $payload = $this->payloadCompleto() + [
-            'tipo_planilha' => 'acao_cultural_realizada',
-            'linhas' => [['identificador_edital' => 'Edital X']],
-        ];
+        $dto = new Resultado(id_tipo: 2, id_status: 3, arquivos: [['nome' => 'ata.pdf', 'caminho' => '/tmp/ata.pdf', 'tipo' => 'application/pdf', 'descricao' => 'Ata']]);
+
+        $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($dto->toArray()));
+    }
+
+    public function testListaVaziaDeLinhasNaoEntraNoCorpo(): void
+    {
+        $this->assertArrayNotHasKey('linhas', (new Resultado(id_tipo: 2, id_status: 3, linhas: []))->toArray());
+    }
+
+    public function testRoundTripPreservaAsLinhas(): void
+    {
+        $payload = $this->payloadCompleto() + ['linhas' => [['identificador_edital' => 'Edital X']]];
 
         $this->assertSame($payload, Resultado::fromArray($payload)->toArray());
     }

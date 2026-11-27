@@ -1,0 +1,520 @@
+{
+ "id_formulario": 112,
+ "id_formulario_versao": 486,
+ "versao": 8,
+ "modulo": "RESULTADO_EDITAL",
+ "secoes": [
+  {
+   "id_secao": 1717,
+   "etapas": [
+    {
+     "id_etapa": 2501,
+     "nome": "Dados do Edital",
+     "questoes": [
+      {
+       "id_questao_etapa": 12511,
+       "id_questao": 2343,
+       "nome": "Forma de Execução da Atividade",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_2_espelho_forma_execucao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Forma de Execução da Atividade"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12512,
+       "id_questao": 2197,
+       "nome": "Número e título do edital / termo de referência",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_2_espelho_numero_titulo_instrumento",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Número e título do edital / termo de referência"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12513,
+       "id_questao": 2344,
+       "nome": "Objeto da licitação ou contratação",
+       "descricao": null,
+       "tipo_questao": "texto",
+       "tag": "resultado_1_2_espelho_objeto_licitacao",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Objeto da licitação ou contratação"
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12514,
+       "id_questao": 2199,
+       "nome": "Detalhamento do objeto",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "resultado_1_2_espelho_detalhamento_objeto",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Detalhamento do objeto"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": true,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1718,
+   "etapas": [
+    {
+     "id_etapa": 2502,
+     "nome": "Procedimentos Complementares 1/2",
+     "questoes": [
+      {
+       "id_questao_etapa": 12515,
+       "id_questao": 2345,
+       "nome": "Valor total repassado da contratação",
+       "descricao": null,
+       "tipo_questao": "moeda",
+       "tag": "valor_total_repassado_contratacao_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Valor total repassado da contratação"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": "R$ 0,00",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12516,
+       "id_questao": 1764,
+       "nome": "CPF ou CNPJ do contratado",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_contratados_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "tipo_documento",
+          "type": "dropdown",
+          "label": "Tipo",
+          "required": true,
+          "dropdownOptions": {
+           "values": [
+            "CPF",
+            "CNPJ"
+           ]
+          }
+         },
+         {
+          "key": "numero_documento",
+          "mask": "documento",
+          "type": "text",
+          "label": "CPF ou CNPJ",
+          "required": true,
+          "placeholder": "Informe CPF ou CNPJ"
+         },
+         {
+          "key": "nome_razao_social",
+          "max": 255,
+          "type": "text",
+          "label": "Nome / Razão Social",
+          "required": true
+         },
+         {
+          "key": "valor_contrato",
+          "type": "currency",
+          "label": "Valor do contrato",
+          "required": true
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar contratado",
+        "textoPergunta": "CPF ou CNPJ do contratado",
+        "usePagination": false
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12517,
+       "id_questao": 1765,
+       "nome": "Bens/serviços culturais adquiridos/contratados",
+       "descricao": null,
+       "tipo_questao": "Tabela Dinâmica",
+       "tag": "tabela_bens_servicos_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "actions": [
+         "create",
+         "edit",
+         "delete"
+        ],
+        "columns": [
+         {
+          "key": "bem_servico",
+          "type": "dropdown",
+          "label": "Bem/serviço cultural adquirido/contratado",
+          "required": true,
+          "dropdownOptions": {
+           "values": [
+            "Apresentações de artes cênicas ao vivo",
+            "Apresentações musicais ao vivo",
+            "Apresentações culturais ao vivo (exceto música e artes cênicas)",
+            "Aquisição de acervos de artes visuais",
+            "Aquisição de acervos musicais",
+            "Aquisição de acervos audiovisuais",
+            "Aquisição de acervos bibliográficos",
+            "Aquisição de acervos de artesanato",
+            "Aquisição de ingressos para apresentações",
+            "Aquisição de instrumentos musicais",
+            "Aquisição de livros e materiais editoriais",
+            "Aquisição de bens tombados para instalação de equipamentos culturais",
+            "Aquisição de equipamentos culturais itinerantes",
+            "Cursos e outras formações artísticas e culturais",
+            "Digitalização/inventário de acervos",
+            "Licenciamento de curta-metragem",
+            "Licenciamento de longa-metragem",
+            "Licenciamento de média-metragem ou telefilme",
+            "Licenciamento de série",
+            "Licenciamento de jogo eletrônico",
+            "Restauração de obras e acervos culturais",
+            "Outros (especificar)"
+           ]
+          }
+         },
+         {
+          "key": "quantidade",
+          "type": "number",
+          "label": "Quantidade",
+          "required": true
+         }
+        ],
+        "maxRows": null,
+        "minRows": 1,
+        "buttonLabel": "Adicionar Bem/Serviço Cultural",
+        "textoPergunta": "Bens/serviços culturais adquiridos/contratados",
+        "usePagination": false
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1719,
+   "etapas": [
+    {
+     "id_etapa": 2503,
+     "nome": "Execução e entrega",
+     "questoes": [
+      {
+       "id_questao_etapa": 12518,
+       "id_questao": 1767,
+       "nome": "A execução da atividade ocorreu conforme o planejado?",
+       "descricao": null,
+       "tipo_questao": "booleano",
+       "tag": "execucao_conforme_planejado_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "labelNao": "Não",
+        "labelSim": "Sim",
+        "textoPergunta": "A execução da atividade ocorreu conforme o planejado?"
+       },
+       "sequencial": 1,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12519,
+       "id_questao": 2346,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_sim_1_2",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_sim_1_2",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": true,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 12518
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12520,
+       "id_questao": 1768,
+       "nome": "Comentários e Observações",
+       "descricao": null,
+       "tipo_questao": "textarea",
+       "tag": "comentarios_observacoes_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "regras": {
+         "itens": [
+          {
+           "id": "regra_vis_comentarios_1_2",
+           "tipo": "visibilidade",
+           "efeito": {
+            "mostrar": true
+           },
+           "quando": {
+            "valor": false,
+            "operador": "eq",
+            "fonteIdQuestaoEtapa": 12518
+           }
+          }
+         ],
+         "versao": 1
+        },
+        "textoPergunta": "Comentários e Observações",
+        "limiteCaracteres": 700
+       },
+       "sequencial": 3,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": 700.0,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12521,
+       "id_questao": 2347,
+       "nome": "Qual a data prevista de entrega do bem ou serviço contratado?",
+       "descricao": null,
+       "tipo_questao": "data",
+       "tag": "data_prevista_entrega_bem_servico_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "textoPergunta": "Qual a data prevista de entrega do bem ou serviço contratado?"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": "00/00/0000",
+       "opcao_contraria": null,
+       "permite_inclusao_outros": false,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id_secao": 1720,
+   "etapas": [
+    {
+     "id_etapa": 2504,
+     "nome": "Upload de arquivos",
+     "questoes": [
+      {
+       "id_questao_etapa": 12522,
+       "id_questao": 1769,
+       "nome": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver.",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_diario_oficial_1_2",
+       "requerida": false,
+       "opcao": null,
+       "config": {
+        "formatos": [
+         ".pdf"
+        ],
+        "multiplos": true,
+        "textoPergunta": "PDF com publicação do resultado no Diário Oficial ou meio oficial de comunicação, se houver."
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12523,
+       "id_questao": 2348,
+       "nome": "Outros documentos comprobatórios",
+       "descricao": null,
+       "tipo_questao": "anexo",
+       "tag": "upload_outros_documentos_comprobatorios_1_2",
+       "requerida": true,
+       "opcao": null,
+       "config": {
+        "multiplos": true,
+        "textoPergunta": "Outros documentos comprobatórios"
+       },
+       "sequencial": 2,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": null,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      },
+      {
+       "id_questao_etapa": 12524,
+       "id_questao": 2349,
+       "nome": "Declaração de responsabilidade e veracidade",
+       "descricao": "Declaração de responsabilidade e veracidade",
+       "tipo_questao": "checkbox",
+       "tag": "declaracao_responsabilidade_veracidade_1_2",
+       "requerida": true,
+       "opcao": {
+        "itens": [
+         {
+          "id": "declaracao_responsabilidade_veracidade_1_2",
+          "tipo": "simples",
+          "label": "Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023."
+         }
+        ],
+        "limiteMarcacoes": 1,
+        "limiteMinimoMarcacoes": 1
+       },
+       "config": {
+        "textoPergunta": "Declaração de responsabilidade e veracidade"
+       },
+       "sequencial": 4,
+       "mascara": null,
+       "placeholder": null,
+       "opcao_contraria": null,
+       "permite_inclusao_outros": false,
+       "valor_minimo": null,
+       "valor_maximo": null,
+       "depende_de": null,
+       "somente_leitura": false,
+       "editavel": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

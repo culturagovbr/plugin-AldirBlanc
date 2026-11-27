@@ -2,15 +2,21 @@
 
 namespace Tests\AldirBlanc;
 
+use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Controller;
+use AldirBlanc\Dtos\Resultado;
+use AldirBlanc\Enum\EnvioSituacao;
 use AldirBlanc\Plugin;
 use AldirBlanc\Services\ResultadoService;
 use MapasCulturais\Entities\Opportunity;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Abstract\TestCase;
 use Tests\AldirBlanc\Doubles\FakeIntegrationProvider;
+use Tests\AldirBlanc\Traits\BuildsAnexos;
 use Tests\AldirBlanc\Traits\BuildsContempladas;
 use Tests\AldirBlanc\Traits\BuildsPublishedFinalPhase;
 use Tests\AldirBlanc\Traits\ConfiguresPlugin;
+use Tests\AldirBlanc\Traits\LoadsConectaResponses;
 use Tests\Traits\UserDirector;
 
 /** Régua e payload do resultado: a fase final publicada decide, nunca o flag da raiz. */
@@ -18,8 +24,15 @@ class ResultadoServiceTest extends TestCase
 {
     use UserDirector;
     use BuildsPublishedFinalPhase;
+    use BuildsAnexos;
     use BuildsContempladas;
     use ConfiguresPlugin;
+    use LoadsConectaResponses;
+
+    private function corpo(Opportunity $fase, ?int $idPublicado = null): Resultado
+    {
+        return $this->service()->buildResultado($fase, $this->service()->conteudo($fase->firstPhase), $idPublicado);
+    }
 
     private function service(): ResultadoService
     {
@@ -91,7 +104,7 @@ class ResultadoServiceTest extends TestCase
         [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            $payload = $this->corpo($fase)->toArray();
 
             // Literais de propósito: os valores são contrato do PAR, e comparar com o enum seria tautologia.
             $this->assertSame(2, $payload['id_tipo']);
@@ -100,56 +113,217 @@ class ResultadoServiceTest extends TestCase
         });
     }
 
-    /** Contemplada com o mínimo que o validador exige; sem categoria, fica sem valor e segura a planilha. */
-    private function contempladaCompleta(Opportunity $raiz, Opportunity $fase, bool $semCategoria = false): void
+    public function testGravarASituacaoDeNovoNaoRenovaOPrazo(): void
     {
-        $this->app->disableAccessControl();
-        $raiz->registrationRanges = [['label' => 'Faixa A', 'value' => '15000']];
-        $raiz->save(true);
-        $this->app->enableAccessControl();
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $inicio = (new \DateTime('-5 minutes'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Enviando, ['contadoDe' => $inicio]);
 
-        $this->contempladaComDocumento($raiz, $fase, '111.444.777-35', 'Pessoa Física', $semCategoria ? '' : 'Faixa A');
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::SemConfirmacao);
+
+        $this->assertSame(
+            (new \DateTime($inicio))->modify('+' . ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO . ' seconds')->format(\DateTime::ATOM),
+            $this->service()->ultimoEnvio((int) $raiz->id)['novoPedidoEm'],
+        );
     }
 
-    function testPlanilhaEntraNoCorpoQuandoAsContempladasEstaoCompletas()
+    public function testIdLocalBastaParaOPublicadoSemLerOCultBr(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Local');
+        $this->service()->persistParEditalResultadoId((int) $raiz->id, 777);
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => $this->fail('com o id local não há leitura');
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testPublicadoCriadoPorForaContaComoPublicado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Por Fora');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20084;
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testSemPublicadoNoCultBrNaoContaComoPublicado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Sem Publicado');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => null;
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testLeituraDoPublicadoComFalhaFicaComOQueFoiAceitoAqui(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Falha');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => throw IntegrationError::transport('Connection timed out', 28);
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    public function testPublicadoLidoFicaEmCacheAteOEnvioSerAceito(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Publicado Cache');
+
+        $this->comFormularioResultado(function () use ($raiz) {
+            FakeIntegrationProvider::$aoLerPublicado = fn() => null;
+            $this->service()->isPublicadoNoCultBr((int) $raiz->id);
+            FakeIntegrationProvider::$aoLerPublicado = fn() => 20084;
+
+            $this->assertFalse($this->service()->isPublicadoNoCultBr((int) $raiz->id), 'a segunda leitura vem do cache');
+
+            $this->service()->esqueceOPublicado((int) $raiz->id);
+
+            $this->assertTrue($this->service()->isPublicadoNoCultBr((int) $raiz->id));
+        });
+    }
+
+    private function gravaRecusa(Opportunity $raiz): void
+    {
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Recusado, [
+            'em' => '2026-11-20T10:00:00-03:00',
+            'recusas' => [
+                ['tipo' => 'questao', 'id_questao' => 10, 'nome' => 'Data', 'descricao' => 'anterior ao edital'],
+                ['tipo' => 'questao', 'id_questao' => 11, 'nome' => 'Valor', 'descricao' => 'obrigatório'],
+                ['tipo' => 'linha', 'indice' => 0, 'coluna' => 'cpf', 'descricao' => 'inválido'],
+            ],
+        ]);
+    }
+
+    public function testRecusaDaQuestaoAlteradaDeixaDeValerSoNela(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaRecusa($raiz);
+
+        $this->service()->marcaRecusasAlteradas((int) $raiz->id, [10]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+        $this->assertSame([true, false, false], array_map(fn($recusa) => !empty($recusa['alterada']), $ultimo['recusas']));
+        $this->assertSame('recusado', $ultimo['situacao']);
+        $this->assertSame('2026-11-20T10:00:00-03:00', $ultimo['em'], 'a data do envio recusado não muda');
+    }
+
+    public function testSemQuestaoAlteradaNadaEMarcado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaRecusa($raiz);
+
+        $this->service()->marcaRecusasAlteradas((int) $raiz->id, [99]);
+
+        $this->assertSame([false, false, false], array_map(fn($recusa) => !empty($recusa['alterada']), $this->service()->ultimoEnvio((int) $raiz->id)['recusas']));
+    }
+
+    public function testPedidoQueVenceuNaFilaApareceCancelado(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $vencido = (new \DateTime('-' . (ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1) . ' seconds'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => $vencido]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+
+        $this->assertSame('nao-enviado', $ultimo['situacao']);
+        $this->assertSame(ResultadoService::motivoPedidoVencido(), $ultimo['mensagem']);
+        $this->assertNull($ultimo['novoPedidoEm']);
+        $this->assertTrue($this->service()->isPedidoVencido((int) $raiz->id));
+    }
+
+    public function testPedidoNaFilaDentroDoPrazoNaoVenceu(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Aguardando, ['contadoDe' => (new \DateTime('-1 minute'))->format(\DateTime::ATOM)]);
+
+        $this->assertSame('aguardando', $this->service()->ultimoEnvio((int) $raiz->id)['situacao']);
+        $this->assertFalse($this->service()->isPedidoVencido((int) $raiz->id));
+    }
+
+    public function testEnvioQueSaiuEVenceuFicaSemConfirmacao(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $vencido = (new \DateTime('-' . (ResultadoService::PRAZO_DO_ENVIO_EM_ANDAMENTO + 1) . ' seconds'))->format(\DateTime::ATOM);
+        $this->service()->persistUltimoEnvio((int) $raiz->id, EnvioSituacao::Enviando, ['contadoDe' => $vencido]);
+
+        $ultimo = $this->service()->ultimoEnvio((int) $raiz->id);
+
+        $this->assertSame('sem-confirmacao', $ultimo['situacao']);
+        $this->assertNull($ultimo['mensagem']);
+        $this->assertFalse($this->service()->isPedidoVencido((int) $raiz->id), 'o que chegou ao POST não é cancelado');
+    }
+
+    public function testSituacaoGravadaAntesDeHaverContagemTrazZeroPendentes(): void
+    {
+        [$raiz] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_ULTIMO_ENVIO, json_encode([
+            'oportunidade' => (int) $raiz->id, 'situacao' => 'publicado', 'em' => '2026-11-01T00:00:00-03:00', 'contadoDe' => '2026-11-01T00:00:00-03:00',
+            'aConferir' => null, 'tipo' => 2, 'id' => 1, 'mensagem' => null, 'recusas' => [],
+        ]));
+
+        $this->assertSame(0, $this->service()->ultimoEnvio((int) $raiz->id)['totalPendentes']);
+    }
+
+    public function testEditalSemModeloNaoMandaLinhas(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->contempladaCompleta($raiz, $fase);
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
-
-            $this->assertSame('acao_cultural_realizada', $payload['tipo_planilha']);
-            $this->assertCount(1, $payload['linhas']);
-            $this->assertSame('15000.00', $payload['linhas'][0]['valor_recebido_pnab']);
+            $this->assertSame(['id_tipo', 'id_status', 'data_publicacao', 'respostas'], array_keys($this->corpo($fase)->toArray()));
         });
     }
 
-    function testContempladaIncompletaDeixaOResultadoSairSemPlanilha()
+    public function testEditalComModeloMandaUmaLinhaPorContemplada(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->contempladaCompleta($raiz, $fase);
-        $this->contempladaCompleta($raiz, $fase, semCategoria: true);
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
 
-            $this->assertArrayNotHasKey('linhas', $payload, 'o resultado publica, e a planilha espera o gestor completar a grade');
-            $this->assertArrayNotHasKey('tipo_planilha', $payload);
+            $this->assertEquals([self::CELULAS_COMPLETAS + ['cpf' => '52998224725']], $this->corpo($fase)->toArray()['linhas']);
         });
     }
 
-    function testComResultadoVigenteMontaRetificadoDatadoDaRetificacao()
+    public function testEditalComModeloESemContempladaNaoMandaOCampo(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($fase) {
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $this->respostaDaConecta('modelo-pontos-de-cultura');
+
+            $this->assertArrayNotHasKey('linhas', $this->corpo($fase)->toArray());
+        });
+    }
+
+    public function testComPublicadoNoCultBrMontaRetificadoDatadoDaRetificacao(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $payload = $this->corpo($fase, 20127)->toArray();
+
+            $this->assertSame(3, $payload['id_tipo']);
+            $this->assertSame(3, $payload['id_status']);
+            $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+        });
+    }
+
+    public function testMetadadoLocalNaoDecideOTipo(): void
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_RESULTADO_ID, '777');
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
-
-            $this->assertSame(3, $payload['id_tipo']);
-            $this->assertSame(3, $payload['id_status']);
-            $this->assertStringNotContainsString('2026-10-10', $payload['data_publicacao'], 'a data original dataria o retificado antes de ele existir');
+            $this->assertSame(2, $this->corpo($fase)->toArray()['id_tipo'], 'sem publicado no CultBR, o envio é final');
         });
     }
 
@@ -162,44 +336,283 @@ class ResultadoServiceTest extends TestCase
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_PAR_EDITAL_ID, '53790');
 
         $this->comFormularioResultado(function () use ($fase) {
-            $payload = $this->service()->buildResultado($fase)->toArray();
+            $payload = $this->corpo($fase)->toArray();
 
             $this->assertNotNull($payload['data_publicacao'], 'resultado publicado nunca viaja sem data');
         });
     }
 
-    function testPayloadLevaRespostasSalvasAutomaticasEDataDePublicacao()
+    /** Respostas como a tela as grava para o corpo aceito pela homologação. */
+    private const RESPOSTAS_GRAVADAS = [
+        2186 => 'fe_tec',
+        1840 => 15000,
+        1842 => ['heteroidentificacao'],
+        1843 => true,
+        2280 => '2026-12-15',
+        2965 => 'Execução realizada conforme o planejado.',
+        2654 => [['nome' => 'Ana Paula Ferreira', 'cpf' => '529.982.247-25', 'vinculo' => 'servidor público', 'categoria_grupo' => 'Todas as propostas']],
+        2081 => ['declaracao_integral'],
+    ];
+
+    /** Corpo das respostas, por id de envio, com as respostas gravadas na estrutura da 1.1. */
+    private function corpoDa11(array $trocas = [], ?callable $preparo = null): array
     {
         [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
         $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
-            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1,
-            'respostas' => [51 => 'Comentário salvo pelo gestor.', 56 => 'Resposta sem endereço no PAR.', 59 => ['heteroidentificacao']],
+            'id_formulario' => 109, 'id_formulario_versao' => 541, 'versao' => 12, 'respostas' => array_replace(self::RESPOSTAS_GRAVADAS, $trocas),
+        ]));
+        $corpo = [];
+
+        $this->comFormularioResultado(function () use (&$corpo, $raiz, $fase, $preparo) {
+            if ($preparo !== null) {
+                $preparo($raiz, $fase);
+            }
+
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
+        }, $this->respostaDaConecta('estrutura-tipo-1'));
+
+        return array_map(fn(array $resposta) => $resposta['resposta'], $corpo);
+    }
+
+    public function testCorpoSaiComoOAceitoPelaHomologacao(): void
+    {
+        $this->assertSame([
+            13915 => 'Termo de Execução Cultural (Lei nº 14.903/2024)',
+            13918 => 0,
+            13919 => 0,
+            13920 => 15000,
+            13921 => ['Heteroidentificação para pessoas negras'],
+            13923 => true,
+            13924 => '2026-12-15',
+            13925 => 'Execução realizada conforme o planejado.',
+            13933 => [['nome' => 'Ana Paula Ferreira', 'cpf' => '529.982.247-25', 'vinculo' => 'servidor público', 'categoria_grupo' => 'Todas as propostas']],
+            13934 => ['Declaro, sob as penas da legislação em vigor, que as informações prestadas são verdadeiras, que a execução dos recursos está em conformidade com as regras e os normativos da Política Nacional Aldir Blanc de Fomento à Cultura e que este edital, bem como os demais procedimentos a ele relacionados, observa o Manual de Marcas disponibilizado pelo Ministério da Cultura, nos termos do art. 22 do Decreto nº 11.740/2023.'],
+        ], $this->corpoDa11());
+    }
+
+    public function testOpcaoComplementadaViajaComORotuloEOTexto(): void
+    {
+        $corpo = $this->corpoDa11([
+            2186 => ['id' => 'fe_outros', 'complemento' => 'Termo de cessão de uso'],
+            1842 => [['id' => 'outras_estrategias', 'complemento' => 'Banca de verificação documental']],
+        ]);
+
+        $this->assertSame('Outros: Termo de cessão de uso', $corpo[13915]);
+        $this->assertSame(['Outras estratégias (especificar): Banca de verificação documental'], $corpo[13921]);
+    }
+
+    public function testTabelaCalculadaViajaComNumerosJson(): void
+    {
+        $corpo = $this->corpoDa11(preparo: function (Opportunity $raiz, Opportunity $fase) {
+            $this->app->disableAccessControl();
+            $raiz->registrationRanges = [['label' => 'Música', 'limit' => 1, 'value' => '10000'], ['label' => 'Dança', 'limit' => 2, 'value' => 5001]];
+            $raiz->save(true);
+            $this->app->enableAccessControl();
+        });
+
+        $this->assertSame([
+            ['categoria' => 'Música', 'quantidade_contemplados' => 0, 'valor_individual' => 10000],
+            ['categoria' => 'Dança', 'quantidade_contemplados' => 0, 'valor_individual' => 2500.5],
+        ], $corpo[13922]);
+    }
+
+    public function testFaixaSemValorViajaComACelulaVazia(): void
+    {
+        $corpo = $this->corpoDa11(preparo: function (Opportunity $raiz) {
+            $this->app->disableAccessControl();
+            $raiz->registrationRanges = [['label' => 'Música', 'limit' => 1, 'value' => null]];
+            $raiz->save(true);
+            $this->app->enableAccessControl();
+        });
+
+        $this->assertSame([['categoria' => 'Música', 'quantidade_contemplados' => 0, 'valor_individual' => null]], $corpo[13922]);
+    }
+
+    public function testNumeroGravadoComoTextoViajaComoNumero(): void
+    {
+        $this->assertSame(15000.5, $this->corpoDa11([1840 => '15000.50'])[13920]);
+        $this->assertSame(15000, $this->corpoDa11([1840 => '15000.00'])[13920]);
+        $this->assertSame(15000, $this->corpoDa11([1840 => 15000.0])[13920]);
+    }
+
+    /** Edital com as respostas que o exercício grava depois de guardar os documentos. */
+    private function comDocumentos(array $documentos, callable $respostas, callable $exercicio): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser(), 'Subsite Documentos ' . uniqid());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'respostas' => $respostas($raiz),
         ]));
 
-        $estrutura = ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
-            ['id_questao' => 50, 'id_questao_etapa' => 950, 'nome' => 'Total de inscritos', 'tipo_questao' => 'número', 'requerida' => true, 'tag' => 'total_inscritos_1_1'],
-            ['id_questao' => 51, 'id_questao_etapa' => 951, 'nome' => 'Comentários', 'tipo_questao' => 'textarea', 'requerida' => true],
-            ['id_questao' => 54, 'id_questao_etapa' => 954, 'nome' => 'Data de publicação', 'tipo_questao' => 'data', 'requerida' => true, 'tag' => 'data_publicacao_1_1'],
-            ['id_questao' => 55, 'id_questao_etapa' => 955, 'nome' => 'Campo nunca respondido', 'tipo_questao' => 'textarea', 'requerida' => false],
-            ['id_questao' => 56, 'nome' => 'Questão sem id de etapa', 'tipo_questao' => 'textarea', 'requerida' => false],
-            ['id_questao' => 59, 'id_questao_etapa' => 959, 'nome' => 'Procedimentos de cotas', 'tipo_questao' => 'múltipla escolha', 'requerida' => true, 'opcao' => ['itens' => [
-                ['valor' => 'heteroidentificacao', 'label' => 'Heteroidentificação para pessoas negras'],
-                ['valor' => 'carta_consubstanciada', 'label' => 'Solicitação de carta consubstanciada'],
-            ]]],
-        ]]]]]];
+        $this->comFormularioResultado(
+            fn() => $exercicio($raiz, $fase),
+            ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => $documentos]]]]],
+        );
+    }
+
+    public function testDocumentoERespondidoPeloNomeEOArquivoAcompanha(): void
+    {
+        $arquivos = [];
+        $documentos = [$this->questaoDeDocumento(30, [], ['nome' => 'Publicação']), $this->questaoDeDocumento(31), $this->questaoDeDocumento(32)];
+
+        $this->comDocumentos($documentos, function (Opportunity $raiz) use (&$arquivos) {
+            $arquivos = [$this->anexado($raiz, 'parecer.pdf'), $this->anexado($raiz, 'ata.pdf', 'texto'), $this->anexado($raiz, 'lista.csv', "a;b\n1;2\n")];
+
+            return [31 => [$arquivos[1]->id, $arquivos[2]->id], 30 => [$arquivos[0]->id]];
+        }, function (Opportunity $raiz, Opportunity $fase) use (&$arquivos) {
+            $payload = $this->corpo($fase);
+
+            $this->assertSame([
+                ['id_par_questao' => 10030, 'resposta' => ['resposta' => 'parecer.pdf']],
+                ['id_par_questao' => 10031, 'resposta' => ['resposta' => ['ata.pdf', 'lista.csv']]],
+            ], $payload->respostas);
+            $this->assertSame([
+                ['nome' => 'parecer.pdf', 'caminho' => $arquivos[0]->getPath(), 'tipo' => 'application/pdf', 'descricao' => 'Publicação', 'hash' => hash('sha256', self::PDF)],
+                ['nome' => 'ata.pdf', 'caminho' => $arquivos[1]->getPath(), 'tipo' => 'text/plain', 'descricao' => 'Documento 31', 'hash' => hash('sha256', 'texto')],
+            ], array_slice($payload->arquivos, 0, 2));
+            $this->assertSame('lista.csv', $payload->arquivos[2]['nome']);
+        });
+    }
+
+    #[DataProvider('documentosQueFicamFora')]
+    public function testDocumentoQueNaoServeFicaForaDoEnvio(array $extras, bool $isDoEdital = true): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30, [], $extras)], function (Opportunity $raiz) use ($isDoEdital) {
+            return [30 => [$isDoEdital ? $this->anexado($raiz)->id : 999999]];
+        }, function (Opportunity $raiz, Opportunity $fase) {
+            $payload = $this->corpo($fase);
+
+            $this->assertSame([[], []], [$payload->respostas, $payload->arquivos]);
+        });
+    }
+
+    public static function documentosQueFicamFora(): array
+    {
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 10030]];
+
+        return [
+            'questão escondida' => [['config' => ['regras' => ['itens' => [$regra]]]]],
+            'questão somente leitura' => [['somente_leitura' => true]],
+            'questão sem id de envio' => [['id_questao_etapa' => null]],
+            'arquivo que não é do edital' => [[], false],
+        ];
+    }
+
+    public function testDocumentoQueSumiuDoDiscoNaoDeixaMontar(): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30)], function (Opportunity $raiz) {
+            $arquivo = $this->anexado($raiz);
+            unlink($arquivo->getPath());
+
+            return [30 => [$arquivo->id]];
+        }, function (Opportunity $raiz) {
+            $this->expectExceptionMessage('não está no disco');
+            $this->service()->conteudo($raiz);
+        });
+    }
+
+    #[DataProvider('planilhaEDocumento')]
+    public function testPlanilhaComDocumentoEImpedimentoESoMontaLinhasSemEle(bool $possui, bool $temDocumento, ?string $motivo, bool $montaLinhas): void
+    {
+        $this->comDocumentos([$this->questaoDeDocumento(30)], function (Opportunity $raiz) use ($temDocumento) {
+            return $temDocumento ? [30 => [$this->anexado($raiz)->id]] : [];
+        }, function (Opportunity $raiz, Opportunity $fase) use ($possui, $motivo, $montaLinhas) {
+            $this->contempladaCompleta($raiz, $fase);
+            FakeIntegrationProvider::$aoBuscarModelo = fn() => $possui ? $this->respostaDaConecta('modelo-pontos-de-cultura') : ['possui_planilha' => false];
+
+            $conteudo = $this->service()->conteudo($raiz);
+
+            $this->assertSame($motivo, $conteudo['impedimento']);
+            $this->assertCount((int) $montaLinhas, $conteudo['linhas']);
+        });
+    }
+
+    public static function planilhaEDocumento(): array
+    {
+        $motivo = 'O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.';
+
+        return [
+            'com os dois' => [true, true, $motivo, false],
+            'só planilha' => [true, false, null, true],
+            'só documento' => [false, true, null, false],
+            'nenhum' => [false, false, null, false],
+        ];
+    }
+
+    #[DataProvider('respostasQueFicamFora')]
+    public function testRespostaQueNaoServeFicaForaDoCorpo(array $trocas, int $idEnvio): void
+    {
+        $this->assertArrayNotHasKey($idEnvio, $this->corpoDa11($trocas));
+    }
+
+    public static function respostasQueFicamFora(): array
+    {
+        return [
+            'invisível pela regra' => [[1845 => 'Comentário do não, guardado.'], 13926],
+            'inválida' => [[2280 => '15/12/2026'], 13924],
+            'incompleta' => [[2186 => 'fe_outros'], 13915],
+            'sem marcação' => [[2081 => []], 13934],
+            'vazia' => [[2965 => ''], 13925],
+            'somente leitura' => [[2187 => 'Edital 1'], 13916],
+            'anexo' => [[2079 => 'arquivo.pdf'], 13927],
+            'planilha' => [[2077 => 'planilha.csv'], 13930],
+        ];
+    }
+
+    public function testCelulaNumericaDaTabelaDoGestorViajaComoNumero(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 1, 'id_formulario_versao' => 486, 'versao' => 1,
+            'respostas' => [1764 => [['tipo_documento' => 'CNPJ', 'numero_documento' => '11222333000181', 'nome_razao_social' => '2026', 'valor_contrato' => '10.50']]],
+        ]));
 
         $this->comFormularioResultado(function () use ($fase) {
-            $respostas = $this->service()->buildResultado($fase)->toArray()['respostas'];
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
 
-            // O envio endereça pelo id_questao_etapa; o salvamento interno segue por id_questao.
-            $porQuestao = array_column($respostas, 'resposta', 'id_par_questao');
-            $this->assertSame(0, $porQuestao[950]['resposta'], 'a contagem automática do edital entra no envio');
-            $this->assertSame('Comentário salvo pelo gestor.', $porQuestao[951]['resposta']);
-            $this->assertSame('2026-10-10', $porQuestao[954]['resposta'], 'a data de publicação viaja só como Y-m-d, sem hora/fuso');
-            $this->assertSame(['Heteroidentificação para pessoas negras'], $porQuestao[959]['resposta'], 'múltipla escolha viaja com o label, não o slug salvo');
-            $this->assertArrayNotHasKey(955, $porQuestao, 'questão sem resposta não viaja');
-            $this->assertArrayNotHasKey(0, $porQuestao, 'questão sem id_questao_etapa não viaja');
-        }, $estrutura);
+            $this->assertSame(
+                [['tipo_documento' => 'CNPJ', 'numero_documento' => '11222333000181', 'nome_razao_social' => '2026', 'valor_contrato' => 10.5]],
+                $corpo[12516]['resposta'],
+                'as demais células viajam como gravadas',
+            );
+        }, $this->respostaDaConecta('estrutura-tipo-3'));
+    }
+
+    public function testTabelaSemLinhaComMinimoZeroViajaVazia(): void
+    {
+        [$raiz, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $this->gravaMeta((int) $raiz->id, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
+            'id_formulario' => 1, 'id_formulario_versao' => 561, 'versao' => 1, 'respostas' => [2843 => []],
+        ]));
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $corpo = array_column($this->corpo($fase)->toArray()['respostas'], 'resposta', 'id_par_questao');
+
+            $this->assertSame([], $corpo[14784]['resposta']);
+        }, $this->respostaDaConecta('estrutura-tipo-9'));
+    }
+
+    public function testQuestaoCalculadaInvisivelFicaForaDoCorpo(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+        $regra = ['tipo' => 'visibilidade', 'efeito' => ['mostrar' => true], 'quando' => ['operador' => 'eq', 'valor' => true, 'fonteIdQuestaoEtapa' => 951]];
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $this->assertSame([], $this->corpo($fase)->toArray()['respostas']);
+        }, ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 50, 'id_questao_etapa' => 950, 'nome' => 'Total', 'tipo_questao' => 'número', 'tag' => 'total_inscritos_1_1', 'config' => ['regras' => ['itens' => [$regra]]]],
+            ['id_questao' => 51, 'id_questao_etapa' => 951, 'nome' => 'Houve?', 'tipo_questao' => 'booleano'],
+        ]]]]]]);
+    }
+
+    public function testQuestaoSemEnderecoNoParFicaForaDoCorpo(): void
+    {
+        [, $fase] = $this->editalComFaseFinalPublicada($this->userDirector->createUser());
+
+        $this->comFormularioResultado(function () use ($fase) {
+            $this->assertSame([], $this->corpo($fase)->toArray()['respostas']);
+        }, ['id_formulario' => 110, 'id_formulario_versao' => 1, 'versao' => 1, 'secoes' => [['etapas' => [['questoes' => [
+            ['id_questao' => 50, 'nome' => 'Total', 'tipo_questao' => 'número', 'tag' => 'total_inscritos_1_1'],
+        ]]]]]]);
     }
 
     private function jobsDeResultado(): array

@@ -4,24 +4,44 @@ namespace AldirBlanc\Services;
 
 use AldirBlanc\Controller;
 use AldirBlanc\Dtos\OpportunityId;
+use AldirBlanc\Dtos\ParEditalId;
 use AldirBlanc\Exceptions\IntegrationError;
 use AldirBlanc\Integration\FetchesFormularioResultado;
+use AldirBlanc\Integration\FetchesResultadoPermitido;
 use AldirBlanc\Plugin;
 use MapasCulturais\App;
 use MapasCulturais\Entities\Opportunity;
+use MapasCulturais\Entities\OpportunityFile;
 use MapasCulturais\Entities\Registration;
+use MapasCulturais\i;
 
 /** Estrutura do formulário de resultado do PAR: resolve o tipo de ação do edital e busca com cache. */
 class FormularioResultadoService
 {
     public const ESTADO_SEM_FORMULARIO = 'sem-formulario';
+    public const ESTADO_ACAO_SEM_RESULTADO = 'acao-sem-resultado';
+    public const ESTADO_EDITAL_NAO_PUBLICADO = 'edital-nao-publicado';
     public const ESTADO_AGUARDANDO_PUBLICACAO = 'aguardando-publicacao';
     public const ESTADO_PENDENTE = 'pendente';
     public const ESTADO_COMPLETO = 'completo';
     public const ESTADO_ENVIADO = 'enviado';
 
+    private const ESTADOS_DE_ENVIO = [self::ESTADO_COMPLETO, self::ESTADO_ENVIADO];
+
+    private const STATUS_COM_RESULTADO = [Opportunity::STATUS_ENABLED, Opportunity::STATUS_ARCHIVED];
+
+    private const SEM_IMPEDIMENTOS = ['pendencias' => [], 'bloqueios' => []];
+
+    private const FONTE_ROTULO = 'rotulo';
+    private const FONTE_CONTAGEM = 'contagem';
+    private const FONTE_VALOR = 'valor';
+
     private const CACHE_ESTRUTURA = 'aldirblanc:cultbr:formulario_resultado:tipo_acao:';
     private const CACHE_TIPO_ACAO = 'aldirblanc:cultbr:par_tipo_acao:oportunidade:';
+    private const CACHE_PERMITE_RESULTADO = 'aldirblanc:cultbr:permite_resultado:edital:';
+
+    /** Segundos até tentar de novo a leitura que falhou. */
+    private const CACHE_FALHA_TTL = 60;
 
     /** @var array<int, array<int, mixed>> memoização por request: o save e o estado reusam o mesmo cálculo */
     private array $automaticasPorRaiz = [];
@@ -32,6 +52,28 @@ class FormularioResultadoService
         $idTipoAcao = $this->parTipoAcaoForOpportunity($opportunityId);
 
         return $idTipoAcao === null ? null : $this->formStructureForTipoAcao($idTipoAcao);
+    }
+
+    /** A mesma estrutura, relida da origem: o que vai ao CultBR não pode sair de uma versão guardada. */
+    public function formStructureForEnvio(int $opportunityId): ?array
+    {
+        $idTipoAcao = $this->parTipoAcaoForOpportunity($opportunityId);
+
+        if ($idTipoAcao === null) {
+            return null;
+        }
+
+        $estrutura = $this->provider()->fetchFormularioResultado($idTipoAcao);
+        $this->warmCache(self::CACHE_ESTRUTURA . $idTipoAcao, $estrutura, $this->formularioCacheTtl());
+
+        return $estrutura;
+    }
+
+    /** Faz a próxima leitura da estrutura do edital ir à origem. */
+    public function forgetFormStructure(int $opportunityId): void
+    {
+        $idTipoAcao = $this->parTipoAcaoForOpportunity($opportunityId);
+        App::i()->cache->delete(self::CACHE_ESTRUTURA . $idTipoAcao);
     }
 
     /** Estrutura do formulário do tipo de ação, ou null quando não há formulário publicado (404). */
@@ -73,6 +115,52 @@ class FormularioResultadoService
         return $idTipoAcao;
     }
 
+    /** A ação do edital não recebe resultado no CultBR? Sem id no PAR ou sem leitura, não dá para afirmar. */
+    public function isAcaoSemResultado(int $opportunityId): bool
+    {
+        $idParEdital = (new ResultadoService())->parEditalId($opportunityId);
+
+        return $idParEdital !== null && $this->resultadoPermitido($idParEdital) === false;
+    }
+
+    private function resultadoPermitido(int $idParEdital): ?bool
+    {
+        $provider = Plugin::getInstance()->integrationProvider();
+
+        if (!$provider instanceof FetchesResultadoPermitido) {
+            return null;
+        }
+
+        $chave = self::CACHE_PERMITE_RESULTADO . $idParEdital;
+        $ttl = $this->formularioCacheTtl();
+
+        try {
+            return $this->cached($chave, fn() => $provider->fetchResultadoPermitido(new ParEditalId($idParEdital)), $ttl);
+        } catch (IntegrationError $e) {
+            App::i()->log->warning("[CultBR] Não foi possível saber se o edital {$idParEdital} recebe resultado: " . $e->getMessage());
+            $this->warmCache($chave, null, self::CACHE_FALHA_TTL);
+
+            return null;
+        }
+    }
+
+    /** O que impede o preenchimento da ação que não recebe resultado. */
+    public static function motivoAcaoSemResultado(): string
+    {
+        return i::__('A ação deste edital não recebe resultado no CultBR.');
+    }
+
+    /** Rascunho e lixeira não enviam resultado; o edital arquivado continua enviando. */
+    public static function isStatusComResultado(Opportunity $raiz): bool
+    {
+        return in_array((int) $raiz->status, self::STATUS_COM_RESULTADO, true);
+    }
+
+    public static function motivoEditalNaoPublicado(): string
+    {
+        return i::__('O resultado só é enviado ao CultBR com o edital publicado.');
+    }
+
     private function tipoAcaoFromMeta(int $opportunityId): ?int
     {
         $bruto = App::i()->em->getConnection()->fetchOne(
@@ -100,19 +188,33 @@ class FormularioResultadoService
     public function formStateForOpportunity(Opportunity $raiz): array
     {
         $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
-        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+        $anexos = $estrutura === null ? null : new ResultadoAnexosService($raiz, $estrutura);
+        $respostas = $this->savedRespostas((int) $raiz->id, $estrutura) + $this->respostasSugeridas($raiz, $estrutura);
         $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $estado = $this->estado($raiz, $estrutura, $automaticas + $respostas);
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id);
+        $impedimentos = $this->impedimentos($raiz, $estrutura, $planilha);
+        $estado = $this->estado($raiz, $estrutura, $impedimentos === self::SEM_IMPEDIMENTOS);
 
         return [
             'estado' => $estado,
+            'motivo' => match ($estado) {
+                self::ESTADO_ACAO_SEM_RESULTADO => self::motivoAcaoSemResultado(),
+                self::ESTADO_EDITAL_NAO_PUBLICADO => self::motivoEditalNaoPublicado(),
+                default => null,
+            },
             'estrutura' => $estrutura,
             // (object): vazio precisa serializar como {} — como [] o cliente trataria respostas como lista.
-            'respostas' => (object) $respostas,
+            'respostas' => (object) array_diff_key($respostas, $anexos?->documentos() ?? []),
+            'anexos' => (object) ($anexos?->paraATela() ?? []),
             'respostasAutomaticas' => (object) $automaticas,
             'questoesSemFonte' => $this->questoesSemFonte($raiz, $estrutura, $automaticas),
-            'envioHabilitado' => $estado === self::ESTADO_COMPLETO,
+            ...$impedimentos,
+            'planilha' => $planilha === null ? null : array_diff_key($planilha, ['colunas' => true]),
+            'ultimoEnvio' => (new ResultadoService())->ultimoEnvio((int) $raiz->id),
+            'envioHabilitado' => in_array($estado, self::ESTADOS_DE_ENVIO, true) && $impedimentos === self::SEM_IMPEDIMENTOS,
             'dataPublicacao' => $this->dataPublicacaoAutomatica($raiz),
+            'versaoAlterada' => $this->isDeOutraVersao($this->savedFormData((int) $raiz->id), $estrutura),
+            'revisao' => $this->revisao($raiz),
         ];
     }
 
@@ -134,15 +236,11 @@ class FormularioResultadoService
 
         $automaticas = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $valor = $this->valorAutomatico($raiz, $questao);
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            $valor = $this->valorAutomatico($raiz, $questao);
 
-                    if ($valor !== null) {
-                        $automaticas[(int) $questao['id_questao']] = $valor;
-                    }
-                }
+            if ($valor !== null) {
+                $automaticas[$id] = $valor;
             }
         }
 
@@ -162,19 +260,22 @@ class FormularioResultadoService
 
         $semFonte = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $id = (int) $questao['id_questao'];
-
-                    if ($this->isTagAutomatica((string) ($questao['tag'] ?? '')) && !array_key_exists($id, $automaticas)) {
-                        $semFonte[] = $id;
-                    }
-                }
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            if ($this->isTagAutomatica((string) ($questao['tag'] ?? ''))
+                && !array_key_exists($id, $automaticas)
+                && !$this->isTabelaDoGestor($raiz, $questao)
+            ) {
+                $semFonte[] = $id;
             }
         }
 
         return $semFonte;
+    }
+
+    /** Com faixas no edital, a tabela que o cálculo não preenche volta para o gestor, se ele puder editá-la. */
+    private function isTabelaDoGestor(Opportunity $raiz, array $questao): bool
+    {
+        return empty($questao['somente_leitura']) && $this->faixas($raiz)->rotulos() !== [];
     }
 
     private function isTagAutomatica(string $tag): bool
@@ -220,19 +321,15 @@ class FormularioResultadoService
 
         $sugeridas = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    if (!str_starts_with((string) ($questao['tag'] ?? ''), 'valor_total_repassado')) {
-                        continue;
-                    }
+        foreach ((new FormularioEstrutura($estrutura))->questoes() as $id => $questao) {
+            if (!str_starts_with((string) ($questao['tag'] ?? ''), 'valor_total_repassado')) {
+                continue;
+            }
 
-                    $valor = $this->valorTotalRepassado($raiz);
+            $valor = $this->valorTotalRepassado($raiz);
 
-                    if ($valor !== null) {
-                        $sugeridas[(int) $questao['id_questao']] = $valor;
-                    }
-                }
+            if ($valor !== null) {
+                $sugeridas[$id] = $valor;
             }
         }
 
@@ -267,115 +364,95 @@ class FormularioResultadoService
         ]);
     }
 
-    /**
-     * Categorias das Configurações do edital (registrationRanges: label, limit, value) com a
-     * contagem REAL de contempladas por categoria — contemplado é desfecho, não vaga.
-     * @return list<array{label: string, valor: ?float, contempladas: int}>|null null sem categorias
-     */
-    private function categoriasComContagem(Opportunity $raiz): ?array
+    private function faixas(Opportunity $raiz): FaixasDoEdital
     {
-        $categorias = $raiz->registrationRanges;
+        return new FaixasDoEdital($raiz->registrationRanges);
+    }
 
-        if (!is_array($categorias) || $categorias === []) {
-            return null;
-        }
-
+    /** Contemplado é desfecho, não vaga. @return array<string, int> contagem real por rótulo da faixa */
+    private function contempladasPorFaixa(Opportunity $raiz): array
+    {
         $faseFinal = $raiz->lastPhase;
         $temFaseFinal = $faseFinal && $faseFinal->isLastPhase;
+        $contempladas = [];
 
-        $linhas = [];
-        foreach ($categorias as $categoria) {
-            $rotulo = trim((string) ($categoria['label'] ?? ''));
-            if ($rotulo === '') {
-                continue;
-            }
-
-            $valor = $categoria['value'] ?? null;
-
-            // Um count por categoria (são poucas): hidratar as selecionadas pesaria em edital grande.
-            $contempladas = $temFaseFinal ? (int) App::i()->repo('Registration')->count([
+        // Um count por faixa (são poucas): hidratar as selecionadas pesaria em edital grande.
+        foreach ($this->faixas($raiz)->rotulos() as $rotulo) {
+            $contempladas[$rotulo] = $temFaseFinal ? (int) App::i()->repo('Registration')->count([
                 'opportunity' => $faseFinal,
                 'status' => Registration::STATUS_APPROVED,
                 'range' => $rotulo,
             ]) : 0;
-
-            $linhas[] = [
-                'label' => $rotulo,
-                'valor' => is_numeric($valor) ? (float) $valor : null,
-                'contempladas' => $contempladas,
-            ];
         }
 
-        return $linhas === [] ? null : $linhas;
+        return $contempladas;
     }
 
     private function valorTotalRepassado(Opportunity $raiz): ?float
     {
-        $categorias = $this->categoriasComContagem($raiz);
+        $contempladas = $this->contempladasPorFaixa($raiz);
 
-        if ($categorias === null) {
-            return null;
-        }
-
-        $total = 0.0;
-        foreach ($categorias as $categoria) {
-            if ($categoria['valor'] === null) {
-                // Categoria sem valor configurado: o total seria mentira — o campo volta ao gestor.
-                return null;
-            }
-
-            $total += $categoria['valor'] * $categoria['contempladas'];
-        }
-
-        return round($total, 2);
+        return $contempladas === [] ? null : $this->faixas($raiz)->totalRepassado($contempladas);
     }
 
-    /** Linhas na forma das colunas da própria questão (os formulários variam as chaves por tipo de ação). */
+    /** Uma linha por faixa, nas colunas da questão; null sem faixas ou com coluna que o edital não responde. */
     private function linhasPorCategoria(Opportunity $raiz, array $questao): ?array
     {
-        $categorias = $this->categoriasComContagem($raiz);
+        $fontes = $this->fontesDasColunas(FormularioTabela::daQuestao($questao)->colunas);
+        $contempladas = $this->contempladasPorFaixa($raiz);
 
-        if ($categorias === null) {
+        if ($fontes === null || $contempladas === []) {
             return null;
         }
 
-        $colunas = array_column($questao['config']['columns'] ?? [], 'key');
-
-        if ($colunas === []) {
-            return null;
-        }
-
+        $faixas = $this->faixas($raiz);
         $linhas = [];
-        foreach ($categorias as $categoria) {
-            $linha = [];
-            foreach ($colunas as $chave) {
-                $linha[$chave] = $this->celulaAutomatica($chave, $categoria);
-            }
-            $linhas[] = $linha;
+
+        foreach ($contempladas as $rotulo => $quantidade) {
+            $valores = [
+                self::FONTE_ROTULO => (string) $rotulo,
+                self::FONTE_CONTAGEM => $quantidade,
+                self::FONTE_VALOR => $faixas->valorPorContemplado((string) $rotulo),
+            ];
+            $linhas[] = array_map(fn(string $fonte) => $valores[$fonte], $fontes);
         }
 
         return $linhas;
     }
 
-    private function celulaAutomatica(string $chave, array $categoria): mixed
+    /**
+     * De onde sai cada coluna, pelo tipo; null quando falta fonte para uma obrigatória ou duas disputam a mesma.
+     * @return array<string, string>|null fonte por id da coluna
+     */
+    private function fontesDasColunas(array $colunas): ?array
     {
-        if (str_contains($chave, 'valor_total')) {
-            return $categoria['valor'] === null ? null : round($categoria['valor'] * $categoria['contempladas'], 2);
+        $fontes = [];
+
+        foreach ($colunas as $coluna) {
+            $fonte = $this->fonteDaColuna($coluna);
+
+            if ($fonte === null && !$coluna['obrigatoria']) {
+                continue;
+            }
+
+            if ($fonte === null || in_array($fonte, $fontes, true)) {
+                return null;
+            }
+
+            $fontes[$coluna['id']] = $fonte;
         }
 
-        if (str_contains($chave, 'valor')) {
-            return $categoria['valor'];
-        }
+        return $fontes === [] ? null : $fontes;
+    }
 
-        if (str_contains($chave, 'quantidade')) {
-            return $categoria['contempladas'];
-        }
-
-        if (str_contains($chave, 'categoria')) {
-            return $categoria['label'];
-        }
-
-        return null;
+    private function fonteDaColuna(array $coluna): ?string
+    {
+        return match (true) {
+            $coluna['tipo'] === 'number' => self::FONTE_CONTAGEM,
+            $coluna['tipo'] === 'currency' => self::FONTE_VALOR,
+            $coluna['tipo'] === 'text' && $coluna['somenteLeitura'] => self::FONTE_ROTULO,
+            default => null,
+        };
     }
 
     /** A data que o envio usará (a questão do formulário é somente leitura); null antes de publicar. */
@@ -386,126 +463,242 @@ class FormularioResultadoService
         return $faseFinal?->publishTimestamp?->format(\DateTime::ATOM);
     }
 
-    private function estado(Opportunity $raiz, ?array $estrutura, array $respostas): string
+    private function estado(Opportunity $raiz, ?array $estrutura, bool $isCompleto): string
     {
         if ($estrutura === null) {
             return self::ESTADO_SEM_FORMULARIO;
+        }
+
+        if ($this->isAcaoSemResultado((int) $raiz->id)) {
+            return self::ESTADO_ACAO_SEM_RESULTADO;
+        }
+
+        if (!self::isStatusComResultado($raiz)) {
+            return self::ESTADO_EDITAL_NAO_PUBLICADO;
         }
 
         if (!$this->isFaseFinalPublicada($raiz)) {
             return self::ESTADO_AGUARDANDO_PUBLICACAO;
         }
 
-        if ((new ResultadoService())->parEditalResultadoId((int) $raiz->id) !== null) {
+        if ((new ResultadoService())->isPublicadoNoCultBr((int) $raiz->id)) {
             return self::ESTADO_ENVIADO;
         }
 
-        return $this->faltantes($raiz, $estrutura, $respostas) === [] ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
+        return $isCompleto ? self::ESTADO_COMPLETO : self::ESTADO_PENDENTE;
     }
 
-    /** @return list<int> obrigatórias sem resposta, já descontadas as questões sem fonte */
-    private function faltantes(Opportunity $raiz, array $estrutura, array $respostas): array
+    /**
+     * O que impede o envio, com a estrutura e o modelo de planilha relidos da origem.
+     * @return array{pendencias: list<array>, bloqueios: list<array>}
+     */
+    public function impedimentosDoEnvio(Opportunity $raiz): array
     {
-        $faltantes = (new FormularioRespostasValidator($estrutura))->missingRequired($respostas);
-
-        // Questão sem fonte nem aparece na tela — não pode travar a completude invisivelmente.
-        return array_values(array_diff($faltantes, $this->questoesSemFonte($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura))));
+        return $this->impedimentos(
+            $raiz,
+            $this->formStructureForEnvio((int) $raiz->id),
+            (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id, isEnvio: true),
+        );
     }
 
-    /** O formulário tem todas as obrigatórias respondidas? Independe de já haver envio — vale para retificações. */
-    public function isFormularioCompleto(Opportunity $raiz): bool
+    private function impedimentos(Opportunity $raiz, ?array $estrutura, ?array $planilha): array
     {
-        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+        if ($estrutura === null) {
+            return self::SEM_IMPEDIMENTOS;
+        }
+
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $respostas = $this->respostasVigentes($raiz, $estrutura);
+        $validator = new FormularioRespostasValidator($estrutura);
+        $documentos = $validator->documentosRequeridos($respostas);
+        $anexados = array_intersect_key($respostas, $validator->documentosVisiveis($respostas));
+
+        // A sem fonte nem aparece na tela: não pode travar o envio invisivelmente.
+        $foraDoGestor = $automaticas + array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas));
+        $pendencias = array_diff_key($validator->pendencias($respostas), $foraDoGestor);
+
+        // O CultBR não recebe planilha e documentos no mesmo envio: pedir o documento não resolveria.
+        if (($planilha['possui'] ?? null) === true) {
+            $pendencias = array_diff_key($pendencias, array_flip($documentos));
+        }
+
+        return [
+            'pendencias' => $this->comNomes($pendencias, $estrutura),
+            'bloqueios' => [
+                ...$this->bloqueioDaPlanilha($planilha, $documentos, $anexados),
+                ...$this->comNomes(array_diff_key($validator->bloqueios($respostas), $foraDoGestor), $estrutura),
+            ],
+        ];
+    }
+
+    /** @return list<array{id_questao: null, nome: string, motivo: string}> */
+    private function bloqueioDaPlanilha(?array $planilha, array $documentosRequeridos, array $anexados): array
+    {
+        $motivo = match (true) {
+            $planilha === null, $planilha['possui'] === false => null,
+            $planilha['possui'] === null => $planilha['motivo'],
+            self::isDependenteDoCultBr($planilha, $documentosRequeridos) => self::motivoPlanilhaComDocumentos(),
+            $anexados !== [] => self::motivoPlanilhaComAnexos(),
+            default => null,
+        };
+
+        return $motivo === null ? [] : [['id_questao' => null, 'nome' => '', 'motivo' => $motivo]];
+    }
+
+    /** O edital tem modelo de planilha e documento requerido, e o CultBR não recebe os dois no mesmo envio. */
+    public static function isDependenteDoCultBr(?array $planilha, array $documentosRequeridos): bool
+    {
+        return ($planilha['possui'] ?? null) === true && $documentosRequeridos !== [];
+    }
+
+    public static function motivoRespostasDesatualizadas(): string
+    {
+        return i::__('As respostas mudaram em outra guia ou por outra pessoa, e a tela foi atualizada. Confira e envie de novo.');
+    }
+
+    public static function motivoPlanilhaComAnexos(): string
+    {
+        return i::__('O CultBR ainda não recebe a planilha de contemplados junto com documentos. Retire os arquivos anexados para enviar.');
+    }
+
+    /** Com planilha, o documento não recebe arquivo, obrigatório ou não. */
+    public static function motivoDocumentoComPlanilha(): string
+    {
+        return i::__('Este edital envia a planilha de contemplados, e o CultBR ainda não recebe documentos junto com ela.');
+    }
+
+    public static function motivoPlanilhaComDocumentos(): string
+    {
+        return i::__('Esta ação exige planilha e documentos, e o CultBR ainda não recebe os dois juntos.');
+    }
+
+    /** @return list<array{id_questao: int, nome: string, motivo: string}> */
+    private function comNomes(array $motivos, array $estrutura): array
+    {
+        $questoes = (new FormularioEstrutura($estrutura))->questoes();
+
+        return array_map(
+            fn(int $id, string $motivo) => ['id_questao' => $id, 'nome' => $questoes[$id]['nome'] ?? '', 'motivo' => $motivo],
+            array_keys($motivos),
+            $motivos,
+        );
+    }
+
+    /** Nada impede o envio? Independe de já haver envio — vale para retificações. */
+    public function isEnvioLiberado(Opportunity $raiz): bool
+    {
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
         if ($estrutura === null) {
             return false;
         }
 
-        $respostas = $this->savedRespostas((int) $raiz->id) + $this->respostasSugeridas($raiz, $estrutura);
+        $planilha = (new ModeloPlanilhaService())->daOportunidade((int) $raiz->id, isEnvio: true);
 
-        return $this->faltantes($raiz, $estrutura, $this->respostasAutomaticas($raiz, $estrutura) + $respostas) === [];
+        return $this->impedimentos($raiz, $estrutura, $planilha) === self::SEM_IMPEDIMENTOS;
+    }
+
+    /** Falta alguma resposta? Não olha a planilha, que o envio confere por conta própria. */
+    public function isFormularioCompleto(Opportunity $raiz): bool
+    {
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
+
+        return $estrutura !== null && $this->impedimentos($raiz, $estrutura, null) === self::SEM_IMPEDIMENTOS;
     }
 
     /**
-     * Respostas do formulário no corpo do envio: automáticas, salvas e sugeridas, mais a data de
-     * publicação informada — a mesma do campo próprio do POST, para nunca divergirem.
-     * @return list<array{id_par_questao: int, resposta: array{resposta: mixed}}>|null null sem formulário
+     * O que o formulário leva no envio: automáticas, salvas e sugeridas, só as visíveis e válidas, e os documentos.
+     * @return array{respostas: ?list<array{id_par_questao: int, resposta: array{resposta: mixed}}>, arquivos: list<array>} respostas nulas sem formulário
      */
-    public function respostasParaEnvio(Opportunity $raiz, string $dataPublicacao): ?array
+    public function conteudoParaEnvio(Opportunity $raiz): array
     {
-        $estrutura = $this->formStructureForOpportunity((int) $raiz->id);
+        $estrutura = $this->formStructureForEnvio((int) $raiz->id);
 
         if ($estrutura === null) {
-            return null;
+            return ['respostas' => null, 'arquivos' => []];
         }
 
-        $valores = $this->respostasAutomaticas($raiz, $estrutura)
-            + $this->savedRespostas((int) $raiz->id)
-            + $this->respostasSugeridas($raiz, $estrutura);
+        $leitura = new FormularioEstrutura($estrutura);
+        $validator = new FormularioRespostasValidator($estrutura);
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+        $valores = $this->respostasVigentes($raiz, $estrutura);
+        $anexados = array_intersect_key($valores, $validator->documentosVisiveis($valores));
 
+        $enviaveis = $automaticas + $validator->enviaveis($valores) + array_map($this->nomesDosArquivos(...), $anexados);
+        $regras = new FormularioRegras($leitura);
         $respostas = [];
+        $arquivos = [];
 
-        foreach ($estrutura['secoes'] ?? [] as $secao) {
-            foreach ($secao['etapas'] ?? [] as $etapa) {
-                foreach ($etapa['questoes'] ?? [] as $questao) {
-                    $valor = str_starts_with((string) ($questao['tag'] ?? ''), 'data_publicacao')
-                        ? $dataPublicacao
-                        : ($valores[(int) $questao['id_questao']] ?? null);
+        foreach (array_intersect_key($leitura->questoes(), $enviaveis) as $id => $questao) {
+            // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
+            $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
 
-                    // No envio a questão é endereçada pelo id_questao_etapa, não pelo id_questao.
-                    $idEnvio = (int) ($questao['id_questao_etapa'] ?? 0);
-
-                    if ($valor === null || $idEnvio === 0) {
-                        continue;
-                    }
-
-                    $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $valor)]];
-                }
+            if ($idEnvio !== 0 && $regras->isVisivel($questao, $valores)) {
+                $respostas[] = ['id_par_questao' => $idEnvio, 'resposta' => ['resposta' => $this->valorParaEnvio($questao, $enviaveis[$id])]];
+                $arquivos = [...$arquivos, ...array_map(
+                    fn(OpportunityFile $arquivo) => ResultadoAnexosService::paraOEnvio($arquivo, $questao),
+                    array_values($anexados[$id] ?? []),
+                )];
             }
         }
 
-        return $respostas;
+        return ['respostas' => $respostas, 'arquivos' => $arquivos];
     }
 
-    /** Ajusta o valor ao que o formulário do PAR espera por tipo de questão; os demais tipos viajam como estão. */
+    /** A questão de documento é respondida pelo nome do arquivo, ou pela lista deles. */
+    private function nomesDosArquivos(array $arquivos): string|array
+    {
+        $nomes = array_map(fn(OpportunityFile $arquivo) => $arquivo->name, array_values($arquivos));
+
+        return count($nomes) === 1 ? $nomes[0] : $nomes;
+    }
+
+    /** Ajusta o valor ao que o CultBR aceita por tipo de questão; os demais tipos viajam como estão. */
     private function valorParaEnvio(array $questao, mixed $valor): mixed
     {
         return match ($questao['tipo_questao'] ?? '') {
-            'data' => $this->comoDataSimples($valor),
-            'múltipla escolha' => $this->comoRotulosDasOpcoes($questao, $valor),
+            'número', 'moeda' => $this->comoNumero($valor),
+            'radio' => $this->comoRotulo($questao, $valor),
+            'checkbox', 'múltipla escolha' => array_map(fn(mixed $escolha) => $this->comoRotulo($questao, $escolha), $valor),
+            'tabela', 'Tabela Dinâmica' => $this->comoLinhas($questao, $valor),
             default => $valor,
         };
     }
 
-    /** O campo de data do PAR só lê Y-m-d; datetime com fuso não renderiza. */
-    private function comoDataSimples(mixed $valor): mixed
+    /** Inteiro sem casa decimal: 15000 e 15000.0 são o mesmo conteúdo. */
+    private function comoNumero(mixed $valor): int|float
     {
-        if (!is_string($valor) || $valor === '') {
-            return $valor;
-        }
+        $numero = $valor + 0;
 
-        try {
-            return (new \DateTimeImmutable($valor))->format('Y-m-d');
-        } catch (\Exception) {
-            return $valor;
-        }
+        return floor($numero) == $numero ? (int) $numero : $numero;
     }
 
-    /** Múltipla escolha viaja com o texto (label) da opção; salvamos o valor/slug e o PAR casa por label. */
-    private function comoRotulosDasOpcoes(array $questao, mixed $valor): mixed
+    /** A opção viaja pelo texto, e a complementada como "Rótulo: texto". */
+    private function comoRotulo(array $questao, mixed $escolha): string
     {
-        if (!is_array($valor)) {
-            return $valor;
-        }
+        $id = is_array($escolha) ? $escolha['id'] : $escolha;
+        $rotulos = array_column(FormularioEstrutura::itens($questao), 'label', 'id');
 
-        $rotuloPorValor = [];
-        foreach ($questao['opcao']['itens'] ?? [] as $item) {
-            if (isset($item['valor'], $item['label'])) {
-                $rotuloPorValor[$item['valor']] = $item['label'];
-            }
-        }
+        return is_array($escolha) ? "{$rotulos[$id]}: {$escolha['complemento']}" : $rotulos[$id];
+    }
 
-        return array_map(fn($escolha) => $rotuloPorValor[$escolha] ?? $escolha, $valor);
+    private function comoLinhas(array $questao, array $linhas): array
+    {
+        $tipos = array_column(FormularioTabela::daQuestao($questao)->colunas, 'tipo', 'id');
+
+        return array_map(fn(array $linha) => array_combine(
+            array_keys($linha),
+            array_map(
+                fn(string $coluna, mixed $celula) => $this->isCelulaNumerica($tipos[$coluna] ?? '', $celula) ? $this->comoNumero($celula) : $celula,
+                array_keys($linha),
+                $linha,
+            ),
+        ), $linhas);
+    }
+
+    private function isCelulaNumerica(string $tipo, mixed $celula): bool
+    {
+        return in_array($tipo, ['number', 'currency'], true) && is_numeric($celula);
     }
 
     /** O travamento do card tem espelho aqui: sem a publicação final, nada se edita nem se salva. */
@@ -516,47 +709,116 @@ class FormularioResultadoService
         return (bool) ($faseFinal && $faseFinal->isLastPhase && $faseFinal->publishedRegistrations);
     }
 
-    /** @return array<int, mixed> respostas salvas do formulário, por id_questao */
-    public function savedRespostas(int $raizId): array
+    /** @return array<int, mixed> automáticas, salvas e sugeridas, por id_questao; a de documento são os arquivos dela */
+    public function respostasVigentes(Opportunity $raiz, array $estrutura): array
     {
-        $respostas = $this->savedFormData($raizId)['respostas'] ?? [];
+        $anexos = new ResultadoAnexosService($raiz, $estrutura);
+
+        return $this->respostasAutomaticas($raiz, $estrutura)
+            + $anexos->porQuestao()
+            + array_diff_key($this->savedRespostas((int) $raiz->id, $estrutura), $anexos->documentos())
+            + $this->respostasSugeridas($raiz, $estrutura);
+    }
+
+    /**
+     * Respostas salvas na versão vigente do formulário; as de outra versão não valem.
+     * @return array<int, mixed> por id_questao
+     */
+    public function savedRespostas(int $raizId, ?array $estrutura): array
+    {
+        $dados = $this->savedFormData($raizId);
+
+        return $this->isDeOutraVersao($dados, $estrutura) ? [] : $this->respostasGravadas($dados);
+    }
+
+    /** A marca das respostas gravadas, que o pedido de envio traz para provar que a tela as mostrava. */
+    public function revisao(Opportunity $raiz): string
+    {
+        $respostas = $this->respostasGravadas($this->savedFormData((int) $raiz->id));
+        ksort($respostas);
+
+        return md5(json_encode($respostas, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function isDeOutraVersao(array $dados, ?array $estrutura): bool
+    {
+        if ($estrutura === null || $this->respostasGravadas($dados) === []) {
+            return false;
+        }
+
+        $versaoGravada = isset($dados['id_formulario_versao']) ? (int) $dados['id_formulario_versao'] : null;
+
+        return $versaoGravada !== (new FormularioEstrutura($estrutura))->versao();
+    }
+
+    private function respostasGravadas(array $dados): array
+    {
+        $respostas = $dados['respostas'] ?? [];
 
         return is_array($respostas) ? $respostas : [];
     }
 
     /**
-     * Merge parcial sobre as respostas salvas (null limpa a resposta) e grava com a versão do
-     * formulário vigente, para detectar estrutura que mudou entre o preenchimento e o envio.
-     * Questões automáticas são descartadas: o cálculo do edital é a única fonte delas.
-     * @return array<int, mixed> as respostas como ficaram salvas
+     * Merge das respostas válidas sobre as salvas na versão vigente (null limpa a resposta). A recusada
+     * não apaga a que estava salva, e o que não cabe ao gestor responder é descartado.
+     * @return array<int, string> erros das recusadas, por id_questao
      */
     public function saveRespostas(Opportunity $raiz, array $respostas, array $estrutura): array
     {
-        $raizId = (int) $raiz->id;
-        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
-        $respostas = array_diff_key($respostas, $automaticas);
-        $respostas = array_diff_key($respostas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
+        $validator = new FormularioRespostasValidator($estrutura);
+        $doGestor = $this->semCalculadas($raiz, $validator->editaveis($respostas), $estrutura);
+        $erros = $validator->validate($doGestor);
+        $validas = array_diff_key($doGestor, $erros);
 
-
-        $salvas = $this->savedRespostas($raizId);
-
-        foreach ($respostas as $idQuestao => $valor) {
-            if ($valor === null) {
-                unset($salvas[(int) $idQuestao]);
-                continue;
-            }
-
-            $salvas[(int) $idQuestao] = $valor;
+        if ($validas !== []) {
+            $antes = $this->savedRespostas((int) $raiz->id, $estrutura);
+            $this->gravaRespostas($raiz, $validas, $estrutura);
+            (new ResultadoService())->marcaRecusasAlteradas((int) $raiz->id, $this->alteradas($antes, $validas));
         }
+
+        return $erros;
+    }
+
+    /** @return list<int> as questões cuja resposta gravada mudou */
+    private function alteradas(array $antes, array $recebidas): array
+    {
+        $alteradas = array_filter(
+            array_keys($recebidas),
+            fn(int|string $id) => json_encode($antes[$id] ?? null) !== json_encode($recebidas[$id]),
+        );
+
+        return array_values(array_map('intval', $alteradas));
+    }
+
+    /**
+     * Merge sobre as salvas na versão vigente (null limpa, e na questão sugerida fica gravado como apagada);
+     * na troca de versão, saem também os documentos.
+     */
+    public function gravaRespostas(Opportunity $raiz, array $respostas, array $estrutura): void
+    {
+        $raizId = (int) $raiz->id;
+        $isTrocaDeVersao = $this->isDeOutraVersao($this->savedFormData($raizId), $estrutura);
+        $salvas = array_replace($this->savedRespostas($raizId, $estrutura), $respostas);
+        $sugeridas = $this->respostasSugeridas($raiz, $estrutura);
 
         $this->upsertMeta($raizId, Controller::OPPORTUNITY_META_CULT_BR_RESULTADO_FORM, json_encode([
             'id_formulario' => $estrutura['id_formulario'] ?? null,
             'id_formulario_versao' => $estrutura['id_formulario_versao'] ?? null,
             'versao' => $estrutura['versao'] ?? null,
-            'respostas' => $salvas,
+            'respostas' => array_filter($salvas, fn($valor, $id) => $valor !== null || isset($sugeridas[$id]), ARRAY_FILTER_USE_BOTH),
         ], JSON_UNESCAPED_UNICODE));
 
-        return $salvas;
+        if ($isTrocaDeVersao) {
+            (new ResultadoAnexosService($raiz, $estrutura))->retirarSemQuestao();
+        }
+    }
+
+    /** Fora também as sem fonte: o cálculo do edital é a única origem delas. */
+    private function semCalculadas(Opportunity $raiz, array $respostas, array $estrutura): array
+    {
+        $automaticas = $this->respostasAutomaticas($raiz, $estrutura);
+
+        return array_diff_key($respostas, $automaticas, array_flip($this->questoesSemFonte($raiz, $estrutura, $automaticas)));
     }
 
     private function savedFormData(int $raizId): array

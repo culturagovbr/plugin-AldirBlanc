@@ -1,0 +1,33 @@
+{
+ "message": "Erro ao processar a requisição. Há questões obrigatórias não respondidas: Documentação comprobatória da implementação das ações afirmativas e medidas de acessibilidade, conforme Instrução Normativa MinC nº 10/2023., Outros documentos, Planilha de resultados.",
+ "errors": [
+  {
+   "field": "questao:14444",
+   "message": "Esta questão é obrigatória.",
+   "location": [
+    "body",
+    "respostas",
+    "14444"
+   ]
+  },
+  {
+   "field": "questao:14445",
+   "message": "Esta questão é obrigatória.",
+   "location": [
+    "body",
+    "respostas",
+    "14445"
+   ]
+  },
+  {
+   "field": "questao:14446",
+   "message": "Esta questão é obrigatória.",
+   "location": [
+    "body",
+    "respostas",
+    "14446"
+   ]
+  }
+ ],
+ "error_count": 3
+}
